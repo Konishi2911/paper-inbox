@@ -1,17 +1,9 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
-use super::{
-    AttachmentId,
-    PaperId,
-    VersionId,
-    ContentHash,
-};
+use super::{AttachmentId, ContentHash, PaperId, VersionId};
 
-#[derive(
-    Clone, Copy, Debug, PartialEq, Eq,
-    Serialize, Deserialize,
-)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum AttachmentKind {
     FullText,
     Supplementary,

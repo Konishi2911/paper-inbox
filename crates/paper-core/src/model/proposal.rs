@@ -1,19 +1,9 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
-use super::{
-    PaperId,
-    VersionId,
-    ProposalId,
-    RevisionId,
-    FieldTarget,
-    BibliographyValue,
-};
+use super::{BibliographyValue, FieldTarget, PaperId, ProposalId, RevisionId, VersionId};
 
-#[derive(
-    Clone, Copy, Debug, PartialEq, Eq,
-    Serialize, Deserialize,
-)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ProposalReason {
     OverwriteManualValue,
     ConflictingSources,
@@ -23,10 +13,7 @@ pub enum ProposalReason {
     DuplicatePaper,
 }
 
-#[derive(
-    Clone, Copy, Debug, Default, PartialEq, Eq,
-    Serialize, Deserialize,
-)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ProposalStatus {
     #[default]
     Pending,

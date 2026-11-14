@@ -2,26 +2,9 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
 use super::{
-    EventId,
-    DeviceId,
-    PaperId,
-    VersionId,
-    AttachmentId,
-    RevisionId,
-    ProposalId,
-    TagId,
-    CollectionId,
-    Paper,
-    PaperVersion,
-    Attachment,
-    FieldRevision,
-    FieldTarget,
-    UpdateProposal,
-    ProposalResolution,
-    ReadingStatus,
-    CitationKey,
-    Tag,
-    Collection,
+    Attachment, AttachmentId, CitationKey, Collection, CollectionId, DeviceId, EventId,
+    FieldRevision, FieldTarget, Paper, PaperId, PaperVersion, ProposalId, ProposalResolution,
+    ReadingStatus, RevisionId, Tag, TagId, UpdateProposal, VersionId,
 };
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

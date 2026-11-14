@@ -1,11 +1,8 @@
 use serde::{Deserialize, Serialize};
 
-use super::{TagId, CollectionId};
+use super::{CollectionId, TagId};
 
-#[derive(
-    Clone, Copy, Debug, Default, PartialEq, Eq, Hash,
-    Serialize, Deserialize,
-)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum ReadingStatus {
     #[default]
     Unread,
@@ -13,10 +10,7 @@ pub enum ReadingStatus {
     Read,
 }
 
-#[derive(
-    Clone, Debug, Default, PartialEq, Eq,
-    Serialize, Deserialize,
-)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct UserMetadata {
     pub notes: String,
 

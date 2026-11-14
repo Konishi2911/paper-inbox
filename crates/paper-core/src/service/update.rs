@@ -1,12 +1,6 @@
 use thiserror::Error;
 
-use crate::model::{
-    FieldRevision,
-    FieldTarget,
-    Provenance,
-    ProposalReason,
-    MetadataSource,
-};
+use crate::model::{FieldRevision, FieldTarget, MetadataSource, ProposalReason, Provenance};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Freshness {
@@ -36,17 +30,12 @@ pub enum UpdateError {
     InvalidCandidateSource,
 }
 
-pub fn compare_freshness(
-    current: &Provenance,
-    candidate: &Provenance,
-) -> Freshness {
+pub fn compare_freshness(current: &Provenance, candidate: &Provenance) -> Freshness {
     use std::cmp::Ordering;
 
-    let same_record =
-        current.source == candidate.source
+    let same_record = current.source == candidate.source
         && current.source_record_id.is_some()
-        && current.source_record_id
-            == candidate.source_record_id;
+        && current.source_record_id == candidate.source_record_id;
 
     if !same_record {
         return Freshness::Unknown;
@@ -56,13 +45,11 @@ pub fn compare_freshness(
         current.source_updated_at.as_ref(),
         candidate.source_updated_at.as_ref(),
     ) {
-        (Some(current_at), Some(candidate_at)) => {
-            match candidate_at.cmp(current_at) {
-                Ordering::Greater => Freshness::Newer,
-                Ordering::Less => Freshness::Older,
-                Ordering::Equal => Freshness::Equal,
-            }
-        }
+        (Some(current_at), Some(candidate_at)) => match candidate_at.cmp(current_at) {
+            Ordering::Greater => Freshness::Newer,
+            Ordering::Less => Freshness::Older,
+            Ordering::Equal => Freshness::Equal,
+        },
         _ => Freshness::Unknown,
     }
 }
@@ -91,7 +78,9 @@ pub fn evaluate_update(
         return Ok(UpdateDecision::IgnoreStale);
     }
     if current.provenance.source == MetadataSource::Manual {
-        return Ok(UpdateDecision::Propose(ProposalReason::OverwriteManualValue));
+        return Ok(UpdateDecision::Propose(
+            ProposalReason::OverwriteManualValue,
+        ));
     }
     Ok(match freshness {
         Freshness::Newer => UpdateDecision::Apply,

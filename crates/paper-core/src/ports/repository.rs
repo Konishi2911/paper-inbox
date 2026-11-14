@@ -1,65 +1,28 @@
 use crate::model::{
-    Paper,
-    PaperId,
-    PaperVersion,
-    Attachment,
-    FieldTarget,
-    FieldRevision,
+    Attachment, EventId, FieldRevision, FieldTarget, Paper, PaperId, PaperVersion, SyncEvent,
     UpdateProposal,
-    SyncEvent,
-    EventId,
 };
 
-use crate::query::{
-    PaperQuery,
-    SearchResult,
-};
+use crate::query::{PaperQuery, SearchResult};
 
-use crate::command::{
-    LibraryCommand,
-    CommitResult,
-};
+use crate::command::{CommitResult, LibraryCommand};
 
 pub trait PaperRepository: Send + Sync {
-    type Error: std::error::Error
-        + Send
-        + Sync
-        + 'static;
+    type Error: std::error::Error + Send + Sync + 'static;
 
-    fn get(
-        &self,
-        id: PaperId,
-    ) -> Result<Option<Paper>, Self::Error>;
+    fn get(&self, id: PaperId) -> Result<Option<Paper>, Self::Error>;
 
-    fn search(
-        &self,
-        query: &PaperQuery,
-    ) -> Result<SearchResult, Self::Error>;
+    fn search(&self, query: &PaperQuery) -> Result<SearchResult, Self::Error>;
 
-    fn versions(
-        &self,
-        paper_id: PaperId,
-    ) -> Result<Vec<PaperVersion>, Self::Error>;
+    fn versions(&self, paper_id: PaperId) -> Result<Vec<PaperVersion>, Self::Error>;
 
-    fn attachments(
-        &self,
-        paper_id: PaperId,
-    ) -> Result<Vec<Attachment>, Self::Error>;
+    fn attachments(&self, paper_id: PaperId) -> Result<Vec<Attachment>, Self::Error>;
 
-    fn revisions(
-        &self,
-        target: &FieldTarget,
-    ) -> Result<Vec<FieldRevision>, Self::Error>;
+    fn revisions(&self, target: &FieldTarget) -> Result<Vec<FieldRevision>, Self::Error>;
 
-    fn active_revisions(
-        &self,
-        target: &FieldTarget,
-    ) -> Result<Vec<FieldRevision>, Self::Error>;
+    fn active_revisions(&self, target: &FieldTarget) -> Result<Vec<FieldRevision>, Self::Error>;
 
-    fn pending_proposals(
-        &self,
-        paper_id: PaperId,
-    ) -> Result<Vec<UpdateProposal>, Self::Error>;
+    fn pending_proposals(&self, paper_id: PaperId) -> Result<Vec<UpdateProposal>, Self::Error>;
 }
 
 #[derive(Clone, Debug)]
@@ -67,29 +30,15 @@ pub enum ApplyEventResult {
     Applied,
     AlreadyApplied,
 
-    MissingDependencies {
-        events: Vec<EventId>,
-    },
+    MissingDependencies { events: Vec<EventId> },
 }
 
 pub trait LibraryStore: PaperRepository {
-    fn commit(
-        &self,
-        command: LibraryCommand,
-    ) -> Result<CommitResult, Self::Error>;
+    fn commit(&self, command: LibraryCommand) -> Result<CommitResult, Self::Error>;
 
-    fn apply_remote_event(
-        &self,
-        event: &SyncEvent,
-    ) -> Result<ApplyEventResult, Self::Error>;
+    fn apply_remote_event(&self, event: &SyncEvent) -> Result<ApplyEventResult, Self::Error>;
 
-    fn pending_events(
-        &self,
-        limit: usize,
-    ) -> Result<Vec<SyncEvent>, Self::Error>;
+    fn pending_events(&self, limit: usize) -> Result<Vec<SyncEvent>, Self::Error>;
 
-    fn mark_events_uploaded(
-        &self,
-        event_ids: &[EventId],
-    ) -> Result<(), Self::Error>;
+    fn mark_events_uploaded(&self, event_ids: &[EventId]) -> Result<(), Self::Error>;
 }

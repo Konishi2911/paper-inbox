@@ -5,18 +5,10 @@ pub enum MergeResult<T> {
     TakeRemote(T),
     Converged(T),
 
-    Conflict {
-        base: T,
-        local: T,
-        remote: T,
-    },
+    Conflict { base: T, local: T, remote: T },
 }
 
-pub fn three_way_merge<T>(
-    base: &T,
-    local: &T,
-    remote: &T,
-) -> MergeResult<T>
+pub fn three_way_merge<T>(base: &T, local: &T, remote: &T) -> MergeResult<T>
 where
     T: Clone + PartialEq,
 {

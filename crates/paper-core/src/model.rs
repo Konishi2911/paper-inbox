@@ -1,101 +1,44 @@
-mod ids;
-mod identifier;
-mod contributor;
-mod publication;
-mod bibliography;
-mod user_metadata;
-mod paper;
 mod attachment;
-mod provenance;
-mod revision;
-mod proposal;
-mod import;
+mod bibliography;
+mod contributor;
 mod event;
+mod identifier;
+mod ids;
+mod import;
+mod paper;
+mod proposal;
+mod provenance;
+mod publication;
+mod revision;
+mod user_metadata;
 
 pub use ids::{
-    PaperId,
-    VersionId,
-    AttachmentId,
-    RevisionId,
-    ProposalId,
-    ImportId,
-    EventId,
-    DeviceId,
-    TagId,
-    CollectionId,
+    AttachmentId, CollectionId, DeviceId, EventId, ImportId, PaperId, ProposalId, RevisionId,
+    TagId, VersionId,
 };
 
-pub use identifier::{
-    Doi,
-    ArxivId,
-    CitationKey,
-    ContentHash,
-    PaperIdentifier,
-    IdentifierError,
-};
+pub use identifier::{ArxivId, CitationKey, ContentHash, Doi, IdentifierError, PaperIdentifier};
 
-pub use contributor::{
-    ContributorName,
-    Contributor,
-};
+pub use contributor::{Contributor, ContributorName};
 
-pub use publication::{
-    PublicationType,
-    VersionKind,
-    Publication,
-};
+pub use publication::{Publication, PublicationType, VersionKind};
 
-pub use bibliography::{
-    Identifiers,
-    Bibliography,
-    MetadataCandidate,
-};
+pub use bibliography::{Bibliography, Identifiers, MetadataCandidate};
 
-pub use user_metadata::{
-    UserMetadata,
-    ReadingStatus,
-    Tag,
-    Collection,
-};
+pub use user_metadata::{Collection, ReadingStatus, Tag, UserMetadata};
 
-pub use paper::{
-    Paper,
-    PaperVersion,
-    PaperError,
-};
+pub use paper::{Paper, PaperError, PaperVersion};
 
-pub use attachment::{
-    Attachment,
-    AttachmentKind,
-};
+pub use attachment::{Attachment, AttachmentKind};
 
-pub use provenance::{
-    Provenance,
-    MetadataSource,
-};
+pub use provenance::{MetadataSource, Provenance};
 
-pub use revision::{
-    BibliographyField,
-    BibliographyValue,
-    FieldRevision,
-    FieldTarget,
-};
+pub use revision::{BibliographyField, BibliographyValue, FieldRevision, FieldTarget};
 
 pub use proposal::{
-    UpdateProposal,
-    ProposalKind,
-    ProposalReason,
-    ProposalStatus,
-    ProposalResolution,
+    ProposalKind, ProposalReason, ProposalResolution, ProposalStatus, UpdateProposal,
 };
 
-pub use import::{
-    ImportSource,
-    ImportStatus,
-    ImportJob,
-};
+pub use import::{ImportJob, ImportSource, ImportStatus};
 
-pub use event::{
-    SyncEvent,
-    SyncOperation,
-};
+pub use event::{SyncEvent, SyncOperation};

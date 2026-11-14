@@ -1,12 +1,7 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
-use super::{
-    ImportId,
-    PaperId,
-    PaperIdentifier,
-    ContentHash,
-};
+use super::{ContentHash, ImportId, PaperId, PaperIdentifier};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum ImportSource {
@@ -20,10 +15,7 @@ pub enum ImportSource {
     },
 }
 
-#[derive(
-    Clone, Copy, Debug, Default, PartialEq, Eq,
-    Serialize, Deserialize,
-)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ImportStatus {
     #[default]
     Pending,

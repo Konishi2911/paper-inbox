@@ -1,9 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-#[derive(
-    Clone, Copy, Debug, Default, PartialEq, Eq, Hash,
-    Serialize, Deserialize,
-)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum PublicationType {
     JournalArticle,
     ConferencePaper,
@@ -21,10 +18,7 @@ pub enum PublicationType {
     Unknown,
 }
 
-#[derive(
-    Clone, Copy, Debug, Default, PartialEq, Eq, Hash,
-    Serialize, Deserialize,
-)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum VersionKind {
     VersionOfRecord,
     AcceptedManuscript,
@@ -35,10 +29,7 @@ pub enum VersionKind {
     Unknown,
 }
 
-#[derive(
-    Clone, Debug, Default, PartialEq, Eq,
-    Serialize, Deserialize,
-)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Publication {
     pub kind: PublicationType,
 
