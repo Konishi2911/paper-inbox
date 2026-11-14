@@ -1,0 +1,17 @@
+# Local persistence milestone
+
+The SQLite implementation stores bibliography, ordered contributors and keywords as relational rows. There are no JSON payloads. `papers` points to an immutable `paper_snapshots` row; revisions and outbox events refer to the corresponding historical snapshot. Historical data therefore stays unchanged when the current paper is edited. Publication and identifier scalars are columns of `bibliographies` (one-to-one with a bibliography snapshot).
+
+Implemented commands: CreatePaper, EditBibliography for paper-level fields, ChangeCitationKey, UpdateNotes, SetReadingStatus, SetFavorite, SetArchived, DeletePaper and RestorePaper. Creation seeds a manual revision for every bibliography field. Even absent initial values have a revision, so clients must read active revisions before editing. Expected heads are compared as a set; duplicate expected IDs are rejected. Edits to deleted papers are rejected.
+
+Citation keys are case-sensitive and unique across all papers, including deleted papers. Deletion is soft. Get returns deleted papers; search excludes them. A restore keeps identity and history. CreatePaper is an explicit manual creation API, not an external metadata import API.
+
+Each commit uses BEGIN IMMEDIATE to serialize writers and atomically update the current paper, revisions, field heads, device sequence and pending events. Immutable snapshots are retained; compaction is not implemented. Clock values are passed explicitly by commit_at for tests; commit uses Utc::now. Stored timestamps use UTC with fixed nanosecond precision. A timestamp earlier than the previous paper update is rejected.
+
+Search supports title, citation key and author substring matching; publication type, reading status, year, favorite and archive filters; deterministic sorting with an ID tie-breaker; and offset pagination. Text matching is literal (SQL parameters, no LIKE wildcard interpretation). SQLite lower() currently provides ASCII case folding, not full Unicode case folding. Count and page are read in one transaction. Relevance ranking and tag/collection filters explicitly return Unsupported.
+
+Versions, attachments, tags, collections, proposals, metadata candidate ingestion and remote event application are not implemented in this milestone. Their commands return Unsupported rather than discard data. Repository list methods for versions, attachments and proposals return empty lists because this store cannot yet create those entities. Corresponding existence filters report no entities. Pending events and upload acknowledgements persist locally, but this is not a working synchronization transport. Event sequence and parent chains are currently per device; cross-device causal dependencies must be designed before remote application is enabled.
+
+Schema version 1 is installed transactionally. Newer versions are rejected. No SQLite database existed in the repository before this milestone, so no legacy data migration is provided.
+
+Verification: `cargo test -p paper-core -p paper-storage`. Integration tests use isolated real SQLite files, reopen them, and inject an SQL trigger failure after state changes to verify rollback. They also cover independent/concurrent connections, history, event immutability, upload acknowledgements, every bibliography field and unsupported operations.

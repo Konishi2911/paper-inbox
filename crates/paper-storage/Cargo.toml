@@ -9,3 +9,4 @@ rusqlite.workspace = true
 serde.workspace = true
 thiserror.workspace = true
 
+chrono.workspace = true
