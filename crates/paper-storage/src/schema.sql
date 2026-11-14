@@ -50,4 +50,3 @@ CREATE TABLE IF NOT EXISTS event_parents (
 );
 CREATE INDEX IF NOT EXISTS revisions_target ON revisions(paper_id,field);
 CREATE INDEX IF NOT EXISTS events_pending ON events(uploaded,device_id,sequence);
-PRAGMA user_version = 1;

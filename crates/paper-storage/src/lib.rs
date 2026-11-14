@@ -1,6 +1,6 @@
 use chrono::{DateTime, Utc};
 use paper_core::{
-    command::{CommitResult, LibraryCommand},
+    command::{CommitResult, LibraryCommand, PaperEditState},
     model::*,
     ports::{ApplyEventResult, LibraryStore, PaperRepository},
     query::*,
@@ -31,6 +31,8 @@ pub enum StorageError {
     Unsupported(&'static str),
     #[error("Invalid stored data: {0}")]
     Corrupt(String),
+    #[error("Paper changed since it was opened: {0}")]
+    Conflict(PaperId),
     #[error("Database lock was poisoned")]
     Poisoned,
 }
@@ -42,26 +44,55 @@ pub struct SqliteLibrary {
 }
 impl SqliteLibrary {
     pub fn open(path: impl AsRef<Path>, device_id: DeviceId) -> Result<Self> {
-        Self::initialize(Connection::open(path)?, device_id)
+        Self::initialize(Connection::open(path)?, Some(device_id))
     }
     pub fn in_memory(device_id: DeviceId) -> Result<Self> {
-        Self::initialize(Connection::open_in_memory()?, device_id)
+        Self::initialize(Connection::open_in_memory()?, Some(device_id))
     }
-    fn initialize(mut db: Connection, device_id: DeviceId) -> Result<Self> {
+    pub fn open_local(path: impl AsRef<Path>) -> Result<Self> {
+        Self::initialize(Connection::open(path)?, None)
+    }
+    pub fn device_id(&self) -> DeviceId {
+        self.device_id
+    }
+    fn initialize(mut db: Connection, requested_device: Option<DeviceId>) -> Result<Self> {
         db.busy_timeout(std::time::Duration::from_secs(5))?;
         db.pragma_update(None, "foreign_keys", true)?;
         let version: u32 = db.pragma_query_value(None, "user_version", |r| r.get(0))?;
-        if version > 1 {
+        if version > 2 {
             return Err(StorageError::Corrupt(format!(
                 "Unsupported schema version {version}"
             )));
         }
         let tx = db.transaction_with_behavior(TransactionBehavior::Immediate)?;
         tx.execute_batch(include_str!("schema.sql"))?;
+        tx.execute_batch("CREATE TABLE IF NOT EXISTS local_settings (singleton INTEGER PRIMARY KEY CHECK(singleton=1), device_id TEXT NOT NULL REFERENCES devices(id));")?;
+        let local_device: Option<String> = tx
+            .query_row(
+                "SELECT device_id FROM local_settings WHERE singleton=1",
+                [],
+                |r| r.get(0),
+            )
+            .optional()?;
+        let device_id = match requested_device {
+            Some(id) => id,
+            None => local_device
+                .map(sql::decode)
+                .transpose()?
+                .unwrap_or_else(DeviceId::new),
+        };
+
         tx.execute(
             "INSERT OR IGNORE INTO devices VALUES (?1,0)",
             [device_id.to_string()],
         )?;
+        if requested_device.is_none() {
+            tx.execute(
+                "INSERT OR IGNORE INTO local_settings VALUES (1,?1)",
+                [device_id.to_string()],
+            )?;
+        }
+        tx.pragma_update(None, "user_version", 2)?;
         tx.commit()?;
         Ok(Self {
             connection: Mutex::new(db),
@@ -73,12 +104,49 @@ impl SqliteLibrary {
     }
     /// Explicit clock for repeatable tests. A command is atomic including history and outbox.
     pub fn commit_at(&self, command: LibraryCommand, now: DateTime<Utc>) -> Result<CommitResult> {
+        self.commit_batch_at(vec![command], &[], now)
+    }
+    pub fn load_edit_state(&self, id: PaperId) -> Result<PaperEditState> {
+        let guard = self.lock()?;
+        let tx = guard.unchecked_transaction()?;
+        read_edit_state(&tx, id)
+    }
+    pub fn commit_batch_at(
+        &self,
+        commands: Vec<LibraryCommand>,
+        expected: &[PaperEditState],
+        now: DateTime<Utc>,
+    ) -> Result<CommitResult> {
         let mut db = self.lock()?;
         let tx = db.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        for state in expected {
+            if read_edit_state(&tx, state.paper.id())? != *state {
+                return Err(StorageError::Conflict(state.paper.id()));
+            }
+        }
+        let mut combined = CommitResult::default();
+        for command in commands {
+            let result = self.apply_command(&tx, command, now)?;
+            combined.affected_papers.extend(result.affected_papers);
+            combined.created_revisions.extend(result.created_revisions);
+            combined.created_proposals.extend(result.created_proposals);
+            combined.created_events.extend(result.created_events);
+        }
+        combined.affected_papers.sort();
+        combined.affected_papers.dedup();
+        tx.commit()?;
+        Ok(combined)
+    }
+    fn apply_command(
+        &self,
+        tx: &Connection,
+        command: LibraryCommand,
+        now: DateTime<Utc>,
+    ) -> Result<CommitResult> {
         let mut result = CommitResult::default();
         let (mut paper, kind, revision) = match command {
             LibraryCommand::CreatePaper { paper } => {
-                if sql::get(&tx, paper.id())?.is_some() {
+                if sql::get(tx, paper.id())?.is_some() {
                     return Err(StorageError::DuplicatePaper(paper.id()));
                 }
                 (paper, "PaperCreated", None)
@@ -92,13 +160,13 @@ impl SqliteLibrary {
                 if version_id.is_some() {
                     return Err(StorageError::Unsupported("version editing"));
                 }
-                let paper = sql::get(&tx, paper_id)?.ok_or(StorageError::NotFound(paper_id))?;
+                let paper = sql::get(tx, paper_id)?.ok_or(StorageError::NotFound(paper_id))?;
                 let target = FieldTarget {
                     paper_id,
                     version_id,
                     field: value.field(),
                 };
-                let current_heads = sql::heads(&tx, &target)?;
+                let current_heads = sql::heads(tx, &target)?;
                 let (next, revision) = paper_core::command::prepare_bibliography_edit(
                     &paper,
                     value,
@@ -123,7 +191,7 @@ impl SqliteLibrary {
                         ));
                     }
                 };
-                let mut paper = sql::get(&tx, id)?.ok_or(StorageError::NotFound(id))?;
+                let mut paper = sql::get(tx, id)?.ok_or(StorageError::NotFound(id))?;
                 let kind = match command {
                     LibraryCommand::ChangeCitationKey { citation_key, .. } => {
                         paper.change_citation_key(citation_key, now)?;
@@ -192,13 +260,13 @@ impl SqliteLibrary {
             ));
         }
         let snapshot = EventId::new().to_string();
-        sql::write_snapshot(&tx, &snapshot, &paper)?;
+        sql::write_snapshot(tx, &snapshot, &paper)?;
         tx.execute("INSERT INTO papers VALUES (?1,?2,?3) ON CONFLICT(id) DO UPDATE SET citation_key=excluded.citation_key,snapshot_id=excluded.snapshot_id",
             params![paper.id().to_string(),paper.citation_key().as_str(),snapshot])?;
         result.affected_papers.push(paper.id());
         if kind == "PaperCreated" {
             append_event(
-                &tx,
+                tx,
                 self.device_id,
                 "PaperCreated",
                 &snapshot,
@@ -226,10 +294,10 @@ impl SqliteLibrary {
                     },
                     created_at: now,
                 };
-                save_revision(&tx, &snapshot, &revision)?;
+                save_revision(tx, &snapshot, &revision)?;
                 result.created_revisions.push(revision.id);
                 append_event(
-                    &tx,
+                    tx,
                     self.device_id,
                     "FieldRevisionCreated",
                     &snapshot,
@@ -238,7 +306,7 @@ impl SqliteLibrary {
                     &mut result,
                 )?;
                 append_event(
-                    &tx,
+                    tx,
                     self.device_id,
                     "FieldHeadsChanged",
                     &snapshot,
@@ -248,10 +316,10 @@ impl SqliteLibrary {
                 )?;
             }
         } else if let Some(revision) = revision {
-            save_revision(&tx, &snapshot, &revision)?;
+            save_revision(tx, &snapshot, &revision)?;
             result.created_revisions.push(revision.id);
             append_event(
-                &tx,
+                tx,
                 self.device_id,
                 "FieldRevisionCreated",
                 &snapshot,
@@ -260,7 +328,7 @@ impl SqliteLibrary {
                 &mut result,
             )?;
             append_event(
-                &tx,
+                tx,
                 self.device_id,
                 "FieldHeadsChanged",
                 &snapshot,
@@ -269,9 +337,8 @@ impl SqliteLibrary {
                 &mut result,
             )?;
         } else {
-            append_event(&tx, self.device_id, kind, &snapshot, None, now, &mut result)?;
+            append_event(tx, self.device_id, kind, &snapshot, None, now, &mut result)?;
         }
-        tx.commit()?;
         Ok(result)
     }
 }
@@ -385,7 +452,11 @@ impl PaperRepository for SqliteLibrary {
                 "tag/collection filters or relevance ranking",
             ));
         }
-        let mut conditions = vec!["s.deleted_at IS NULL".to_owned()];
+        let mut conditions = match f.deletion {
+            DeletionFilter::Active => vec!["s.deleted_at IS NULL".to_owned()],
+            DeletionFilter::Deleted => vec!["s.deleted_at IS NOT NULL".to_owned()],
+            DeletionFilter::All => vec!["1".to_owned()],
+        };
         let mut values: Vec<rusqlite::types::Value> = vec![];
         if !f.include_archived {
             conditions.push("s.archived=0".into());
@@ -629,4 +700,25 @@ impl LibraryStore for SqliteLibrary {
         tx.commit()?;
         Ok(())
     }
+}
+
+fn read_edit_state(db: &Connection, id: PaperId) -> Result<PaperEditState> {
+    let paper = sql::get(db, id)?.ok_or(StorageError::NotFound(id))?;
+    let heads = ALL_FIELDS
+        .iter()
+        .map(|field| {
+            Ok((
+                *field,
+                sql::heads(
+                    db,
+                    &FieldTarget {
+                        paper_id: id,
+                        version_id: None,
+                        field: *field,
+                    },
+                )?,
+            ))
+        })
+        .collect::<Result<Vec<_>>>()?;
+    Ok(PaperEditState { paper, heads })
 }

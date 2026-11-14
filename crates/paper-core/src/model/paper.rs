@@ -5,7 +5,7 @@ use super::{
     Bibliography, BibliographyValue, CitationKey, PaperId, UserMetadata, VersionId, VersionKind,
 };
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Paper {
     id: PaperId,
 

@@ -681,3 +681,127 @@ fn clearing_a_supplied_value_keeps_its_history_and_blocks_external_overwrite() {
         UpdateDecision::Propose(ProposalReason::OverwriteManualValue)
     );
 }
+
+#[test]
+fn batch_save_is_atomic_and_detects_document_and_head_changes() {
+    let db = Database::new();
+    let store = db.open();
+    let p = paper("batch");
+    let other = paper("taken");
+    create(&store, &p);
+    create(&store, &other);
+    let state = store.load_edit_state(p.id()).unwrap();
+    let head = store.active_revisions(&target(&p)).unwrap()[0].id;
+    let counts = db.counts();
+    let commands = vec![
+        LibraryCommand::EditBibliography {
+            paper_id: p.id(),
+            version_id: None,
+            value: BibliographyValue::Title(Some("partial".into())),
+            expected_heads: vec![head],
+        },
+        LibraryCommand::ChangeCitationKey {
+            paper_id: p.id(),
+            citation_key: other.citation_key().clone(),
+        },
+    ];
+    assert!(matches!(
+        store.commit_batch_at(commands, std::slice::from_ref(&state), now(1)),
+        Err(StorageError::DuplicateCitationKey(_))
+    ));
+    assert_eq!(db.counts(), counts);
+    assert_eq!(store.get(p.id()).unwrap().unwrap(), state.paper);
+    // A new revision with identical content/time must still invalidate the edit state.
+    store
+        .commit_at(
+            LibraryCommand::EditBibliography {
+                paper_id: p.id(),
+                version_id: None,
+                value: BibliographyValue::Title(p.bibliography().title.clone()),
+                expected_heads: vec![head],
+            },
+            now(0),
+        )
+        .unwrap();
+    assert_eq!(store.get(p.id()).unwrap().unwrap(), state.paper);
+    assert!(matches!(
+        store.commit_batch_at(vec![], &[state], now(1)),
+        Err(StorageError::Conflict(_))
+    ));
+    let state = store.load_edit_state(p.id()).unwrap();
+    store
+        .commit_at(
+            LibraryCommand::UpdateNotes {
+                paper_id: p.id(),
+                notes: "other writer".into(),
+            },
+            now(2),
+        )
+        .unwrap();
+    assert!(matches!(
+        store.commit_batch_at(
+            vec![LibraryCommand::SetFavorite {
+                paper_id: p.id(),
+                favorite: true
+            }],
+            &[state],
+            now(3)
+        ),
+        Err(StorageError::Conflict(_))
+    ));
+    assert!(!store.get(p.id()).unwrap().unwrap().metadata().favorite);
+}
+#[test]
+fn local_identity_persists_and_v1_upgrade_keeps_data() {
+    let db = Database::new();
+    let p = paper("migration");
+    {
+        let store = db.open();
+        create(&store, &p);
+    }
+    db.raw()
+        .execute_batch("DROP TABLE local_settings; PRAGMA user_version=1;")
+        .unwrap();
+    let local = SqliteLibrary::open_local(&db.path).unwrap();
+    let device = local.device_id();
+    assert_eq!(
+        local.get(p.id()).unwrap().unwrap().bibliography(),
+        p.bibliography()
+    );
+    assert!(!local.pending_events(1000).unwrap().is_empty());
+    drop(local);
+    let reopened = SqliteLibrary::open_local(&db.path).unwrap();
+    assert_eq!(reopened.device_id(), device);
+    let version: i64 = db
+        .raw()
+        .pragma_query_value(None, "user_version", |r| r.get(0))
+        .unwrap();
+    assert_eq!(version, 2);
+    drop(reopened);
+    db.raw().pragma_update(None, "user_version", 99).unwrap();
+    assert!(SqliteLibrary::open_local(&db.path).is_err());
+    let version: i64 = db
+        .raw()
+        .pragma_query_value(None, "user_version", |r| r.get(0))
+        .unwrap();
+    assert_eq!(version, 99);
+}
+#[test]
+fn deleted_only_and_all_queries_respect_their_contract() {
+    let db = Database::new();
+    let store = db.open();
+    let p = paper("trash");
+    let other = paper("active");
+    create(&store, &p);
+    create(&store, &other);
+    store
+        .commit_at(LibraryCommand::DeletePaper { paper_id: p.id() }, now(1))
+        .unwrap();
+    let mut query = PaperQuery::default();
+    query.filter.deletion = DeletionFilter::Deleted;
+    let result = store.search(&query).unwrap();
+    assert_eq!(result.total_count, 1);
+    assert_eq!(result.papers[0].id, p.id());
+    query.filter.deletion = DeletionFilter::All;
+    assert_eq!(store.search(&query).unwrap().total_count, 2);
+}

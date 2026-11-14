@@ -1,14 +1,7 @@
-
 use chrono::{DateTime, Utc};
 
 use crate::model::{
-    PaperId,
-    TagId,
-    CollectionId,
-    CitationKey,
-    Contributor,
-    PublicationType,
-    ReadingStatus,
+    CitationKey, CollectionId, Contributor, PaperId, PublicationType, ReadingStatus, TagId,
 };
 
 /// Search conditions for the paper library.
@@ -34,6 +27,7 @@ pub struct PaperFilter {
     pub has_attachment: Option<bool>,
     pub has_pending_proposal: Option<bool>,
     pub include_archived: bool,
+    pub deletion: DeletionFilter,
 }
 
 /// Matching strategy for multiple tags.
@@ -116,4 +110,12 @@ pub struct PaperSummary {
 pub struct SearchResult {
     pub papers: Vec<PaperSummary>,
     pub total_count: usize,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum DeletionFilter {
+    #[default]
+    Active,
+    Deleted,
+    All,
 }

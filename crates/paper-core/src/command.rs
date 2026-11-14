@@ -165,3 +165,10 @@ pub fn prepare_bibliography_edit(
     };
     Ok((next, revision))
 }
+
+/// Consistent read of the document and its heads, used for an atomic form save.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PaperEditState {
+    pub paper: Paper,
+    pub heads: Vec<(crate::model::BibliographyField, Vec<RevisionId>)>,
+}
