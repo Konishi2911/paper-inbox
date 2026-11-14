@@ -535,3 +535,149 @@ fn simultaneous_writers_cannot_both_replace_the_same_head() {
     );
     assert_eq!(store.revisions(&target(&p)).unwrap().len(), 2);
 }
+
+#[test]
+fn unset_initial_fields_can_be_completed_but_explicit_clears_are_protected() {
+    use paper_core::service::{UpdateDecision, evaluate_update};
+    let db = Database::new();
+    let store = db.open();
+    let p = Paper::new(
+        PaperId::new(),
+        CitationKey::parse("unset").unwrap(),
+        Bibliography::default(),
+        now(0),
+    )
+    .unwrap();
+    let result = store
+        .commit_at(LibraryCommand::CreatePaper { paper: p.clone() }, now(0))
+        .unwrap();
+    assert!(result.created_revisions.is_empty());
+    assert_eq!(result.created_events.len(), 1);
+    let fields = vec![
+        BibliographyValue::Title(Some("external title".into())),
+        BibliographyValue::Authors(paper("sample").bibliography().authors.clone()),
+        BibliographyValue::Editors(paper("sample").bibliography().editors.clone()),
+        BibliographyValue::PublicationType(PublicationType::JournalArticle),
+        BibliographyValue::ContainerTitle(Some("journal".into())),
+        BibliographyValue::Publisher(Some("publisher".into())),
+        BibliographyValue::Year(Some(2026)),
+        BibliographyValue::Month(Some(11)),
+        BibliographyValue::Volume(Some("1".into())),
+        BibliographyValue::Issue(Some("2".into())),
+        BibliographyValue::Pages(Some("1--3".into())),
+        BibliographyValue::ArticleNumber(Some("42".into())),
+        BibliographyValue::Identifiers(Identifiers {
+            url: Some("https://example.test".into()),
+            ..Default::default()
+        }),
+        BibliographyValue::Abstract(Some("abstract".into())),
+        BibliographyValue::Keywords(vec!["SQL".into()]),
+    ];
+    for value in fields {
+        let target = FieldTarget {
+            paper_id: p.id(),
+            version_id: None,
+            field: value.field(),
+        };
+        let mut candidate = FieldRevision {
+            id: RevisionId::new(),
+            paper_id: p.id(),
+            version_id: None,
+            parents: vec![],
+            value: value.clone(),
+            provenance: Provenance {
+                source: MetadataSource::Crossref,
+                source_record_id: None,
+                observed_at: now(2),
+                source_updated_at: None,
+            },
+            created_at: now(2),
+        };
+        assert!(store.active_revisions(&target).unwrap().is_empty());
+        assert_eq!(
+            evaluate_update(None, &candidate).unwrap(),
+            UpdateDecision::Apply
+        );
+        // Explicitly writing the currently empty value counts as a manual clear.
+        let cleared = match value {
+            BibliographyValue::Title(_) => BibliographyValue::Title(None),
+            BibliographyValue::Authors(_) => BibliographyValue::Authors(vec![]),
+            BibliographyValue::Editors(_) => BibliographyValue::Editors(vec![]),
+            BibliographyValue::PublicationType(_) => {
+                BibliographyValue::PublicationType(PublicationType::Unknown)
+            }
+            BibliographyValue::ContainerTitle(_) => BibliographyValue::ContainerTitle(None),
+            BibliographyValue::Publisher(_) => BibliographyValue::Publisher(None),
+            BibliographyValue::Year(_) => BibliographyValue::Year(None),
+            BibliographyValue::Month(_) => BibliographyValue::Month(None),
+            BibliographyValue::Volume(_) => BibliographyValue::Volume(None),
+            BibliographyValue::Issue(_) => BibliographyValue::Issue(None),
+            BibliographyValue::Pages(_) => BibliographyValue::Pages(None),
+            BibliographyValue::ArticleNumber(_) => BibliographyValue::ArticleNumber(None),
+            BibliographyValue::Identifiers(_) => {
+                BibliographyValue::Identifiers(Identifiers::default())
+            }
+            BibliographyValue::Abstract(_) => BibliographyValue::Abstract(None),
+            BibliographyValue::Keywords(_) => BibliographyValue::Keywords(vec![]),
+        };
+        store
+            .commit_at(
+                LibraryCommand::EditBibliography {
+                    paper_id: p.id(),
+                    version_id: None,
+                    value: cleared,
+                    expected_heads: vec![],
+                },
+                now(1),
+            )
+            .unwrap();
+        let current = store.active_revisions(&target).unwrap();
+        assert_eq!(current.len(), 1);
+        candidate.parents = vec![current[0].id];
+        assert_eq!(
+            evaluate_update(Some(&current[0]), &candidate).unwrap(),
+            UpdateDecision::Propose(ProposalReason::OverwriteManualValue)
+        );
+    }
+    drop(store);
+    let store = db.open();
+    let current = store.active_revisions(&target(&p)).unwrap();
+    assert_eq!(current.len(), 1);
+    assert_eq!(current[0].value, BibliographyValue::Title(None));
+    assert_eq!(store.revisions(&target(&p)).unwrap().len(), 1);
+}
+
+#[test]
+fn clearing_a_supplied_value_keeps_its_history_and_blocks_external_overwrite() {
+    use paper_core::service::{UpdateDecision, evaluate_update};
+    let db = Database::new();
+    let store = db.open();
+    let p = paper("cleared");
+    create(&store, &p);
+    let head = store.active_revisions(&target(&p)).unwrap()[0].id;
+    let result = store
+        .commit_at(
+            LibraryCommand::EditBibliography {
+                paper_id: p.id(),
+                version_id: None,
+                value: BibliographyValue::Title(None),
+                expected_heads: vec![head],
+            },
+            now(1),
+        )
+        .unwrap();
+    drop(store);
+    let store = db.open();
+    let current = store.active_revisions(&target(&p)).unwrap();
+    assert_eq!(current[0].id, result.created_revisions[0]);
+    assert_eq!(current[0].parents, vec![head]);
+    assert_eq!(current[0].value, BibliographyValue::Title(None));
+    assert_eq!(store.revisions(&target(&p)).unwrap().len(), 2);
+    let mut external = current[0].clone();
+    external.provenance.source = MetadataSource::Publisher;
+    external.value = BibliographyValue::Title(Some("refill".into()));
+    assert_eq!(
+        evaluate_update(Some(&current[0]), &external).unwrap(),
+        UpdateDecision::Propose(ProposalReason::OverwriteManualValue)
+    );
+}

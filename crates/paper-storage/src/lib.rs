@@ -206,9 +206,12 @@ impl SqliteLibrary {
                 now,
                 &mut result,
             )?;
-            // Initial values are manual revisions too, so later external updates cannot bypass approval.
+            // Protect supplied initial values; leave unset fields available for external completion.
             for field in ALL_FIELDS {
                 let value = sql::value(paper.bibliography(), *field);
+                if !value.has_initial_value() {
+                    continue;
+                }
                 let revision = FieldRevision {
                     id: RevisionId::new(),
                     paper_id: paper.id(),
