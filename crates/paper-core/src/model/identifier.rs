@@ -138,6 +138,25 @@ impl Doi {
     }
 }
 impl ArxivId {
+    /// Identifier body without an optional version suffix.
+    pub fn base_id(&self) -> &str {
+        self.version_parts().0
+    }
+    /// Positive decimal version digits, excluding `v`; None means unspecified.
+    /// Returned as text to preserve arbitrary-length valid version numbers.
+    pub fn version(&self) -> Option<&str> {
+        self.version_parts().1
+    }
+    fn version_parts(&self) -> (&str, Option<&str>) {
+        match self
+            .0
+            .rsplit_once('v')
+            .filter(|(_, tail)| !tail.is_empty() && tail.bytes().all(|b| b.is_ascii_digit()))
+        {
+            Some((base, version)) => (base, Some(version)),
+            None => (&self.0, None),
+        }
+    }
     pub fn as_str(&self) -> &str {
         &self.0
     }

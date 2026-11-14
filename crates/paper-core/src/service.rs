@@ -3,7 +3,10 @@ mod identity;
 mod merge;
 mod update;
 
-pub use identity::{IdentityMatch, compare_identity};
+pub use identity::{
+    IdentityAssessment, IdentityEvidence, IdentityIdentifier, IdentityMatch, IdentitySide,
+    assess_identity, compare_identity,
+};
 
 pub use update::{Freshness, UpdateDecision, UpdateError, compare_freshness, evaluate_update};
 
