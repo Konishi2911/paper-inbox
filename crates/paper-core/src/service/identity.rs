@@ -5,17 +5,16 @@ pub enum IdentityMatch {
     Exact,
     RelatedVersion,
 
-    ProbableDuplicate {
-        confidence: f64,
-    },
+    ProbableDuplicate { confidence: f64 },
 
     Different,
     Unknown,
 }
 
-pub fn compare_identity(
-    lhs: &Bibliography,
-    rhs: &Bibliography,
-) -> IdentityMatch {
+/// Placeholder for document identity matching.
+///
+/// # Panics
+/// This function is not implemented yet and always panics.
+pub fn compare_identity(_lhs: &Bibliography, _rhs: &Bibliography) -> IdentityMatch {
     todo!()
 }
