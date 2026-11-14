@@ -1,0 +1,11 @@
+[package]
+name = "paper-storage"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+paper-core = { path = "../paper-core" }
+rusqlite.workspace = true
+serde.workspace = true
+thiserror.workspace = true
+

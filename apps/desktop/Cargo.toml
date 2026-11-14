@@ -1,0 +1,14 @@
+[package]
+name = "paper-desktop"
+version.workspace = true
+edition.workspace = true
+build = "build.rs"
+
+[dependencies]
+paper-core = { path = "../../crates/paper-core" }
+paper-storage = { path = "../../crates/paper-storage" }
+slint.workspace = true
+
+[build-dependencies]
+slint-build = "1"
+

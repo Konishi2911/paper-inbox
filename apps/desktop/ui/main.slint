@@ -1,0 +1,29 @@
+
+import { VerticalBox, Button } from "std-widgets.slint";
+
+export component MainWindow inherits Window {
+    title: "Paper Inbox";
+    width: 900px;
+    height: 600px;
+
+    VerticalBox {
+        padding: 20px;
+        spacing: 12px;
+
+        Text {
+            text: "Paper Inbox";
+            font-size: 28px;
+            font-weight: 700;
+        }
+
+        Text {
+            text: "Your personal research library";
+            color: #888888;
+        }
+
+        Button {
+            text: "Import Paper";
+        }
+    }
+}
+
