@@ -3231,10 +3231,14 @@ dependencies = [
 name = "paper-desktop"
 version = "0.1.0"
 dependencies = [
+ "chrono",
+ "i-slint-backend-testing",
  "paper-core",
  "paper-storage",
  "slint",
  "slint-build",
+ "thiserror 2.0.21",
+ "uuid",
 ]
 
 [[package]]
