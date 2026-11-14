@@ -1,11 +1,14 @@
+use crate::export::{self, PreparedExport};
 use crate::{
     AuthorRow, MainWindow, PaperRow,
     application::{Application, AuthorInput, PaperForm},
     config::Config,
 };
+use paper_core::service::{BibtexOptions, BibtexWarning};
 use paper_core::{command::PaperEditState, model::*, query::*};
 use paper_storage::SqliteLibrary;
 use slint::{ComponentHandle, Model, ModelRc, VecModel};
+use std::path::PathBuf;
 use std::{
     sync::mpsc::{self, Sender},
     thread,
@@ -18,12 +21,20 @@ enum Request {
     Open(PaperId),
     Save(PaperForm),
     Delete(bool),
+    PrepareExport {
+        ids: Vec<PaperId>,
+        path: PathBuf,
+        options: BibtexOptions,
+    },
+    ConfirmExport,
+    CancelExport,
     Shutdown,
 }
 struct EditorView {
     form: PaperForm,
     id: Option<PaperId>,
     deleted: bool,
+    identifier_warning: String,
 }
 #[derive(Default)]
 struct Reply {
@@ -34,12 +45,15 @@ struct Reply {
     saved: bool,
     load_required: bool,
     offset: Option<i32>,
+    export_preview: Option<(String, String, String, bool)>,
+    clear_export: bool,
 }
 struct Worker {
     config: Config,
     app: Option<Application>,
     editing: Option<PaperEditState>,
     query: PaperQuery,
+    pending_export: Option<PreparedExport>,
 }
 impl Worker {
     fn handle(&mut self, request: Request) -> Reply {
@@ -51,6 +65,7 @@ impl Worker {
                 Ok(store) => {
                     self.app = Some(Application { store });
                     self.editing = None;
+                    self.pending_export = None;
                     match self.app.as_ref().unwrap().list(&self.query) {
                         Ok(list) => Reply {
                             list: Some(list),
@@ -58,6 +73,7 @@ impl Worker {
                                 form: PaperForm::default(),
                                 id: None,
                                 deleted: false,
+                                identifier_warning: String::new(),
                             }),
                             ready: Some(true),
                             message: "準備ができました。".into(),
@@ -106,6 +122,7 @@ impl Worker {
                         form: PaperForm::default(),
                         id: None,
                         deleted: false,
+                        identifier_warning: String::new(),
                     }),
                     message: "新しい文献を登録できます。".into(),
                     ..Default::default()
@@ -154,6 +171,73 @@ impl Worker {
                         message: e.to_string(),
                         ..Default::default()
                     },
+                }
+            }
+            Request::PrepareExport { ids, path, options } => {
+                self.pending_export = None;
+                match export::prepare(app, &ids, &options, &path, &self.config.database) {
+                    Ok(prepared) => {
+                        let summary = format!(
+                            "{}件の保存済み文献 / 警告{}件 / {}",
+                            prepared.count,
+                            prepared.output.warnings.len(),
+                            prepared.path.display()
+                        );
+                        let messages = warning_messages(&prepared);
+                        let preview = (
+                            prepared.output.content.clone(),
+                            summary,
+                            messages,
+                            prepared.replaces_file(),
+                        );
+                        self.pending_export = Some(prepared);
+                        Reply {
+                            export_preview: Some(preview),
+                            message:
+                                "出力内容を確認してください。未保存の編集内容は含めていません。"
+                                    .into(),
+                            ..Default::default()
+                        }
+                    }
+                    Err(e) => Reply {
+                        message: e.to_string(),
+                        clear_export: true,
+                        ..Default::default()
+                    },
+                }
+            }
+            Request::ConfirmExport => {
+                let Some(prepared) = self.pending_export.take() else {
+                    return Reply {
+                        message: "出力をもう一度準備してください。".into(),
+                        clear_export: true,
+                        ..Default::default()
+                    };
+                };
+                match prepared.publish() {
+                    Ok(()) => Reply {
+                        message: format!(
+                            "{}件を {} に出力しました。警告{}件。",
+                            prepared.count,
+                            prepared.path.display(),
+                            prepared.output.warnings.len()
+                        ),
+                        clear_export: true,
+                        ..Default::default()
+                    },
+                    Err(e) => Reply {
+                        message: e.to_string(),
+                        clear_export: true,
+                        ..Default::default()
+                    },
+                }
+            }
+            Request::CancelExport => {
+                self.pending_export = None;
+                Reply {
+                    message: "出力をキャンセルしました。ファイルは変更していません。".into(),
+                    clear_export: true,
+                    ..Default::default()
                 }
             }
             Request::Initialize | Request::Shutdown => unreachable!(),
@@ -209,6 +293,18 @@ fn view(state: &PaperEditState) -> EditorView {
         form: PaperForm::from_paper(&state.paper),
         id: Some(state.paper.id()),
         deleted: state.paper.deleted_at().is_some(),
+        identifier_warning: if state.paper.bibliography().identifiers.raw_doi.is_some()
+            || state
+                .paper
+                .bibliography()
+                .identifiers
+                .raw_arxiv_id
+                .is_some()
+        {
+            "以前の識別子に形式の問題があります。元の値は保持しています。識別子を変更するときは両方の入力を確認してください。不正な値は出力から除外します。".into()
+        } else {
+            String::new()
+        },
     }
 }
 
@@ -233,6 +329,7 @@ pub fn attach(ui: &MainWindow, config: Config) -> Controller {
             config,
             app: None,
             editing: None,
+            pending_export: None,
             query: PaperQuery {
                 pagination: Pagination {
                     limit: 20,
@@ -298,6 +395,79 @@ pub fn attach(ui: &MainWindow, config: Config) -> Controller {
     ui.on_delete_paper(move |deleted| {
         if let Some(ui) = weak.upgrade() {
             dispatch(&ui, &tx, Request::Delete(deleted));
+        }
+    });
+    let weak = ui.as_weak();
+    ui.on_select_paper(move |id, selected| {
+        if let Some(ui) = weak.upgrade() {
+            let mut ids: Vec<_> = ui.get_selected_ids().iter().collect();
+            if selected {
+                if !ids.contains(&id) {
+                    ids.push(id.clone());
+                }
+            } else {
+                ids.retain(|v| v != &id);
+            }
+            ui.set_selected_count(ids.len() as i32);
+            ui.set_selected_ids(ModelRc::new(VecModel::from(ids)));
+            let model = ui.get_papers();
+            if let Some(rows) = model.as_any().downcast_ref::<VecModel<PaperRow>>() {
+                for i in 0..rows.row_count() {
+                    if let Some(mut row) = rows.row_data(i)
+                        && row.id == id
+                    {
+                        row.selected = selected;
+                        rows.set_row_data(i, row);
+                    }
+                }
+            }
+        }
+    });
+    let tx = sender.clone();
+    let weak = ui.as_weak();
+    ui.on_prepare_export(move || {
+        if let Some(ui) = weak.upgrade() {
+            let ids = ui
+                .get_selected_ids()
+                .iter()
+                .map(|s| uuid::Uuid::parse_str(&s).map(PaperId::from_uuid))
+                .collect::<Result<Vec<_>, _>>();
+            let ids = match ids {
+                Ok(ids) => ids,
+                Err(_) => {
+                    ui.set_status("選択内容を確認してください。".into());
+                    return;
+                }
+            };
+            let options = BibtexOptions {
+                include_abstract: ui.get_export_abstract(),
+                include_doi: ui.get_export_doi(),
+                include_url: ui.get_export_url(),
+                include_keywords: ui.get_export_keywords(),
+            };
+            dispatch(
+                &ui,
+                &tx,
+                Request::PrepareExport {
+                    ids,
+                    path: PathBuf::from(ui.get_export_path().as_str()),
+                    options,
+                },
+            );
+        }
+    });
+    let tx = sender.clone();
+    let weak = ui.as_weak();
+    ui.on_confirm_export(move || {
+        if let Some(ui) = weak.upgrade() {
+            dispatch(&ui, &tx, Request::ConfirmExport);
+        }
+    });
+    let tx = sender.clone();
+    let weak = ui.as_weak();
+    ui.on_cancel_export(move || {
+        if let Some(ui) = weak.upgrade() {
+            dispatch(&ui, &tx, Request::CancelExport);
         }
     });
     let weak = ui.as_weak();
@@ -399,6 +569,8 @@ pub fn form_from_ui(ui: &MainWindow) -> PaperForm {
         publication_type: ui.get_publication_type().max(0) as usize,
         container_title: ui.get_container_title().into(),
         year: ui.get_year().into(),
+        doi: ui.get_doi().into(),
+        arxiv_id: ui.get_arxiv_id().into(),
         notes: ui.get_notes().into(),
         reading_status: ui.get_reading_status().max(0) as usize,
         favorite: ui.get_favorite(),
@@ -447,6 +619,9 @@ fn apply_reply(ui: &MainWindow, reply: Reply) {
         ui.set_paper_title(f.title.into());
         ui.set_container_title(f.container_title.into());
         ui.set_year(f.year.into());
+        ui.set_doi(f.doi.into());
+        ui.set_arxiv_id(f.arxiv_id.into());
+        ui.set_identifier_warning(editor.identifier_warning.into());
         ui.set_publication_type(f.publication_type as i32);
         ui.set_notes(f.notes.into());
         ui.set_reading_status(f.reading_status as i32);
@@ -488,6 +663,10 @@ fn apply_reply(ui: &MainWindow, reply: Reply) {
             .papers
             .into_iter()
             .map(|p| PaperRow {
+                selected: ui
+                    .get_selected_ids()
+                    .iter()
+                    .any(|id| id.as_str() == p.id.to_string()),
                 id: p.id.to_string().into(),
                 title: p.title.unwrap_or_default().into(),
                 citation_key: p.citation_key.as_str().into(),
@@ -511,6 +690,64 @@ fn apply_reply(ui: &MainWindow, reply: Reply) {
         ui.set_total(list.total_count.min(i32::MAX as usize) as i32);
         ui.set_papers(ModelRc::new(VecModel::from(rows)));
     }
+    if let Some((content, summary, warnings, replaces)) = reply.export_preview {
+        ui.set_export_preview(content.into());
+        ui.set_export_summary(summary.into());
+        ui.set_export_warnings(warnings.into());
+        ui.set_export_replaces(replaces);
+        ui.set_export_confirm(true);
+    }
+    if reply.clear_export {
+        ui.set_export_confirm(false);
+    }
     ui.set_status(reply.message.into());
     ui.set_busy(false);
+}
+
+fn warning_messages(prepared: &PreparedExport) -> String {
+    prepared
+        .output
+        .warnings
+        .iter()
+        .map(|warning| {
+            let (id, text) = match warning {
+                BibtexWarning::MissingRequiredField { paper_id, field } => (
+                    *paper_id,
+                    format!(
+                        "必須項目がありません: {}",
+                        match *field {
+                            "author" => "著者",
+                            "title" => "タイトル",
+                            "journal" => "掲載誌",
+                            "year" => "出版年",
+                            "booktitle" => "書籍名・会議名",
+                            "publisher" => "出版社",
+                            "school" => "学校名（入力未対応）",
+                            "institution" => "機関名（入力未対応）",
+                            "author/editor" => "著者または編集者",
+                            other => other,
+                        }
+                    ),
+                ),
+                BibtexWarning::FallbackEntryType { paper_id } => {
+                    (*paper_id, "専用の種別がないため misc で出力します。".into())
+                }
+                BibtexWarning::InvalidStoredIdentifier { paper_id, field } => (
+                    *paper_id,
+                    format!("形式に問題のある既存の {field} は出力しません。"),
+                ),
+                BibtexWarning::EmptyContributor { paper_id, role } => {
+                    (*paper_id, format!("名前が空の {role} は出力しません。"))
+                }
+            };
+            let label = prepared
+                .labels
+                .iter()
+                .find(|(key, _)| *key == id)
+                .map(|(_, s)| s.as_str())
+                .unwrap_or("文献");
+            format!("{label}: {text}")
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
 }

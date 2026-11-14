@@ -73,6 +73,8 @@ pub struct PaperForm {
     pub publication_type: usize,
     pub container_title: String,
     pub year: String,
+    pub doi: String,
+    pub arxiv_id: String,
     pub notes: String,
     pub reading_status: usize,
     pub favorite: bool,
@@ -104,6 +106,8 @@ impl PaperForm {
                 .year
                 .map(|n| n.to_string())
                 .unwrap_or_default(),
+            doi: b.identifiers.doi_text().unwrap_or_default().into(),
+            arxiv_id: b.identifiers.arxiv_text().unwrap_or_default().into(),
             notes: m.notes.clone(),
             reading_status: match m.reading_status {
                 ReadingStatus::Unread => 0,
@@ -212,7 +216,35 @@ impl Application {
                 "引用キーは英数字と _ - : . で入力してください。空欄にはできません。".into(),
             )
         })?;
-        let b = form.bibliography()?;
+        let mut b = form.bibliography()?;
+        let original = state.map(|s| PaperForm::from_paper(&s.paper));
+        let identifiers_changed = original
+            .as_ref()
+            .is_none_or(|old| old.doi != form.doi || old.arxiv_id != form.arxiv_id);
+        if identifiers_changed {
+            b.identifiers.doi = if form.doi.trim().is_empty() {
+                None
+            } else {
+                Some(
+                    Doi::parse(&form.doi)
+                        .map_err(|_| AppError::Input("DOI の形式を確認してください。".into()))?,
+                )
+            };
+            b.identifiers.arxiv_id =
+                if form.arxiv_id.trim().is_empty() {
+                    None
+                } else {
+                    Some(ArxivId::parse(&form.arxiv_id).map_err(|_| {
+                        AppError::Input("arXiv ID の形式を確認してください。".into())
+                    })?)
+                };
+            if let Some(state) = state {
+                let old = &state.paper.bibliography().identifiers;
+                b.identifiers.isbn = old.isbn.clone();
+                b.identifiers.issn = old.issn.clone();
+                b.identifiers.url = old.url.clone();
+            }
+        }
         let now = Utc::now();
         match state {
             None => {
@@ -238,6 +270,10 @@ impl Application {
                     });
                 }
                 let edits = [
+                    (
+                        identifiers_changed,
+                        BibliographyValue::Identifiers(b.identifiers),
+                    ),
                     (
                         form.title != original.title,
                         BibliographyValue::Title(b.title),

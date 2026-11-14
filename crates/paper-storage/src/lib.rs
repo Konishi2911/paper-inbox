@@ -106,6 +106,13 @@ impl SqliteLibrary {
     pub fn commit_at(&self, command: LibraryCommand, now: DateTime<Utc>) -> Result<CommitResult> {
         self.commit_batch_at(vec![command], &[], now)
     }
+    pub fn get_many(&self, ids: &[PaperId]) -> Result<Vec<Paper>> {
+        let guard = self.lock()?;
+        let tx = guard.unchecked_transaction()?;
+        ids.iter()
+            .map(|id| sql::get(&tx, *id)?.ok_or(StorageError::NotFound(*id)))
+            .collect()
+    }
     pub fn load_edit_state(&self, id: PaperId) -> Result<PaperEditState> {
         let guard = self.lock()?;
         let tx = guard.unchecked_transaction()?;

@@ -3237,6 +3237,7 @@ dependencies = [
  "i-slint-backend-testing",
  "paper-core",
  "paper-storage",
+ "rusqlite",
  "slint",
  "slint-build",
  "thiserror 2.0.21",

@@ -5,6 +5,7 @@ fn wait(ui: &MainWindow) {
     let weak = ui.as_weak();
     let start = Instant::now();
     let timer = slint::Timer::default();
+    let completed = std::rc::Rc::new(std::cell::Cell::new(false));
     timer.start(
         slint::TimerMode::Repeated,
         Duration::from_millis(5),
@@ -15,7 +16,7 @@ fn wait(ui: &MainWindow) {
                 "Timed out: {}",
                 ui.get_status()
             );
-            if !ui.get_busy() {
+            if !ui.get_busy() && !completed.replace(true) {
                 slint::quit_event_loop().unwrap();
             }
         },
@@ -51,6 +52,54 @@ fn real_window_callbacks_cover_registration_validation_edit_restart_and_trash() 
     assert!(!window.get_dirty());
     assert_eq!(window.get_total(), 1);
     let id = window.get_editing_id();
+    window.set_doi("https://doi.org/10.1000/ABC".into());
+    window.set_arxiv_id("arXiv:2401.12345v2".into());
+    window.set_dirty(true);
+    window.invoke_save();
+    wait(&window);
+    assert!(!window.get_dirty(), "{}", window.get_status());
+    assert_eq!(window.get_doi(), "10.1000/abc");
+    assert_eq!(window.get_arxiv_id(), "2401.12345v2");
+    window.invoke_select_paper(id.clone(), true);
+    assert_eq!(window.get_selected_count(), 1);
+    let output = path.with_extension("bib");
+    window.set_export_path(output.to_string_lossy().as_ref().into());
+    window.set_paper_title("not saved".into());
+    window.set_dirty(true);
+    window.invoke_prepare_export();
+    wait(&window);
+    assert!(window.get_export_confirm());
+    assert!(!window.get_export_replaces());
+    assert!(!output.exists());
+    assert!(window.get_export_preview().contains("Window test"));
+    assert!(!window.get_export_preview().contains("not saved"));
+    assert!(window.get_dirty());
+    window.invoke_confirm_export();
+    wait(&window);
+    assert!(output.exists());
+    assert!(!window.get_export_confirm());
+    assert!(window.get_dirty());
+    let original = std::fs::read(&output).unwrap();
+    window.invoke_prepare_export();
+    wait(&window);
+    assert!(window.get_export_replaces());
+    window.invoke_cancel_export();
+    wait(&window);
+    assert_eq!(std::fs::read(&output).unwrap(), original);
+    window.invoke_prepare_export();
+    wait(&window);
+    std::fs::write(&output, "other writer").unwrap();
+    window.invoke_confirm_export();
+    wait(&window);
+    assert!(window.get_status().contains("変更されています"));
+    assert_eq!(std::fs::read_to_string(&output).unwrap(), "other writer");
+    window.invoke_prepare_export();
+    wait(&window);
+    window.invoke_confirm_export();
+    wait(&window);
+    assert_ne!(std::fs::read(&output).unwrap(), b"other writer");
+    std::fs::remove_file(output).unwrap();
+
     window.set_paper_title("Edited from UI".into());
     window.set_year("invalid".into());
     window.set_dirty(true);
@@ -108,6 +157,27 @@ fn real_window_callbacks_cover_registration_validation_edit_restart_and_trash() 
     window.invoke_search();
     wait(&window);
     assert_eq!(window.get_total(), 1);
+    {
+        let connection = rusqlite::Connection::open(&path).unwrap();
+        connection.execute("UPDATE bibliographies SET doi='legacy invalid DOI' WHERE id=(SELECT bibliography_id FROM paper_snapshots WHERE id=(SELECT snapshot_id FROM papers WHERE id=?1))",[id.as_str()]).unwrap();
+    }
+    window.invoke_navigate(1, id.clone());
+    wait(&window);
+    assert!(!window.get_identifier_warning().is_empty());
+    assert_eq!(window.get_doi(), "legacy invalid DOI");
+    window.set_notes("notes preserve legacy identifier".into());
+    window.set_dirty(true);
+    window.invoke_save();
+    wait(&window);
+    assert!(!window.get_dirty());
+    assert_eq!(window.get_doi(), "legacy invalid DOI");
+    window.set_doi("DOI:10.1000/FIXED".into());
+    window.set_dirty(true);
+    window.invoke_save();
+    wait(&window);
+    assert!(!window.get_dirty());
+    assert_eq!(window.get_doi(), "10.1000/fixed");
+    assert!(window.get_identifier_warning().is_empty());
     drop(controller);
     drop(window);
     std::fs::remove_file(&path).unwrap();
