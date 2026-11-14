@@ -127,3 +127,11 @@ mod tests {
         assert_eq!(deserialize::<ArxivId>("2401.12345v2").unwrap().0, "2401.12345v2");
     }
 }
+
+
+impl Doi {
+    pub fn as_str(&self) -> &str { &self.0 }
+}
+impl ArxivId {
+    pub fn as_str(&self) -> &str { &self.0 }
+}

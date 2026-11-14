@@ -61,6 +61,7 @@ pub use user_metadata::{
 pub use paper::{
     Paper,
     PaperVersion,
+    PaperError,
 };
 
 pub use attachment::{
