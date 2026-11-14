@@ -17,3 +17,5 @@ Schema version 2 is installed transactionally. Version 1 upgrades by adding loca
 Verification: `cargo test -p paper-core -p paper-storage`. Integration tests use isolated real SQLite files, reopen them, and inject an SQL trigger failure after state changes to verify rollback. They also cover independent/concurrent connections, history, event immutability, upload acknowledgements, every bibliography field and unsupported operations.
 
 Atomic form saves use load_edit_state and commit_batch_at. The expected full document and every field head are checked under BEGIN IMMEDIATE before any command is applied. A mismatch rejects the entire batch. All command results, history and outbox changes roll back together on failure. Empty unchanged batches create no events.
+
+DOI/arXiv legacy strings use compatibility restoration: invalid strings are retained as raw values with warnings, and unrelated saves preserve them. New inputs and identifier edits use validated types. No schema migration or automatic historical rewrite is required.

@@ -72,7 +72,7 @@ pub fn write_bibliography(db: &Connection, id: &str, b: &Bibliography) -> Result
     db.execute("INSERT INTO bibliographies VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17)",
         params![id,b.title,publication_name(b.publication.kind),b.publication.container_title,b.publication.publisher,
         b.publication.year,b.publication.month,b.publication.volume,b.publication.issue,b.publication.pages,
-        b.publication.article_number, b.identifiers.doi.as_ref().map(Doi::as_str), b.identifiers.arxiv_id.as_ref().map(ArxivId::as_str),
+        b.publication.article_number, b.identifiers.doi_text(), b.identifiers.arxiv_text(),
         b.identifiers.isbn,b.identifiers.issn,b.identifiers.url,b.abstract_text])?;
     for (role, people) in [("author", &b.authors), ("editor", &b.editors)] {
         for (position, c) in people.iter().enumerate() {
@@ -107,8 +107,8 @@ pub fn read_bibliography(db: &Connection, id: &str) -> Result<Bibliography> {
         }, r.get::<_,String>(1)?,r.get::<_,Option<String>>(10)?,r.get::<_,Option<String>>(11)?))
     })?;
     b.0.publication.kind = publication(b.1)?;
-    b.0.identifiers.doi = b.2.map(decode).transpose()?;
-    b.0.identifiers.arxiv_id = b.3.map(decode).transpose()?;
+    b.0.identifiers.restore_doi(b.2);
+    b.0.identifiers.restore_arxiv(b.3);
     let mut stmt = db.prepare("SELECT role,kind,given_name,name,orcid FROM contributors WHERE bibliography_id=?1 ORDER BY role,position")?;
     let rows = stmt.query_map([id], |r| {
         Ok((

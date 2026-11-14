@@ -146,6 +146,11 @@ impl SqliteLibrary {
         let mut result = CommitResult::default();
         let (mut paper, kind, revision) = match command {
             LibraryCommand::CreatePaper { paper } => {
+                paper
+                    .bibliography()
+                    .identifiers
+                    .validate_input()
+                    .map_err(PaperError::from)?;
                 if sql::get(tx, paper.id())?.is_some() {
                     return Err(StorageError::DuplicatePaper(paper.id()));
                 }

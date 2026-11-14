@@ -36,6 +36,8 @@ pub struct PaperVersion {
 pub enum PaperError {
     #[error("Publication month must be between 1 and 12")]
     InvalidMonth,
+    #[error(transparent)]
+    Identifier(#[from] super::IdentifierError),
     #[error("Publication year must be greater than zero")]
     InvalidYear,
     #[error("Cannot edit a deleted paper")]
@@ -51,6 +53,7 @@ impl Paper {
         bibliography: Bibliography,
         now: DateTime<Utc>,
     ) -> Result<Self, PaperError> {
+        bibliography.identifiers.validate_input()?;
         Self::from_parts(
             id,
             citation_key,
@@ -129,6 +132,9 @@ impl Paper {
         now: DateTime<Utc>,
     ) -> Result<(), PaperError> {
         self.check_edit(now)?;
+        if let BibliographyValue::Identifiers(ids) = value {
+            ids.validate_input()?;
+        }
         let mut next = self.bibliography.clone();
         next.apply(value);
         next.validate()?;
@@ -180,6 +186,7 @@ impl Paper {
 
 impl Bibliography {
     pub fn validate(&self) -> Result<(), PaperError> {
+        self.identifiers.validate()?;
         if self
             .publication
             .month

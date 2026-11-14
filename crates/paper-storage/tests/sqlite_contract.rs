@@ -100,6 +100,7 @@ fn paper(key: &str) -> Paper {
             isbn: Some("isbn".into()),
             issn: Some("issn".into()),
             url: Some("https://example.test/paper".into()),
+            ..Default::default()
         },
         abstract_text: Some("日本語の概要".into()),
         keywords: vec!["Rust".into(), "SQL".into(), "Rust".into()],
@@ -804,4 +805,103 @@ fn deleted_only_and_all_queries_respect_their_contract() {
     assert_eq!(result.papers[0].id, p.id());
     query.filter.deletion = DeletionFilter::All;
     assert_eq!(store.search(&query).unwrap().total_count, 2);
+}
+
+#[test]
+fn invalid_legacy_identifiers_remain_readable_and_survive_unrelated_edits() {
+    let db = Database::new();
+    let store = db.open();
+    let p = paper("legacy-identifiers");
+    create(&store, &p);
+    let conn = db.raw();
+    let bibliography:String=conn.query_row("SELECT bibliography_id FROM paper_snapshots WHERE id=(SELECT snapshot_id FROM papers WHERE id=?1)",[p.id().to_string()],|r|r.get(0)).unwrap();
+    conn.execute(
+        "UPDATE bibliographies SET doi='bad DOI',arxiv_id='bad arxiv' WHERE id=?1",
+        [&bibliography],
+    )
+    .unwrap();
+    let state = store.load_edit_state(p.id()).unwrap();
+    let ids = &state.paper.bibliography().identifiers;
+    assert!(ids.doi.is_none() && ids.arxiv_id.is_none());
+    assert_eq!(ids.raw_doi.as_deref(), Some("bad DOI"));
+    assert_eq!(ids.raw_arxiv_id.as_deref(), Some("bad arxiv"));
+    assert!(!store.pending_events(1000).unwrap().is_empty());
+    store
+        .commit_at(
+            LibraryCommand::UpdateNotes {
+                paper_id: p.id(),
+                notes: "keep legacy values".into(),
+            },
+            now(1),
+        )
+        .unwrap();
+    let loaded = store.get(p.id()).unwrap().unwrap();
+    assert_eq!(
+        loaded.bibliography().identifiers.raw_doi.as_deref(),
+        Some("bad DOI")
+    );
+    let current:Option<String>=conn.query_row("SELECT doi FROM bibliographies WHERE id=(SELECT bibliography_id FROM paper_snapshots WHERE id=(SELECT snapshot_id FROM papers WHERE id=?1))",[p.id().to_string()],|r|r.get(0)).unwrap();
+    assert_eq!(current.as_deref(), Some("bad DOI"));
+    let target = FieldTarget {
+        paper_id: p.id(),
+        version_id: None,
+        field: BibliographyField::Identifiers,
+    };
+    let head = store.active_revisions(&target).unwrap()[0].id;
+    assert!(
+        store
+            .commit_at(
+                LibraryCommand::EditBibliography {
+                    paper_id: p.id(),
+                    version_id: None,
+                    value: BibliographyValue::Identifiers(
+                        loaded.bibliography().identifiers.clone()
+                    ),
+                    expected_heads: vec![head]
+                },
+                now(2)
+            )
+            .is_err()
+    );
+    let mut repaired = loaded.bibliography().identifiers.clone();
+    repaired.raw_doi = None;
+    repaired.raw_arxiv_id = None;
+    repaired.doi = Some(Doi::parse(" DOI:10.1000/REPAIRED ").unwrap());
+    store
+        .commit_at(
+            LibraryCommand::EditBibliography {
+                paper_id: p.id(),
+                version_id: None,
+                value: BibliographyValue::Identifiers(repaired),
+                expected_heads: vec![head],
+            },
+            now(2),
+        )
+        .unwrap();
+    assert_eq!(
+        store
+            .get(p.id())
+            .unwrap()
+            .unwrap()
+            .bibliography()
+            .identifiers
+            .doi
+            .as_ref()
+            .unwrap()
+            .as_str(),
+        "10.1000/repaired"
+    );
+    let old: String = conn
+        .query_row(
+            "SELECT doi FROM bibliographies WHERE id=?1",
+            [&bibliography],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(old, "bad DOI");
+    let previous = store.revisions(&target).unwrap();
+    assert_eq!(
+        previous[0].value,
+        BibliographyValue::Identifiers(ids.clone())
+    );
 }

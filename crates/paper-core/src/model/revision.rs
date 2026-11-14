@@ -130,6 +130,8 @@ impl BibliographyValue {
             Self::Identifiers(v) => [
                 v.doi.as_ref().map(super::Doi::as_str),
                 v.arxiv_id.as_ref().map(super::ArxivId::as_str),
+                v.raw_doi.as_deref(),
+                v.raw_arxiv_id.as_deref(),
                 v.isbn.as_deref(),
                 v.issn.as_deref(),
                 v.url.as_deref(),

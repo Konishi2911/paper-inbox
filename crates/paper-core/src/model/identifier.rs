@@ -2,23 +2,18 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[serde(transparent)]
-// TODO: Add identifier validation and route deserialization through TryFrom<String>.
+#[serde(try_from = "String")]
 pub struct Doi(String);
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[serde(transparent)]
-// TODO: Add identifier validation and route deserialization through TryFrom<String>.
+#[serde(try_from = "String")]
 pub struct ArxivId(String);
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(try_from = "String")]
 pub struct CitationKey(String);
 
-#[derive(
-    Clone, Copy, Debug, PartialEq, Eq, Hash,
-    Serialize, Deserialize,
-)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(transparent)]
 pub struct ContentHash([u8; 32]);
 
@@ -42,6 +37,10 @@ pub enum IdentifierError {
 
     #[error("Invalid content hash: {0}")]
     InvalidContentHash(String),
+    #[error("An identifier has both a validated and a raw value")]
+    AmbiguousIdentifier,
+    #[error("Unvalidated legacy identifiers cannot be used as new input")]
+    UnvalidatedIdentifier,
 }
 
 impl ContentHash {
@@ -53,7 +52,6 @@ impl ContentHash {
         &self.0
     }
 }
-
 
 impl CitationKey {
     pub fn parse(value: &str) -> Result<Self, IdentifierError> {
@@ -70,15 +68,12 @@ impl TryFrom<String> for CitationKey {
 
     fn try_from(value: String) -> Result<Self, Self::Error> {
         let valid = !value.is_empty()
-            && value.chars().all(|c| {
-                c.is_ascii_alphanumeric()
-                    || matches!(c, '_' | '-' | ':' | '.')
-            });
+            && value
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '-' | ':' | '.'));
 
         if !valid {
-            return Err(
-                IdentifierError::InvalidCitationKey(value)
-            );
+            return Err(IdentifierError::InvalidCitationKey(value));
         }
 
         Ok(Self(value))
@@ -117,21 +112,36 @@ mod tests {
         }
         for value in ["", "Smith 2024", "key/part", "日本語"] {
             let error = deserialize::<CitationKey>(value).unwrap_err();
-            assert_eq!(error.to_string(), CitationKey::parse(value).unwrap_err().to_string());
+            assert_eq!(
+                error.to_string(),
+                CitationKey::parse(value).unwrap_err().to_string()
+            );
         }
     }
 
     #[test]
-    fn unvalidated_identifiers_deserialize_as_strings() {
-        assert_eq!(deserialize::<Doi>("10.1000/example").unwrap().0, "10.1000/example");
-        assert_eq!(deserialize::<ArxivId>("2401.12345v2").unwrap().0, "2401.12345v2");
+    fn validated_identifiers_deserialize_as_strings() {
+        assert_eq!(
+            deserialize::<Doi>("10.1000/example").unwrap().0,
+            "10.1000/example"
+        );
+        assert_eq!(
+            deserialize::<ArxivId>("2401.12345v2").unwrap().0,
+            "2401.12345v2"
+        );
     }
 }
 
-
 impl Doi {
-    pub fn as_str(&self) -> &str { &self.0 }
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
 }
 impl ArxivId {
-    pub fn as_str(&self) -> &str { &self.0 }
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
 }
+
+#[path = "identifier_parsing.rs"]
+mod parsing;
