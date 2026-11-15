@@ -1,12 +1,33 @@
-import { VerticalBox, HorizontalBox, Button, LineEdit, TextEdit, ComboBox, CheckBox, ScrollView } from "std-widgets.slint";
+import { VerticalBox, HorizontalBox, Button, LineEdit, TextEdit, ComboBox, CheckBox, ScrollView, AboutSlint } from "std-widgets.slint";
 export struct PaperRow { selected:bool, id:string, title:string, authors:string, year:string, citation-key:string }
 export struct AuthorRow { kind:int, given:string, name:string, orcid:string }
 export struct CandidateRow { id:string, label:string, details:string, held:bool }
 export struct ProposalRow { id:string, label:string, current:string, proposed:string, reason:string, source:string, stale:bool }
 export struct VersionRow { id:string, label:string, details:string, canonical:bool }
+component AboutDialog inherits FocusScope {
+    callback close();
+    width:520px;height:360px;
+    init=>{self.focus();}
+    key-pressed(event)=>{
+        if (event.text==Key.Escape) {root.close();return accept;}
+        return reject;
+    }
+    Rectangle {
+        background:#ffffff;border-radius:12px;
+        VerticalBox {
+            padding:24px;spacing:12px;
+            Text {text:"Paper Inbox";font-size:24px;font-weight:700;color:#20314f;}
+            Text {text:"ローカルで管理する文献ライブラリ";wrap:word-wrap;}
+            Text {text:"独自コード: MIT OR Apache-2.0\nCopyright © 2026 Paper Inbox contributors";wrap:word-wrap;font-size:13px;}
+            AboutSlint {height:110px;}
+            Button {text:"閉じる";clicked=>{root.close();}}
+        }
+    }
+}
 export component MainWindow inherits Window {
     title:"Paper Inbox"; preferred-width:1360px; preferred-height:900px; min-width:1080px; min-height:680px;
     background:#f4f6fa; default-font-size:14px;
+    in-out property <bool> about-open:false;
     in-out property <bool> sidebar-collapsed:false;
     in-out property <bool> export-settings-open:false;
 
@@ -74,7 +95,7 @@ export component MainWindow inherits Window {
     in-out property <[VersionRow]> version-rows;
     in-out property <bool> associate-confirm:false;
     in-out property <string> associate-id;
-    property <bool> metadata-operable:root.ready && !root.busy && !root.confirm-discard && !root.load-required;
+    property <bool> metadata-operable:root.ready && !root.busy && !root.confirm-discard && !root.about-open && !root.load-required;
     in-out property <string> candidate-id;
     in-out property <string> candidate-observed;
     in-out property <int> candidate-source:0;
@@ -99,7 +120,7 @@ export component MainWindow inherits Window {
     callback associate-candidate(string);
     callback resolve-metadata(string,bool);
     callback propose-canonical(string);
-    property <bool> operable:root.ready && !root.busy && !root.confirm-discard && !root.export-confirm;
+    property <bool> operable:root.ready && !root.busy && !root.confirm-discard && !root.about-open && !root.export-confirm;
     property <bool> editable:root.operable && !root.editor-deleted && !root.load-required;
     in-out property <bool> confirm-discard:false;
     in-out property <bool> confirm-delete:false;
@@ -130,7 +151,7 @@ export component MainWindow inherits Window {
         padding:0px; spacing:0px;
         HorizontalBox {
             padding:14px;spacing:12px;
-            Button {accessible-label:root.sidebar-collapsed ? "メニューを展開" : "メニューを折りたたむ";text:root.sidebar-collapsed ? "☰" : "‹";width:38px;clicked=>{root.sidebar-collapsed=!root.sidebar-collapsed;}}
+            Button {enabled:!root.about-open;accessible-label:root.sidebar-collapsed ? "メニューを展開" : "メニューを折りたたむ";text:root.sidebar-collapsed ? "☰" : "‹";width:38px;clicked=>{root.sidebar-collapsed=!root.sidebar-collapsed;}}
             Text {text:"Paper Inbox";font-size:22px;font-weight:700;color:#20314f;}
             Text {text:root.busy ? "処理中…" : "文献ライブラリ";horizontal-alignment:right;color:#66758b;}
         }
@@ -151,7 +172,8 @@ export component MainWindow inherits Window {
                     Button {text:root.sidebar-collapsed ? "出" : "BibTeX 出力 ("+root.selected-count+")";enabled:root.operable;clicked=>{root.export-settings-open=!root.export-settings-open;}}
                     Rectangle {vertical-stretch:1;background:transparent;}
                     if !root.sidebar-collapsed : Text {text:root.database-path;wrap:word-wrap;font-size:11px;color:#66758b;}
-                    Button {text:root.sidebar-collapsed ? "↻" : "保存先に再接続";enabled:!root.busy && !root.export-confirm;clicked=>{root.request-navigation(2,"");}}
+                    Button {accessible-label:"このアプリについて";text:root.sidebar-collapsed ? "i" : "このアプリについて";enabled:!root.about-open && !root.confirm-discard && !root.confirm-delete && !root.export-confirm;clicked=>{root.about-open=true;}}
+                    Button {text:root.sidebar-collapsed ? "↻" : "保存先に再接続";enabled:!root.busy && !root.about-open && !root.export-confirm;clicked=>{root.request-navigation(2,"");}}
                 }
             }
             Rectangle {
@@ -244,17 +266,17 @@ export component MainWindow inherits Window {
                     if root.lookup-open && !root.export-confirm && !root.export-settings-open : VerticalBox {
                         Text {text:root.lookup-new ? "識別子から文献を登録" : "識別子から更新候補を取得";font-size:20px;}
                         Text {text:"DOI は Crossref、arXiv ID は arXiv へ送信します。取得結果を確認するまで保存しません。";wrap:word-wrap;}
-                        LineEdit {enabled:root.ready && !root.busy && !root.confirm-discard;text<=>root.lookup-identifier;placeholder-text:"DOI / arXiv ID または公式URL";edited(v)=>{root.lookup-dirty=true;root.lookup-has-result=false;}}
-                        Button {text:"書誌情報を取得";enabled:root.ready && !root.busy && !root.confirm-discard && !root.load-required;clicked=>{root.fetch-lookup();}}
+                        LineEdit {enabled:root.ready && !root.busy && !root.confirm-discard && !root.about-open;text<=>root.lookup-identifier;placeholder-text:"DOI / arXiv ID または公式URL";edited(v)=>{root.lookup-dirty=true;root.lookup-has-result=false;}}
+                        Button {text:"書誌情報を取得";enabled:root.ready && !root.busy && !root.confirm-discard && !root.about-open && !root.load-required;clicked=>{root.fetch-lookup();}}
                         if root.lookup-new && root.lookup-has-result : VerticalBox {
                             Text {text:"引用キー（第一著者＋出版年。使用済みならタイトル代表語を追加）";wrap:word-wrap;}
-                            LineEdit {enabled:!root.busy && !root.confirm-discard;text<=>root.lookup-key;edited(v)=>{root.lookup-dirty=true;}}
+                            LineEdit {enabled:!root.busy && !root.about-open && !root.confirm-discard;text<=>root.lookup-key;edited(v)=>{root.lookup-dirty=true;}}
                         }
                         TextEdit {text:root.lookup-details;read-only:true;vertical-stretch:1;}
                         if !root.lookup-new : Text {text:"保存すると既存の候補・承認処理へ渡します。手動値は承認するまで保持します。";wrap:word-wrap;}
                         HorizontalBox {
-                            Button {text:root.lookup-new ? "この内容で登録" : "更新候補として保存";enabled:root.ready && !root.busy && !root.confirm-discard && !root.load-required && root.lookup-has-result;clicked=>{root.confirm-lookup();}}
-                            Button {text:"入力と取得結果を破棄して戻る";enabled:!root.busy && !root.confirm-discard;clicked=>{root.cancel-lookup();}}
+                            Button {text:root.lookup-new ? "この内容で登録" : "更新候補として保存";enabled:root.ready && !root.busy && !root.confirm-discard && !root.about-open && !root.load-required && root.lookup-has-result;clicked=>{root.confirm-lookup();}}
+                            Button {text:"入力と取得結果を破棄して戻る";enabled:!root.busy && !root.about-open && !root.confirm-discard;clicked=>{root.cancel-lookup();}}
                         }
                     }
                     if root.export-confirm : VerticalBox {
@@ -265,8 +287,8 @@ export component MainWindow inherits Window {
                         TextEdit { text:root.export-warnings=="" ? "警告はありません。" : root.export-warnings;read-only:true;height:100px; }
                         TextEdit { text:root.export-preview;read-only:true;vertical-stretch:1; }
                         HorizontalBox {
-                            Button {text:root.export-replaces ? "既存ファイルを置き換える" : "ファイルへ出力";enabled:!root.busy;clicked=>{root.confirm-export();}}
-                            Button {text:"キャンセル";enabled:!root.busy;clicked=>{root.cancel-export();}}
+                            Button {text:root.export-replaces ? "既存ファイルを置き換える" : "ファイルへ出力";enabled:!root.busy && !root.about-open;clicked=>{root.confirm-export();}}
+                            Button {text:"キャンセル";enabled:!root.busy && !root.about-open;clicked=>{root.cancel-export();}}
                         }
                     }
 
@@ -274,8 +296,8 @@ export component MainWindow inherits Window {
                         Button {text:"DOI / arXiv から候補を取得";enabled:root.metadata-operable && !root.candidate-form-open && !root.associate-confirm;clicked=>{root.begin-lookup();}}
                         Text {text:root.review-label;font-size:20px;wrap:word-wrap;}
                         HorizontalBox {
-                            Button {text:"文献へ戻る";enabled:!root.busy && !root.confirm-discard;clicked=>{root.request-navigation(1,root.editing-id);}}
-                            Button {text:"表示を更新";enabled:!root.busy && !root.confirm-discard;clicked=>{root.request-navigation(4,root.editing-id);}}
+                            Button {text:"文献へ戻る";enabled:!root.busy && !root.about-open && !root.confirm-discard;clicked=>{root.request-navigation(1,root.editing-id);}}
+                            Button {text:"表示を更新";enabled:!root.busy && !root.about-open && !root.confirm-discard;clicked=>{root.request-navigation(4,root.editing-id);}}
                             Button {text:"候補を入力";enabled:root.metadata-operable && !root.candidate-form-open && !root.associate-confirm;clicked=>{root.begin-candidate();}}
                         }
                         if root.candidate-form-open : VerticalBox {
@@ -310,7 +332,7 @@ export component MainWindow inherits Window {
                             }
                             HorizontalBox {
                                 Button {text:"候補を登録";enabled:root.metadata-operable;clicked=>{root.submit-candidate();}}
-                                Button {text:"入力を破棄して戻る";enabled:!root.busy && !root.confirm-discard;clicked=>{root.candidate-dirty=false;root.candidate-form-open=false;}}
+                                Button {text:"入力を破棄して戻る";enabled:!root.busy && !root.about-open && !root.confirm-discard;clicked=>{root.candidate-dirty=false;root.candidate-form-open=false;}}
                             }
                         }
                         if !root.candidate-form-open : VerticalBox {
@@ -318,7 +340,7 @@ export component MainWindow inherits Window {
                                 Text {text:"この候補を選択中の文献の独立した版として登録しますか？ 同一性は未確定です。書誌項目の変更はすべて項目別の承認待ちになります。";wrap:word-wrap;}
                                 HorizontalBox {
                                     Button {text:"関連付けて版を登録";enabled:root.metadata-operable;clicked=>{root.associate-candidate(root.associate-id);}}
-                                    Button {text:"キャンセル";enabled:!root.busy;clicked=>{root.associate-confirm=false;}}
+                                    Button {text:"キャンセル";enabled:!root.busy && !root.about-open;clicked=>{root.associate-confirm=false;}}
                                 }
                             }
                             ScrollView {
@@ -439,4 +461,14 @@ export component MainWindow inherits Window {
             Text {text:root.status;wrap:word-wrap;color:#536783;}
         }
     }
+    if root.about-open : Rectangle {
+        x:0px;y:0px;width:parent.width;height:parent.height;background:#00000066;
+        TouchArea {}
+        AboutDialog {
+            x:(parent.width - self.width) / 2;
+            y:(parent.height - self.height) / 2;
+            close=>{root.about-open=false;}
+        }
+    }
+
 }

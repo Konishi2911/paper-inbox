@@ -87,6 +87,31 @@ fn three_panes_support_direct_clicks_collapsing_export_and_protected_navigation(
         wait(&window);
     }
     let second_id = window.get_editing_id();
+    window.set_paper_title("About dialog draft".into());
+    window.set_dirty(true);
+    click(&window, "このアプリについて");
+    assert!(window.get_about_open());
+    assert!(
+        ElementHandle::find_by_accessible_label(&window, "#MadeWithSlint")
+            .next()
+            .is_some()
+    );
+    assert_eq!(window.get_paper_title(), "About dialog draft");
+    click(&window, "閉じる");
+    assert!(!window.get_about_open());
+    assert!(window.get_dirty());
+    assert_eq!(window.get_editing_id(), second_id);
+    click(&window, "このアプリについて");
+    window.window().dispatch_event(WindowEvent::KeyPressed {
+        text: slint::platform::Key::Escape.into(),
+    });
+    assert!(
+        !window.get_about_open(),
+        "Escape closes the focused about dialog"
+    );
+    assert!(window.get_dirty());
+    window.set_paper_title("Second paper".into());
+    window.set_dirty(false);
     let card = element(&window, "文献を開く: First paper");
     let expanded_x = card.absolute_position().x;
     assert!(expanded_x >= 208.);
