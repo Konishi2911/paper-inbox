@@ -127,6 +127,15 @@ impl SqliteLibrary {
             .map(|id| sql::get(&tx, *id)?.ok_or(StorageError::NotFound(*id)))
             .collect()
     }
+    pub fn citation_keys(&self, exclude: Option<PaperId>) -> Result<Vec<String>> {
+        let db = self.lock()?;
+        let mut statement = db.prepare(
+            "SELECT citation_key FROM papers WHERE (?1 IS NULL OR id != ?1) ORDER BY citation_key",
+        )?;
+        Ok(statement
+            .query_map([exclude.map(|id| id.to_string())], |row| row.get(0))?
+            .collect::<std::result::Result<Vec<_>, _>>()?)
+    }
     pub fn load_edit_state(&self, id: PaperId) -> Result<PaperEditState> {
         let guard = self.lock()?;
         let tx = guard.unchecked_transaction()?;
@@ -166,6 +175,11 @@ impl SqliteLibrary {
     ) -> Result<CommitResult> {
         let mut result = CommitResult::default();
         let (mut paper, kind, revision) = match command {
+            LibraryCommand::RegisterMetadataCandidate {
+                paper_id,
+                citation_key,
+                candidate,
+            } => return candidates::register(self, tx, paper_id, citation_key, candidate, now),
             LibraryCommand::SubmitMetadataCandidate {
                 paper_id,
                 candidate,

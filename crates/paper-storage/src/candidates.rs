@@ -998,3 +998,51 @@ pub(super) fn read_event(db: &Connection, id: &str, kind: &str) -> Result<SyncOp
         _ => Err(StorageError::Corrupt(format!("Unknown event kind {kind}"))),
     }
 }
+
+/// New-paper preview confirmation adopts supplied fields with source provenance.
+/// All work is inside the caller's transaction. Canonical approval stays pending.
+pub(super) fn register(
+    store: &SqliteLibrary,
+    db: &Connection,
+    paper_id: PaperId,
+    key: CitationKey,
+    candidate: MetadataCandidate,
+    now: DateTime<Utc>,
+) -> Result<CommitResult> {
+    candidate.validate()?;
+    if let Some(existing) = sql::get(db, paper_id)? {
+        let prior = read_candidate(db, candidate.id)?;
+        if prior.paper_id == paper_id
+            && prior.candidate == candidate
+            && existing.citation_key() == &key
+        {
+            return Ok(CommitResult::default());
+        }
+        return Err(StorageError::InvalidOperation(
+            "Registration ID reused with different content",
+        ));
+    }
+    let paper = Paper::new(paper_id, key, Bibliography::default(), now)?;
+    let mut result = store.apply_command(db, LibraryCommand::CreatePaper { paper }, now)?;
+    // No identity is inferred for a new blank document. Preview confirmation is
+    // the user's explicit association and adoption of the supplied metadata.
+    combine(
+        &mut result,
+        submit(store, db, paper_id, candidate.clone(), now)?,
+    );
+    if read_candidate(db, candidate.id)?.status == CandidateStatus::Held {
+        combine(
+            &mut result,
+            associate(store, db, candidate.id, read_edit_state(db, paper_id)?, now)?,
+        );
+    }
+    for proposal in pending(db, paper_id)? {
+        if matches!(proposal.kind, ProposalKind::FieldUpdate { .. }) {
+            combine(
+                &mut result,
+                resolve(store, db, proposal.id, ProposalResolution::Accept, now)?,
+            );
+        }
+    }
+    Ok(result)
+}

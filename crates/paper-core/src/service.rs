@@ -21,3 +21,6 @@ pub use candidates::{
     CandidateError, CandidateHoldReason, CandidateMode, MetadataUpdatePlan, PlannedMetadataField,
     plan_metadata_update,
 };
+
+mod citation_keys;
+pub use citation_keys::suggest_citation_key;

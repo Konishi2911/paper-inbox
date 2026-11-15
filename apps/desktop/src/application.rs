@@ -118,7 +118,7 @@ impl PaperForm {
             archived: m.archived,
         }
     }
-    fn bibliography(&self) -> Result<Bibliography, AppError> {
+    pub(crate) fn bibliography(&self) -> Result<Bibliography, AppError> {
         let year = if self.year.trim().is_empty() {
             None
         } else {

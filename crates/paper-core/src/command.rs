@@ -10,6 +10,12 @@ pub enum LibraryCommand {
         paper: Paper,
     },
 
+    RegisterMetadataCandidate {
+        paper_id: PaperId,
+        citation_key: CitationKey,
+        candidate: MetadataCandidate,
+    },
+
     AddVersion {
         version: PaperVersion,
     },
