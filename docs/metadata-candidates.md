@@ -1,6 +1,6 @@
 # Metadata candidates and independent versions
 
-Candidate ingestion is local and transactional. This milestone supplies the planner, normalized SQLite storage and desktop review; network providers and automatic duplicate merging are outside its scope.
+Candidate ingestion is local and transactional. This milestone supplies the planner, normalized SQLite storage and desktop review. Crossref/arXiv acquisition and confirmed new-paper imports are now described in [metadata-lookup-and-keys.md](metadata-lookup-and-keys.md); automatic duplicate merging remains unsupported.
 
 ## Explicit input and identity
 

@@ -21,3 +21,5 @@ Atomic form saves use load_edit_state and commit_batch_at. The expected full doc
 DOI/arXiv legacy strings use compatibility restoration: invalid strings are retained as raw values with warnings, and unrelated saves preserve them. New inputs and identifier edits use validated types. No schema migration or automatic historical rewrite is required. get_many reads selected documents in a single transaction for export.
 
 See [metadata-candidates.md](../../docs/metadata-candidates.md) for candidate identity, explicit deletions, approval, version selection and retry contracts.
+
+RegisterMetadataCandidate atomically records a confirmed new-paper acquisition, source-backed field adoption and a separate pending canonical proposal. citation_keys reads all current keys, including deleted papers, with an optional edited-paper exclusion. See ../../docs/metadata-lookup-and-keys.md.

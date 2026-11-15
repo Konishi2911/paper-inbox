@@ -15,6 +15,11 @@ use std::{
 };
 
 enum Request {
+    BeginLookup(bool),
+    FetchLookup(String),
+    ConfirmLookup(String, String),
+    CancelLookup,
+    SuggestKey(PaperForm),
     Initialize,
     List(PaperQuery),
     New,
@@ -55,6 +60,19 @@ struct Reply {
     metadata: Option<MetadataReview>,
     close_metadata: bool,
     close_candidate: bool,
+    lookup_open: Option<bool>,
+    lookup_new: Option<bool>,
+    lookup_preview: Option<(String, String)>,
+    key_suggestion: Option<String>,
+}
+pub type LookupProvider = Box<
+    dyn FnMut(&PaperIdentifier) -> Result<Vec<MetadataCandidate>, paper_metadata::LookupError>
+        + Send,
+>;
+struct PendingLookup {
+    candidate: MetadataCandidate,
+    paper_id: PaperId,
+    input: String,
 }
 struct Worker {
     config: Config,
@@ -63,6 +81,9 @@ struct Worker {
     query: PaperQuery,
     pending_export: Option<PreparedExport>,
     review: Option<MetadataReview>,
+    pending_lookup: Option<PendingLookup>,
+    lookup_new: bool,
+    lookup_provider: LookupProvider,
 }
 impl Worker {
     fn handle(&mut self, request: Request) -> Reply {
@@ -76,6 +97,7 @@ impl Worker {
                     self.editing = None;
                     self.pending_export = None;
                     self.review = None;
+                    self.pending_lookup = None;
                     match self.app.as_ref().unwrap().list(&self.query) {
                         Ok(list) => Reply {
                             list: Some(list),
@@ -111,6 +133,164 @@ impl Worker {
             };
         };
         match request {
+            Request::BeginLookup(new) => {
+                self.pending_lookup = None;
+                self.lookup_new = new;
+                if new {
+                    self.editing = None;
+                    self.review = None;
+                }
+                Reply {
+                    editor: if new {
+                        Some(EditorView {
+                            form: PaperForm::default(),
+                            id: None,
+                            deleted: false,
+                            identifier_warning: String::new(),
+                        })
+                    } else {
+                        None
+                    },
+                    lookup_open: Some(true),
+                    lookup_new: Some(new),
+                    message:
+                        "識別子を入力してください。取得時に Crossref または arXiv へ送信します。"
+                            .into(),
+                    ..Default::default()
+                }
+            }
+            Request::FetchLookup(input) => {
+                self.pending_lookup = None;
+                let fetched = paper_metadata::parse_identifier(&input)
+                    .and_then(|id| (self.lookup_provider)(&id));
+                match fetched {
+                    Ok(mut values) if values.len() == 1 => {
+                        let candidate = values.remove(0);
+                        if let Err(e) = candidate.validate() {
+                            return Reply {
+                                message: e.to_string(),
+                                ..Default::default()
+                            };
+                        }
+                        let key = if self.lookup_new {
+                            match app.suggest_key_for(&candidate.bibliography, None) {
+                                Ok(key) => key,
+                                Err(e) => {
+                                    return Reply {
+                                        message: e.to_string(),
+                                        ..Default::default()
+                                    };
+                                }
+                            }
+                        } else {
+                            String::new()
+                        };
+                        let details = crate::lookup::preview(&candidate);
+                        self.pending_lookup = Some(PendingLookup {
+                            candidate,
+                            paper_id: PaperId::new(),
+                            input: input.trim().into(),
+                        });
+                        Reply {
+                            lookup_preview: Some((details, key)),
+                            message: "取得結果を確認してください。まだ保存していません。".into(),
+                            ..Default::default()
+                        }
+                    }
+                    Ok(_) => Reply {
+                        message: "取得先から一意な候補が得られませんでした。".into(),
+                        ..Default::default()
+                    },
+                    Err(e) => Reply {
+                        message: e.to_string(),
+                        ..Default::default()
+                    },
+                }
+            }
+            Request::ConfirmLookup(input, key) => {
+                let Some(pending) = &self.pending_lookup else {
+                    return Reply {
+                        message: "書誌情報を再取得してください。".into(),
+                        ..Default::default()
+                    };
+                };
+                if input.trim() != pending.input {
+                    return Reply {
+                        message: "識別子が変わっています。再取得してください。".into(),
+                        ..Default::default()
+                    };
+                }
+                if self.lookup_new {
+                    match app.register_lookup(pending.paper_id, &pending.candidate, &key) {
+                        Ok(id) => {
+                            self.pending_lookup = None;
+                            let mut reply = self.after_save(id, "取得した書誌情報を登録しました。");
+                            reply.lookup_open = Some(false);
+                            reply.close_metadata = true;
+                            reply
+                        }
+                        Err(e) => Reply {
+                            message: e.to_string(),
+                            ..Default::default()
+                        },
+                    }
+                } else {
+                    let Some(review) = &self.review else {
+                        return Reply {
+                            message: "文献の候補画面を開き直してください。".into(),
+                            ..Default::default()
+                        };
+                    };
+                    let id = review.state.paper.id();
+                    let result = app.store.commit_batch_at(
+                        vec![
+                            paper_core::command::LibraryCommand::SubmitMetadataCandidate {
+                                paper_id: id,
+                                candidate: pending.candidate.clone(),
+                            },
+                        ],
+                        std::slice::from_ref(&review.state),
+                        chrono::Utc::now(),
+                    );
+                    match result {
+                        Ok(_) => {
+                            self.pending_lookup = None;
+                            let mut reply = self.after_metadata(
+                                id,
+                                "取得結果を候補として保存しました。",
+                                false,
+                            );
+                            reply.lookup_open = Some(false);
+                            reply
+                        }
+                        Err(e) => Reply {
+                            message: crate::application::AppError::from(e).to_string(),
+                            ..Default::default()
+                        },
+                    }
+                }
+            }
+            Request::CancelLookup => {
+                self.pending_lookup = None;
+                Reply {
+                    lookup_open: Some(false),
+                    message: "取得画面を閉じました。".into(),
+                    ..Default::default()
+                }
+            }
+            Request::SuggestKey(form) => {
+                match app.suggest_key(&form, self.editing.as_ref().map(|s| s.paper.id())) {
+                    Ok(key) => Reply {
+                        key_suggestion: Some(key),
+                        message: "引用キーの候補を入力しました。保存前に変更できます。".into(),
+                        ..Default::default()
+                    },
+                    Err(e) => Reply {
+                        message: e.to_string(),
+                        ..Default::default()
+                    },
+                }
+            }
             Request::List(query) => match app.list(&query) {
                 Ok(list) => {
                     self.query = query;
@@ -452,6 +632,24 @@ impl Drop for Controller {
     }
 }
 pub fn attach(ui: &MainWindow, config: Config) -> Controller {
+    let mut resolver = None;
+    attach_with_lookup_provider(
+        ui,
+        config,
+        Box::new(move |id| {
+            if resolver.is_none() {
+                resolver = Some(paper_metadata::HttpMetadataResolver::new()?);
+            }
+            resolver.as_ref().expect("initialized").resolve_blocking(id)
+        }),
+    )
+}
+/// Inject transport for deterministic integration tests; production uses fixed HTTPS hosts.
+pub fn attach_with_lookup_provider(
+    ui: &MainWindow,
+    config: Config,
+    lookup_provider: LookupProvider,
+) -> Controller {
     ui.set_database_path(config.database.to_string_lossy().as_ref().into());
     let (sender, receiver) = mpsc::channel();
     let weak = ui.as_weak();
@@ -462,6 +660,9 @@ pub fn attach(ui: &MainWindow, config: Config) -> Controller {
             editing: None,
             pending_export: None,
             review: None,
+            pending_lookup: None,
+            lookup_new: false,
+            lookup_provider,
             query: PaperQuery {
                 pagination: Pagination {
                     limit: 20,
@@ -499,6 +700,7 @@ pub fn attach(ui: &MainWindow, config: Config) -> Controller {
                     let _ = slint::quit_event_loop();
                     return;
                 }
+                5 => Request::BeginLookup(true),
                 0 => Request::New,
                 2 => {
                     ui.set_ready(false);
@@ -519,6 +721,53 @@ pub fn attach(ui: &MainWindow, config: Config) -> Controller {
                 },
             };
             dispatch(&ui, &tx, request);
+        }
+    });
+    let tx = sender.clone();
+    let weak = ui.as_weak();
+    ui.on_begin_lookup(move || {
+        if let Some(ui) = weak.upgrade() {
+            dispatch(&ui, &tx, Request::BeginLookup(false));
+        }
+    });
+    let tx = sender.clone();
+    let weak = ui.as_weak();
+    ui.on_fetch_lookup(move || {
+        if let Some(ui) = weak.upgrade() {
+            ui.set_lookup_has_result(false);
+            dispatch(
+                &ui,
+                &tx,
+                Request::FetchLookup(ui.get_lookup_identifier().into()),
+            );
+        }
+    });
+    let tx = sender.clone();
+    let weak = ui.as_weak();
+    ui.on_confirm_lookup(move || {
+        if let Some(ui) = weak.upgrade() {
+            dispatch(
+                &ui,
+                &tx,
+                Request::ConfirmLookup(
+                    ui.get_lookup_identifier().into(),
+                    ui.get_lookup_key().into(),
+                ),
+            );
+        }
+    });
+    let tx = sender.clone();
+    let weak = ui.as_weak();
+    ui.on_cancel_lookup(move || {
+        if let Some(ui) = weak.upgrade() {
+            dispatch(&ui, &tx, Request::CancelLookup);
+        }
+    });
+    let tx = sender.clone();
+    let weak = ui.as_weak();
+    ui.on_suggest_key(move || {
+        if let Some(ui) = weak.upgrade() {
+            dispatch(&ui, &tx, Request::SuggestKey(form_from_ui(&ui)));
         }
     });
     let tx = sender.clone();
@@ -717,7 +966,7 @@ pub fn attach(ui: &MainWindow, config: Config) -> Controller {
     let weak = ui.as_weak();
     ui.window().on_close_requested(move || {
         if let Some(ui) = weak.upgrade()
-            && (ui.get_dirty() || ui.get_candidate_dirty())
+            && (ui.get_dirty() || ui.get_candidate_dirty() || ui.get_lookup_dirty())
         {
             ui.invoke_request_navigation(3, "".into());
             return slint::CloseRequestResponse::KeepWindowShown;
@@ -804,7 +1053,38 @@ fn query_from_ui(ui: &MainWindow) -> PaperQuery {
     }
 }
 fn apply_reply(ui: &MainWindow, reply: Reply) {
+    if let Some(new) = reply.lookup_new {
+        ui.set_lookup_new(new);
+        if new {
+            ui.set_metadata_open(false);
+        }
+        ui.set_lookup_identifier("".into());
+        ui.set_lookup_details("".into());
+        ui.set_lookup_key("".into());
+        ui.set_lookup_has_result(false);
+        ui.set_lookup_dirty(false);
+    }
+    if let Some(open) = reply.lookup_open {
+        ui.set_lookup_open(open);
+        if !open {
+            ui.set_lookup_dirty(false);
+            ui.set_lookup_has_result(false);
+        }
+    }
+    if let Some((details, key)) = reply.lookup_preview {
+        ui.set_lookup_details(details.into());
+        ui.set_lookup_key(key.into());
+        ui.set_lookup_has_result(true);
+        ui.set_lookup_dirty(true);
+    }
+    if let Some(key) = reply.key_suggestion {
+        ui.set_citation_key(key.into());
+        ui.set_dirty(true);
+    }
+
     if reply.close_metadata {
+        ui.set_lookup_open(false);
+        ui.set_lookup_dirty(false);
         ui.set_metadata_open(false);
         ui.set_candidate_form_open(false);
         ui.set_candidate_dirty(false);
