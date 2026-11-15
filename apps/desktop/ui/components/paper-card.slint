@@ -23,7 +23,7 @@ export component PaperCard inherits Rectangle {
     callback selection-changed(bool);
 
     // Appearance
-    border-radius: 8px;
+    border-radius: 4px;
     border-width: 1px;
 
     border-color: root.active
@@ -32,9 +32,17 @@ export component PaperCard inherits Rectangle {
 
     background: root.active
         ? Theme.selection
-        : Theme.surface;
+        : (root.operable && card-touch.has-hover
+            ? Theme.hover
+            : Theme.surface
+        );
 
-    min-height: root.export-mode ? 164px : 116px;
+    animate background, border-color {
+        duration: 100ms;
+        easing: ease-out;
+    }
+
+    min-height: root.export-mode ? 108px : 72px;
 
     // Content
     VerticalBox {
@@ -42,11 +50,11 @@ export component PaperCard inherits Rectangle {
         spacing: 0px;
 
         Rectangle {
-            min-height: 114px;
+            min-height: 70px;
 
             VerticalBox {
-                padding: 12px;
-                spacing: 5px;
+                padding: 8px;
+                spacing: 3px;
 
                 Text {
                     text: root.title == ""
@@ -86,9 +94,10 @@ export component PaperCard inherits Rectangle {
         }
 
         if root.export-mode : HorizontalBox {
-            padding-left: 12px;
-            padding-right: 12px;
-            padding-bottom: 8px;
+            padding-left: 8px;
+            padding-right: 8px;
+            padding-top: 8px;
+            padding-bottom: 4px;
 
             CheckBox {
                 enabled: root.operable;
