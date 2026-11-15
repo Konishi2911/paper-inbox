@@ -78,7 +78,7 @@ fn three_panes_support_direct_clicks_collapsing_export_and_protected_navigation(
     );
     wait(&window);
     for (key, title) in [("Smith2024", "First paper"), ("Jones2025", "Second paper")] {
-        window.invoke_request_navigation(0, "".into());
+        window.invoke_request_navigation(NavigationAction::CreatePaper, "".into());
         wait(&window);
         window.set_citation_key(key.into());
         window.set_paper_title(title.into());

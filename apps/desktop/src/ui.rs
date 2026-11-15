@@ -1,6 +1,6 @@
 use crate::export::{self, PreparedExport};
 use crate::{
-    AuthorRow, MainWindow, PaperRow,
+    AuthorAction, NavigationAction, AuthorRow, MainWindow, PaperRow,
     application::{Application, AuthorInput, PaperForm},
     config::Config,
 };
@@ -696,29 +696,31 @@ pub fn attach_with_lookup_provider(
     ui.on_navigate(move |action, id| {
         if let Some(ui) = weak.upgrade() {
             let request = match action {
-                3 => {
+                NavigationAction::Quit => {
                     let _ = slint::quit_event_loop();
                     return;
                 }
-                5 => Request::BeginLookup(true),
-                0 => Request::New,
-                2 => {
+                NavigationAction::ImportPaper => Request::BeginLookup(true),
+                NavigationAction::CreatePaper => Request::New,
+                NavigationAction::Reconnect => {
                     ui.set_ready(false);
                     Request::Initialize
                 }
-                _ => match uuid::Uuid::parse_str(&id) {
-                    Ok(id) => {
-                        if action == 4 {
-                            Request::ReviewMetadata(PaperId::from_uuid(id))
-                        } else {
-                            Request::Open(PaperId::from_uuid(id))
+                NavigationAction::OpenPaper | NavigationAction::MetadataReview => {
+                    match uuid::Uuid::parse_str(&id) {
+                        Ok(id) => {
+                            if action == NavigationAction::MetadataReview {
+                                Request::ReviewMetadata(PaperId::from_uuid(id))
+                            } else {
+                                Request::Open(PaperId::from_uuid(id))
+                            }
+                        }
+                        Err(_) => {
+                            ui.set_status("文献 ID を読み取れません。".into());
+                            return;
                         }
                     }
-                    Err(_) => {
-                        ui.set_status("文献 ID を読み取れません。".into());
-                        return;
-                    }
-                },
+                }
             };
             dispatch(&ui, &tx, request);
         }
@@ -933,7 +935,7 @@ pub fn attach_with_lookup_provider(
         }
     });
     let weak = ui.as_weak();
-    ui.on_author_action(move |index, action| {
+    ui.on_author_action(move |action, index| {
         if let Some(ui) = weak.upgrade() {
             let model = ui.get_author_rows();
             let Some(rows) = model.as_any().downcast_ref::<VecModel<AuthorRow>>() else {
@@ -941,12 +943,14 @@ pub fn attach_with_lookup_provider(
             };
             let index = index.max(0) as usize;
             match action {
-                0 => rows.push(AuthorRow::default()),
-                1 if index < rows.row_count() => {
-                    rows.remove(index);
+                AuthorAction::Add => rows.push(AuthorRow::default()),
+                AuthorAction::Remove => {
+                    if index < rows.row_count() {
+                        rows.remove(index);
+                    }
                 }
-                2 | 3 => {
-                    let other = if action == 2 {
+                AuthorAction::MoveUp | AuthorAction::MoveDown => {
+                    let other = if action == AuthorAction::MoveUp {
                         index.checked_sub(1)
                     } else {
                         Some(index + 1)
@@ -958,7 +962,6 @@ pub fn attach_with_lookup_provider(
                         rows.set_row_data(other, a);
                     }
                 }
-                _ => {}
             }
             ui.set_dirty(true);
         }
@@ -968,7 +971,7 @@ pub fn attach_with_lookup_provider(
         if let Some(ui) = weak.upgrade()
             && (ui.get_dirty() || ui.get_candidate_dirty() || ui.get_lookup_dirty())
         {
-            ui.invoke_request_navigation(3, "".into());
+            ui.invoke_request_navigation(NavigationAction::Quit, "".into());
             return slint::CloseRequestResponse::KeepWindowShown;
         }
         slint::CloseRequestResponse::HideWindow
