@@ -42,7 +42,7 @@ export component PaperCard inherits Rectangle {
         easing: ease-out;
     }
 
-    min-height: root.export-mode ? 108px : 72px;
+    preferred-height: root.export-mode ? 108px : 72px;
 
     // Content
     VerticalBox {
@@ -50,7 +50,6 @@ export component PaperCard inherits Rectangle {
         spacing: 0px;
 
         Rectangle {
-            min-height: 70px;
 
             VerticalBox {
                 padding: 8px;
