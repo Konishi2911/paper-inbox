@@ -11,6 +11,8 @@ mod ui_metadata;
 
 pub mod lookup;
 
+pub mod detail;
+
 pub mod metadata_resolution;
 
 pub mod metadata_diff;

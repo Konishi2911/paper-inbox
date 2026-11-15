@@ -104,14 +104,11 @@ fn read_edit_cancel_save_errors_author_indices_and_new_navigation_keep_their_con
         w.invoke_author_kind(index as i32, index as i32);
     }
     w.invoke_author_edit(0, 1, "Ada".into());
-    let down = ElementHandle::find_by_accessible_label(&w, "↓").collect::<Vec<_>>();
-    down[0].invoke_accessible_default_action();
+    activate(&w, "著者1を下へ");
     assert_eq!(names(&w), ["Group", "Smith", "Literal"]);
-    let up = ElementHandle::find_by_accessible_label(&w, "↑").collect::<Vec<_>>();
-    up[2].invoke_accessible_default_action();
+    activate(&w, "著者3を上へ");
     assert_eq!(names(&w), ["Group", "Literal", "Smith"]);
-    let remove = ElementHandle::find_by_accessible_label(&w, "削除").collect::<Vec<_>>();
-    remove[1].invoke_accessible_default_action();
+    activate(&w, "著者2を削除");
     assert_eq!(names(&w), ["Group", "Smith"]);
     w.set_year("invalid".into());
     activate(&w, "文献を登録");

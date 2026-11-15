@@ -11,9 +11,9 @@ import { Sidebar } from "components/sidebar.slint";
 import { Splitter } from "components/splitter.slint";
 import { PaperDetail } from "components/paper-detail.slint";
 import { PaperEditor } from "components/paper-editor.slint";
-import { DiffInputField, DiffResolution, DiffFilter, DiffBulkAction, DetailView, AuthorAction, NavigationAction, AuthorRow, PaperRow, LookupField, CandidateRow, ProposalRow, VersionRow } from "types.slint";
+import { DiffInputField, DiffResolution, DiffFilter, DiffBulkAction, DetailView, AuthorAction, NavigationAction, AuthorRow, PaperRow, LookupField, LinkTarget, CandidateRow, ProposalRow, VersionRow } from "types.slint";
 
-export { DiffInputField, DiffResolution, DiffFilter, DiffBulkAction, DetailView, AuthorAction, NavigationAction, AuthorRow, PaperRow, LookupField, CandidateRow, ProposalRow, VersionRow } from "types.slint";
+export { DiffInputField, DiffResolution, DiffFilter, DiffBulkAction, DetailView, AuthorAction, NavigationAction, AuthorRow, PaperRow, LookupField, LinkTarget, CandidateRow, ProposalRow, VersionRow } from "types.slint";
 
 export component MainWindow inherits Window {
     title:"Paper Inbox";
@@ -94,6 +94,29 @@ export component MainWindow inherits Window {
 
     out property <bool> edit-mode: root.detail-view==DetailView.paper-editor && !root.editor-deleted;
     in-out property <string> paper-authors;
+
+    // Bibliography fields shared by the detail and the form.
+    in-out property <string> publisher;
+    in-out property <string> volume;
+    in-out property <string> issue;
+    in-out property <string> pages;
+    in-out property <string> url;
+    in-out property <string> abstract-text;
+    in-out property <string> keywords;
+    // Read-only presentation computed by Rust from the saved paper.
+    in-out property <string> paper-authors-short;
+    in-out property <string> publication-summary;
+    in-out property <string> abstract-preview;
+    in-out property <bool> abstract-long:false;
+    in-out property <string> keywords-line;
+    in-out property <string> paper-bibtex;
+    // Inline note editing in the detail; reset by Rust after a successful reload.
+    in-out property <bool> notes-editing:false;
+    callback change-reading-status(int);
+    callback toggle-favorite();
+    callback toggle-archived();
+    callback save-notes();
+    callback open-link(LinkTarget);
 
     out property <bool> metadata-open: root.detail-view==DetailView.metadata-review || root.detail-view==DetailView.metadata-candidate-editor;
     out property <bool> candidate-form-open: root.detail-view==DetailView.metadata-candidate-editor;
@@ -188,6 +211,9 @@ export component MainWindow inherits Window {
     callback author-edit(int,int,string);
     callback author-kind(int,int);
     callback author-action(AuthorAction,int);
+    callback author-bulk(string);
+    // Save or validation error shown beside the form actions.
+    in-out property <string> form-error;
     public function request-navigation(action:NavigationAction,id:string) {
         if (
             root.dirty
@@ -412,13 +438,23 @@ export component MainWindow inherits Window {
 
                             title: root.paper-title;
                             authors: root.paper-authors;
-                            container-title: root.container-title;
-                            year: root.year;
+                            authors-short: root.paper-authors-short;
+                            publication-summary: root.publication-summary;
                             doi: root.doi;
                             arxiv-id: root.arxiv-id;
+                            url: root.url;
                             citation-key: root.citation-key;
-                            notes: root.notes;
+                            bibtex: root.paper-bibtex;
+                            abstract-text: root.abstract-text;
+                            abstract-preview: root.abstract-preview;
+                            abstract-long: root.abstract-long;
+                            keywords-line: root.keywords-line;
+                            notes <=> root.notes;
+                            notes-editing <=> root.notes-editing;
+                            dirty <=> root.dirty;
                             favorite: root.favorite;
+                            archived: root.archived;
+                            reading-status <=> root.reading-status;
 
                             operable: root.operable;
                             editable: root.editable;
@@ -430,6 +466,19 @@ export component MainWindow inherits Window {
                             metadata-requested => {
                                 root.request-navigation(NavigationAction.metadata-review, root.editing-id);
                             }
+                            reading-status-selected(index) => { root.change-reading-status(index); }
+                            favorite-toggled => { root.toggle-favorite(); }
+                            archive-toggled => { root.toggle-archived(); }
+                            notes-save-requested => { root.save-notes(); }
+                            // Discarding a note draft reloads the saved paper through the usual confirmation.
+                            notes-cancel-requested => {
+                                if (root.dirty) {
+                                    root.request-navigation(NavigationAction.open-paper, root.editing-id);
+                                } else {
+                                    root.notes-editing = false;
+                                }
+                            }
+                            link-requested(target) => { root.open-link(target); }
                         }
                         if root.detail-view==DetailView.paper-editor : PaperEditor {
                             citation-key <=> root.citation-key;
@@ -438,6 +487,14 @@ export component MainWindow inherits Window {
                             year <=> root.year;
                             doi <=> root.doi;
                             arxiv-id <=> root.arxiv-id;
+                            publisher <=> root.publisher;
+                            volume <=> root.volume;
+                            issue <=> root.issue;
+                            pages <=> root.pages;
+                            url <=> root.url;
+                            abstract-text <=> root.abstract-text;
+                            keywords <=> root.keywords;
+                            form-error: root.form-error;
                             notes <=> root.notes;
                             publication-type <=> root.publication-type;
                             reading-status <=> root.reading-status;
@@ -473,6 +530,7 @@ export component MainWindow inherits Window {
                             author-edit(index,field,value) => {root.author-edit(index,field,value);}
                             author-kind(index,kind) => {root.author-kind(index,kind);}
                             author-action(action,index) => {root.author-action(action,index);}
+                            author-bulk(text) => {root.author-bulk(text);}
                         }
 
                     }

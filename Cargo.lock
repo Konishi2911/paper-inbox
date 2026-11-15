@@ -3406,6 +3406,7 @@ dependencies = [
  "slint-build",
  "thiserror 2.0.21",
  "uuid",
+ "webbrowser",
 ]
 
 [[package]]

@@ -1,5 +1,111 @@
-import { VerticalBox, HorizontalBox, Button, LineEdit, ComboBox } from "std-widgets.slint";
+import { VerticalBox, HorizontalBox, Button, LineEdit, ComboBox, TextEdit } from "std-widgets.slint";
+import { Theme } from "../theme.slint";
 import { AuthorAction, AuthorRow } from "../types.slint";
+
+// One author per line. Kind and ORCID are rarely changed, so they open on demand.
+component AuthorLine inherits VerticalBox {
+    in property <AuthorRow> author;
+    in property <int> index;
+    in property <int> count;
+    in property <bool> editable;
+    callback author-edit(int,int,string);
+    callback author-kind(int,int);
+    callback author-action(AuthorAction,int);
+    private property <bool> details-open: false;
+    padding: 0px;
+    spacing: 4px;
+
+    HorizontalBox {
+        padding: 0px;
+        spacing: 4px;
+        Text {
+            text: (root.index + 1) + ".";
+            width: 24px;
+            vertical-alignment: center;
+            color: Theme.text-secondary;
+        }
+        LineEdit {
+            accessible-label: "著者" + (root.index + 1) + (root.author.kind == 0 ? "の姓" : "の名称");
+            min-width: 80px;
+            enabled: root.editable;
+            text: root.author.name;
+            placeholder-text: root.author.kind == 0 ? "姓" : (root.author.kind == 1 ? "団体名" : "表記どおりの名前");
+            edited(text) => {
+                root.author-edit(root.index, 0, text);
+            }
+        }
+        if root.author.kind == 0 : LineEdit {
+            accessible-label: "著者" + (root.index + 1) + "の名";
+            min-width: 80px;
+            enabled: root.editable;
+            text: root.author.given;
+            placeholder-text: "名（任意）";
+            edited(text) => {
+                root.author-edit(root.index, 1, text);
+            }
+        }
+        Button {
+            accessible-label: "著者" + (root.index + 1) + "の詳細";
+            text: root.details-open ? "▴" : "⋯";
+            width: 32px;
+            clicked => {
+                root.details-open = !root.details-open;
+            }
+        }
+        Button {
+            accessible-label: "著者" + (root.index + 1) + "を上へ";
+            text: "↑";
+            width: 32px;
+            enabled: root.editable && root.index > 0;
+            clicked => {
+                root.author-action(AuthorAction.move-up, root.index);
+            }
+        }
+        Button {
+            accessible-label: "著者" + (root.index + 1) + "を下へ";
+            text: "↓";
+            width: 32px;
+            enabled: root.editable && root.index + 1 < root.count;
+            clicked => {
+                root.author-action(AuthorAction.move-down, root.index);
+            }
+        }
+        Button {
+            accessible-label: "著者" + (root.index + 1) + "を削除";
+            text: "×";
+            width: 32px;
+            enabled: root.editable;
+            clicked => {
+                root.author-action(AuthorAction.remove, root.index);
+            }
+        }
+    }
+    if root.details-open || root.author.orcid != "" : HorizontalBox {
+        padding: 0px;
+        padding-left: 28px;
+        spacing: 4px;
+        ComboBox {
+            accessible-label: "著者" + (root.index + 1) + "の種類";
+            width: 150px;
+            enabled: root.editable;
+            current-index: root.author.kind;
+            model: ["個人", "団体", "表記をそのまま使用"];
+            selected(value) => {
+                root.author-kind(root.index, self.current-index);
+            }
+        }
+        LineEdit {
+            accessible-label: "著者" + (root.index + 1) + "の ORCID";
+            min-width: 80px;
+            enabled: root.editable;
+            text: root.author.orcid;
+            placeholder-text: "ORCID（任意）";
+            edited(text) => {
+                root.author-edit(root.index, 2, text);
+            }
+        }
+    }
+}
 
 export component AuthorEditor inherits VerticalBox {
     in property <[AuthorRow]> author-rows;
@@ -7,36 +113,78 @@ export component AuthorEditor inherits VerticalBox {
     callback author-edit(int,int,string);
     callback author-kind(int,int);
     callback author-action(AuthorAction,int);
-    padding:0px;spacing:8px;
-    Text { text:"著者（上から順に保存）"; }
-    for author[i] in root.author-rows : VerticalBox {
-        HorizontalBox {
-            ComboBox { enabled:root.editable; current-index:author.kind;model:["個人","団体","表記をそのまま使用"];selected(value)=>{ root.author-kind(i,self.current-index); } }
-            Button {
-                text:"↑";
-                enabled:root.editable && (i>0);
-                clicked=>{ root.author-action(AuthorAction.move-up, i); }
-            }
-            Button {
-                text:"↓";
-                enabled:root.editable && (i+1 < root.author-rows.length);
-                clicked=>{ root.author-action(AuthorAction.move-down, i); }
-            }
-            Button {
-                enabled:root.editable;
-                text:"削除";
-                clicked=>{ root.author-action(AuthorAction.remove, i); }
-            }
+    // Appends authors parsed by Rust from pasted text.
+    callback author-bulk(string);
+    private property <bool> bulk-open: false;
+    private property <string> bulk-text;
+    padding: 0px;
+    spacing: 6px;
+
+    for author[i] in root.author-rows : AuthorLine {
+        author: author;
+        index: i;
+        count: root.author-rows.length;
+        editable: root.editable;
+        author-edit(index, field, value) => {
+            root.author-edit(index, field, value);
         }
-        HorizontalBox {
-            LineEdit { enabled:root.editable; text:author.name;placeholder-text:author.kind==0 ? "姓" : "名称";edited(text)=>{ root.author-edit(i,0,text); } }
-            if author.kind==0 : LineEdit { enabled:root.editable; text:author.given;placeholder-text:"名（任意）";edited(text)=>{ root.author-edit(i,1,text); } }
+        author-kind(index, kind) => {
+            root.author-kind(index, kind);
         }
-        LineEdit { enabled:root.editable; text:author.orcid;placeholder-text:"ORCID（任意）";edited(text)=>{ root.author-edit(i,2,text); } }
+        author-action(action, index) => {
+            root.author-action(action, index);
+        }
     }
-    Button {
-        enabled:root.editable;
-        text:"著者を追加";
-        clicked=>{ root.author-action(AuthorAction.add, 0); }
+    HorizontalBox {
+        padding: 0px;
+        spacing: 6px;
+        Button {
+            enabled: root.editable;
+            text: "著者を追加";
+            clicked => {
+                root.author-action(AuthorAction.add, 0);
+            }
+        }
+        Button {
+            enabled: root.editable;
+            text: root.bulk-open ? "まとめて入力を閉じる" : "まとめて入力";
+            clicked => {
+                root.bulk-open = !root.bulk-open;
+            }
+        }
+        Rectangle {
+            horizontal-stretch: 1;
+        }
+    }
+    if root.bulk-open : VerticalBox {
+        padding: 0px;
+        spacing: 4px;
+        Text {
+            text: "「姓, 名」を「;」または改行で区切って貼り付けます。カンマがない英字名は最後の語を姓、それ以外は最初の語を姓とみなします。追加後に各行で確認できます。";
+            wrap: word-wrap;
+            font-size: 12px;
+            color: Theme.text-secondary;
+        }
+        TextEdit {
+            accessible-label: "著者をまとめて入力";
+            enabled: root.editable;
+            min-height: 64px;
+            text <=> root.bulk-text;
+        }
+        HorizontalBox {
+            padding: 0px;
+            Button {
+                text: "一覧に追加";
+                enabled: root.editable && root.bulk-text != "";
+                clicked => {
+                    root.author-bulk(root.bulk-text);
+                    root.bulk-text = "";
+                    root.bulk-open = false;
+                }
+            }
+            Rectangle {
+                horizontal-stretch: 1;
+            }
+        }
     }
 }

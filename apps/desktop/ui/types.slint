@@ -39,3 +39,6 @@ export enum DetailView {
     export-settings,
     export-preview,
 }
+
+// External links opened from the detail; URLs are built and validated in Rust.
+export enum LinkTarget { doi, arxiv, url }

@@ -1,7 +1,8 @@
 use crate::export::{self, PreparedExport};
 use crate::{
-    AuthorAction, AuthorRow, DetailView, LookupField, MainWindow, NavigationAction, PaperRow,
-    application::{Application, AuthorInput, PaperForm},
+    AuthorAction, AuthorRow, DetailView, LinkTarget, LookupField, MainWindow, NavigationAction,
+    PaperRow,
+    application::{Application, AuthorInput, PaperForm, QuickChange},
     config::Config,
     lookup::{LookupPreview, LookupUserInput},
 };
@@ -26,6 +27,7 @@ enum Request {
     New,
     Open(PaperId),
     Save(PaperForm),
+    Quick(QuickChange),
     Delete(bool),
     ReviewMetadata(PaperId),
     SubmitCandidate(crate::metadata::CandidateForm),
@@ -47,6 +49,8 @@ struct EditorView {
     id: Option<PaperId>,
     deleted: bool,
     identifier_warning: String,
+    /// The saved entry with default export options, for the copy action.
+    bibtex: String,
 }
 #[derive(Default)]
 struct Reply {
@@ -66,6 +70,7 @@ struct Reply {
     lookup_new: Option<bool>,
     lookup_preview: Option<(LookupPreview, String)>,
     key_suggestion: Option<String>,
+    form_error: Option<String>,
 }
 pub type LookupProvider = Box<
     dyn FnMut(&PaperIdentifier) -> Result<Vec<MetadataCandidate>, paper_metadata::LookupError>
@@ -108,6 +113,7 @@ impl Worker {
                                 id: None,
                                 deleted: false,
                                 identifier_warning: String::new(),
+                                bibtex: String::new(),
                             }),
                             ready: Some(true),
                             close_metadata: true,
@@ -149,6 +155,7 @@ impl Worker {
                             id: None,
                             deleted: false,
                             identifier_warning: String::new(),
+                            bibtex: String::new(),
                         })
                     } else {
                         None
@@ -324,6 +331,7 @@ impl Worker {
                         id: None,
                         deleted: false,
                         identifier_warning: String::new(),
+                        bibtex: String::new(),
                     }),
                     message: "新しい文献を登録できます。".into(),
                     ..Default::default()
@@ -345,13 +353,67 @@ impl Worker {
                     ..Default::default()
                 },
             },
-            Request::Save(form) => match app.save(self.editing.as_ref(), &form) {
-                Ok(id) => self.after_save(id, "保存しました。"),
-                Err(e) => Reply {
-                    message: e.to_string(),
-                    ..Default::default()
-                },
-            },
+            Request::Save(mut form) => {
+                // A new paper without a key gets the usual suggestion; the
+                // reloaded form shows it. Saved keys are never generated here.
+                let mut key_note = "";
+                if self.editing.is_none() && form.citation_key.trim().is_empty() {
+                    match app.suggest_key(&form, None) {
+                        Ok(key) => {
+                            form.citation_key = key;
+                            key_note = "引用キーは自動で提案した値を使いました。";
+                        }
+                        Err(e) => {
+                            return Reply {
+                                message: e.to_string(),
+                                form_error: Some(e.to_string()),
+                                ..Default::default()
+                            };
+                        }
+                    }
+                }
+                match app.save(self.editing.as_ref(), &form) {
+                    Ok(id) => self.after_save(id, &format!("保存しました。{key_note}")),
+                    Err(e) => Reply {
+                        message: e.to_string(),
+                        form_error: Some(e.to_string()),
+                        ..Default::default()
+                    },
+                }
+            }
+            Request::Quick(change) => {
+                let Some(state) = self.editing.clone() else {
+                    return Reply {
+                        message: "文献を選択してください。".into(),
+                        ..Default::default()
+                    };
+                };
+                let id = state.paper.id();
+                let message = match &change {
+                    QuickChange::ReadingStatus(_) => "読書状態を更新しました。",
+                    QuickChange::Favorite(true) => "お気に入りに追加しました。",
+                    QuickChange::Favorite(false) => "お気に入りから外しました。",
+                    QuickChange::Archived(true) => "アーカイブしました。",
+                    QuickChange::Archived(false) => "アーカイブを解除しました。",
+                    QuickChange::Notes(_) => "メモを保存しました。",
+                };
+                let keeps_input = matches!(change, QuickChange::Notes(_));
+                match app.quick_update(&state, change) {
+                    Ok(()) => self.after_save(id, message),
+                    // A failed note keeps the typed draft. A failed toggle
+                    // reloads so the control shows the stored value again.
+                    Err(e) if keeps_input => Reply {
+                        message: e.to_string(),
+                        ..Default::default()
+                    },
+                    Err(e) => {
+                        let mut reply = self.after_save(id, "");
+                        reply.saved = false;
+                        reply.message = format!("{e} 表示を保存済みの内容に戻しました。");
+                        reply
+                    }
+                }
+            }
             Request::Delete(deleted) => {
                 let Some(state) = &self.editing else {
                     return Reply {
@@ -631,6 +693,7 @@ fn view(state: &PaperEditState) -> EditorView {
     EditorView {
         form: PaperForm::from_paper(&state.paper),
         id: Some(state.paper.id()),
+        bibtex: paper_core::service::render_entry(&state.paper, &BibtexOptions::default()).content,
         deleted: state.paper.deleted_at().is_some(),
         identifier_warning: if state.paper.bibliography().identifiers.raw_doi.is_some()
             || state
@@ -816,6 +879,61 @@ pub fn attach_with_lookup_provider(
             dispatch(&ui, &tx, Request::Save(form_from_ui(&ui)));
         }
     });
+    // Detail quick actions save one personal value without the edit form.
+    let tx = sender.clone();
+    let weak = ui.as_weak();
+    ui.on_change_reading_status(move |index| {
+        if let Some(ui) = weak.upgrade() {
+            let status = match index {
+                1 => ReadingStatus::Reading,
+                2 => ReadingStatus::Read,
+                _ => ReadingStatus::Unread,
+            };
+            dispatch(&ui, &tx, Request::Quick(QuickChange::ReadingStatus(status)));
+        }
+    });
+    let tx = sender.clone();
+    let weak = ui.as_weak();
+    ui.on_toggle_favorite(move || {
+        if let Some(ui) = weak.upgrade() {
+            let favorite = !ui.get_favorite();
+            dispatch(&ui, &tx, Request::Quick(QuickChange::Favorite(favorite)));
+        }
+    });
+    let tx = sender.clone();
+    let weak = ui.as_weak();
+    ui.on_toggle_archived(move || {
+        if let Some(ui) = weak.upgrade() {
+            let archived = !ui.get_archived();
+            dispatch(&ui, &tx, Request::Quick(QuickChange::Archived(archived)));
+        }
+    });
+    let tx = sender.clone();
+    let weak = ui.as_weak();
+    ui.on_save_notes(move || {
+        if let Some(ui) = weak.upgrade() {
+            let notes = ui.get_notes().to_string();
+            dispatch(&ui, &tx, Request::Quick(QuickChange::Notes(notes)));
+        }
+    });
+    let weak = ui.as_weak();
+    ui.on_open_link(move |target| {
+        if let Some(ui) = weak.upgrade() {
+            let url = match target {
+                LinkTarget::Doi => crate::detail::doi_url(&ui.get_doi()),
+                LinkTarget::Arxiv => crate::detail::arxiv_url(&ui.get_arxiv_id()),
+                LinkTarget::Url => crate::detail::web_url(&ui.get_url()),
+            };
+            let message = match url {
+                Some(url) => match crate::detail::open_in_browser(&url) {
+                    Ok(()) => format!("ブラウザーで開きました: {url}"),
+                    Err(e) => e,
+                },
+                None => "開ける形式のリンクではありません。値を確認してください。".into(),
+            };
+            ui.set_status(message.into());
+        }
+    });
     let tx = sender.clone();
     let weak = ui.as_weak();
     ui.on_delete_paper(move |deleted| {
@@ -984,6 +1102,31 @@ pub fn attach_with_lookup_provider(
         }
     });
     let weak = ui.as_weak();
+    ui.on_author_bulk(move |text| {
+        if let Some(ui) = weak.upgrade() {
+            let model = ui.get_author_rows();
+            let Some(rows) = model.as_any().downcast_ref::<VecModel<AuthorRow>>() else {
+                return;
+            };
+            let parsed = crate::application::parse_author_list(&text);
+            if parsed.is_empty() {
+                ui.set_status("追加できる著者名がありませんでした。".into());
+                return;
+            }
+            let count = parsed.len();
+            for author in parsed {
+                rows.push(AuthorRow {
+                    kind: author.kind,
+                    given: author.given.into(),
+                    name: author.name.into(),
+                    orcid: author.orcid.into(),
+                });
+            }
+            ui.set_dirty(true);
+            ui.set_status(format!("著者を{count}名追加しました。各行を確認してください。").into());
+        }
+    });
+    let weak = ui.as_weak();
     ui.on_author_action(move |action, index| {
         if let Some(ui) = weak.upgrade() {
             let model = ui.get_author_rows();
@@ -1067,8 +1210,15 @@ pub fn form_from_ui(ui: &MainWindow) -> PaperForm {
         publication_type: ui.get_publication_type().max(0) as usize,
         container_title: ui.get_container_title().into(),
         year: ui.get_year().into(),
+        publisher: ui.get_publisher().into(),
+        volume: ui.get_volume().into(),
+        issue: ui.get_issue().into(),
+        pages: ui.get_pages().into(),
         doi: ui.get_doi().into(),
         arxiv_id: ui.get_arxiv_id().into(),
+        url: ui.get_url().into(),
+        abstract_text: ui.get_abstract_text().into(),
+        keywords: ui.get_keywords().into(),
         notes: ui.get_notes().into(),
         reading_status: ui.get_reading_status().max(0) as usize,
         favorite: ui.get_favorite(),
@@ -1164,26 +1314,30 @@ fn apply_reply(ui: &MainWindow, reply: Reply) {
         } else {
             DetailView::PaperDetail
         });
-        ui.set_paper_authors(
-            f.authors
-                .iter()
-                .map(|a| {
-                    if a.kind == 0 && !a.given.is_empty() {
-                        format!("{} {}", a.given, a.name)
-                    } else {
-                        a.name.clone()
-                    }
-                })
-                .collect::<Vec<_>>()
-                .join(", ")
-                .into(),
-        );
+        // Read-only presentation derived from the same saved form.
+        ui.set_paper_authors(crate::detail::authors_full(&f).into());
+        ui.set_paper_authors_short(crate::detail::authors_short(&f).into());
+        ui.set_publication_summary(crate::detail::publication_summary(&f).into());
+        let (preview, long) = crate::detail::abstract_preview(&f.abstract_text);
+        ui.set_abstract_preview(preview.into());
+        ui.set_abstract_long(long);
+        ui.set_keywords_line(crate::detail::keywords_line(&f).into());
+        ui.set_paper_bibtex(editor.bibtex.into());
+        ui.set_notes_editing(false);
+        ui.set_form_error("".into());
         ui.set_citation_key(f.citation_key.into());
         ui.set_paper_title(f.title.into());
         ui.set_container_title(f.container_title.into());
         ui.set_year(f.year.into());
+        ui.set_publisher(f.publisher.into());
+        ui.set_volume(f.volume.into());
+        ui.set_issue(f.issue.into());
+        ui.set_pages(f.pages.into());
         ui.set_doi(f.doi.into());
         ui.set_arxiv_id(f.arxiv_id.into());
+        ui.set_url(f.url.into());
+        ui.set_abstract_text(f.abstract_text.into());
+        ui.set_keywords(f.keywords.into());
         ui.set_identifier_warning(editor.identifier_warning.into());
         ui.set_publication_type(f.publication_type as i32);
         ui.set_notes(f.notes.into());
@@ -1227,6 +1381,9 @@ fn apply_reply(ui: &MainWindow, reply: Reply) {
     }
     if reply.saved {
         ui.set_dirty(false);
+    }
+    if let Some(error) = reply.form_error {
+        ui.set_form_error(error.into());
     }
     if reply.load_required {
         ui.set_load_required(true);
@@ -1388,6 +1545,7 @@ mod reply_contract {
                     id: Some(PaperId::new()),
                     deleted: false,
                     identifier_warning: String::new(),
+                    bibtex: String::new(),
                     form: PaperForm {
                         title: "loaded".into(),
                         authors: vec![
@@ -1428,6 +1586,7 @@ mod reply_contract {
                     id: None,
                     deleted: false,
                     identifier_warning: String::new(),
+                    bibtex: String::new(),
                     form: PaperForm::default(),
                 }),
                 ..Default::default()

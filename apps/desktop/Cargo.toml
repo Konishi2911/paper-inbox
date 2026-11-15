@@ -13,6 +13,8 @@ slint.workspace = true
 chrono.workspace = true
 thiserror.workspace = true
 uuid.workspace = true
+# Already in the dependency tree through Slint; opens links without a shell.
+webbrowser = "1"
 
 [build-dependencies]
 slint-build = "1"

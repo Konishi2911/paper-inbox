@@ -2,63 +2,154 @@ import {
     VerticalBox,
     HorizontalBox,
     Button,
+    ComboBox,
+    LineEdit,
+    TextEdit,
     ScrollView
 } from "std-widgets.slint";
 
 import { Theme } from "../theme.slint";
+import { LinkTarget } from "../types.slint";
 
+// Small caption used for the identifier rows.
+component FieldLabel inherits Text {
+    // The value beside it carries the same accessible label.
+    accessible-role: none;
+    width: 72px;
+    vertical-alignment: center;
+    font-size: 12px;
+    color: Theme.text-secondary;
+}
+
+// A selectable read-only value with copy (and optionally open) actions.
+// Copy uses the widget's own clipboard support, so no extra dependency is needed.
+component CopyableValue inherits HorizontalBox {
+    in property <string> label;
+    in property <string> value;
+    in property <bool> can-open: false;
+    in property <bool> operable: true;
+    callback open-requested();
+    padding: 0px;
+    spacing: 6px;
+
+    FieldLabel {
+        text: root.label;
+    }
+    field := LineEdit {
+        accessible-label: root.label;
+        read-only: true;
+        text: root.value;
+    }
+    if root.can-open : Button {
+        accessible-label: root.label + "を開く";
+        text: "開く";
+        enabled: root.operable;
+        clicked => {
+            root.open-requested();
+        }
+    }
+    Button {
+        accessible-label: root.label + "をコピー";
+        text: "コピー";
+        clicked => {
+            field.select-all();
+            field.copy();
+            field.clear-selection();
+        }
+    }
+}
+
+// Read-only view of the saved paper. Personal values (reading status,
+// favorite, archive, notes) are changed in place; the parent saves them.
 export component PaperDetail inherits Rectangle {
     in property <string> title;
     in property <string> authors;
-    in property <string> container-title;
-    in property <string> year;
+    in property <string> authors-short;
+    in property <string> publication-summary;
     in property <string> doi;
     in property <string> arxiv-id;
+    in property <string> url;
     in property <string> citation-key;
-    in property <string> notes;
+    in property <string> bibtex;
+    in property <string> abstract-text;
+    in property <string> abstract-preview;
+    in property <bool> abstract-long;
+    in property <string> keywords-line;
+    in-out property <string> notes;
+    in-out property <bool> notes-editing;
+    in-out property <bool> dirty;
+    in property <bool> favorite: false;
+    in property <bool> archived: false;
+    in-out property <int> reading-status;
 
     in property <bool> operable: true;
-    in property <bool> favorite: false;
     in property <bool> editable: true;
     in property <string> identifier-warning;
 
     callback edit-requested();
     callback metadata-requested();
+    callback reading-status-selected(int);
+    callback favorite-toggled();
+    callback archive-toggled();
+    callback notes-save-requested();
+    callback notes-cancel-requested();
+    callback link-requested(LinkTarget);
+
+    // Quick actions save immediately, so they wait while a note draft exists.
+    property <bool> quick-operable: root.editable && !root.dirty;
+    property <bool> authors-expanded: false;
+    property <bool> abstract-expanded: false;
 
     background: Theme.surface;
 
     VerticalBox {
         padding: 20px;
-        spacing: 16px;
+        spacing: 12px;
 
-        // Toolbar
+        // Toolbar: frequent personal actions on the left, editing on the right.
         HorizontalBox {
             padding: 0px;
             spacing: 8px;
-
-            Text {
-                text: "文献詳細";
-                color: Theme.text-secondary;
-                vertical-alignment: center;
+            ComboBox {
+                accessible-label: "読書状態";
+                width: 104px;
+                enabled: root.quick-operable;
+                model: ["未読", "読書中", "既読"];
+                current-index <=> root.reading-status;
+                selected(value) => {
+                    root.reading-status-selected(self.current-index);
+                }
             }
-
+            Button {
+                accessible-label: root.favorite ? "お気に入りから外す" : "お気に入りに追加";
+                text: root.favorite ? "★" : "☆";
+                width: 40px;
+                enabled: root.quick-operable;
+                clicked => {
+                    root.favorite-toggled();
+                }
+            }
             Rectangle {
                 horizontal-stretch: 1;
             }
-
+            Button {
+                text: root.archived ? "アーカイブ解除" : "アーカイブ";
+                enabled: root.quick-operable;
+                clicked => {
+                    root.archive-toggled();
+                }
+            }
             Button {
                 text: "書誌情報・版";
                 enabled: root.operable;
-
                 clicked => {
                     root.metadata-requested();
                 }
             }
-
             Button {
                 text: "編集";
+                primary: true;
                 enabled: root.editable;
-
                 clicked => {
                     root.edit-requested();
                 }
@@ -71,90 +162,149 @@ export component PaperDetail inherits Rectangle {
         }
 
         ScrollView {
+            // Long unbreakable words (URLs, IDs) must not widen the content past the pane.
+            content-width: self.visible-width;
             VerticalBox {
                 padding: 0px;
-                spacing: 12px;
+                spacing: 10px;
+                alignment: start;
 
-                // Title
+                if root.archived : Text {
+                    text: "アーカイブ済み（通常の一覧には表示されません）";
+                    font-size: 12px;
+                    color: Theme.text-muted;
+                }
+
                 Text {
-                    text: root.title == ""
-                        ? "（タイトルなし）"
-                        : root.title;
-
-                    font-size: 24px;
+                    text: root.title == "" ? "（タイトルなし）" : root.title;
+                    font-size: 22px;
                     font-weight: 700;
                     color: Theme.text-primary;
                     wrap: word-wrap;
                 }
 
-                // Authors
-                if root.authors != "" : Text {
-                    text: root.authors;
-                    font-size: 15px;
-                    color: Theme.text-primary;
-                    wrap: word-wrap;
+                if root.authors != "" : HorizontalBox {
+                    padding: 0px;
+                    spacing: 8px;
+                    Text {
+                        text: root.authors-expanded ? root.authors : root.authors-short;
+                        horizontal-stretch: 1;
+                        font-size: 15px;
+                        color: Theme.text-primary;
+                        wrap: word-wrap;
+                    }
+                    if root.authors-short != root.authors : Button {
+                        text: root.authors-expanded ? "折りたたむ" : "全員を表示";
+                        clicked => {
+                            root.authors-expanded = !root.authors-expanded;
+                        }
+                    }
                 }
 
-                // Publication
-                if root.container-title != "" : Text {
-                    text: root.container-title;
-                    font-size: 14px;
-                    font-italic: true;
+                if root.publication-summary != "" : Text {
+                    text: root.publication-summary;
                     color: Theme.text-secondary;
                     wrap: word-wrap;
                 }
 
-                if root.year != "" : Text {
-                    text: root.year;
-                    color: Theme.text-secondary;
+                Rectangle {
+                    height: 1px;
+                    background: Theme.divider;
                 }
 
-                if root.favorite : Text {
-                    text: "★ お気に入り";
-                    color: Theme.text-muted;
+                // Identifiers: the citation key comes first because it is copied most.
+                CopyableValue {
+                    label: "引用キー";
+                    value: root.citation-key;
                 }
-
+                if root.doi != "" : CopyableValue {
+                    label: "DOI";
+                    value: root.doi;
+                    can-open: true;
+                    open-requested => {
+                        root.link-requested(LinkTarget.doi);
+                    }
+                }
+                if root.arxiv-id != "" : CopyableValue {
+                    label: "arXiv";
+                    value: root.arxiv-id;
+                    can-open: true;
+                    open-requested => {
+                        root.link-requested(LinkTarget.arxiv);
+                    }
+                }
+                if root.url != "" : CopyableValue {
+                    label: "URL";
+                    value: root.url;
+                    can-open: true;
+                    open-requested => {
+                        root.link-requested(LinkTarget.url);
+                    }
+                }
                 if root.identifier-warning != "" : Text {
                     text: root.identifier-warning;
                     color: Theme.warning;
                     wrap: word-wrap;
                 }
-
-                // Identifiers
-                if root.doi != "" : Text {
-                    text: "DOI: " + root.doi;
-                    color: Theme.text-secondary;
-                    wrap: word-wrap;
+                HorizontalBox {
+                    padding: 0px;
+                    spacing: 6px;
+                    FieldLabel {
+                        text: "BibTeX";
+                    }
+                    // Hidden source for copying the saved entry.
+                    bibtex-source := TextEdit {
+                        visible: false;
+                        width: 0px;
+                        height: 0px;
+                        read-only: true;
+                        text: root.bibtex;
+                    }
+                    Button {
+                        accessible-label: "BibTeX をコピー";
+                        text: "エントリをコピー";
+                        enabled: root.bibtex != "";
+                        clicked => {
+                            bibtex-source.select-all();
+                            bibtex-source.copy();
+                            bibtex-source.clear-selection();
+                        }
+                    }
+                    Rectangle {
+                        horizontal-stretch: 1;
+                    }
                 }
 
-                if root.arxiv-id != "" : Text {
-                    text: "arXiv: " + root.arxiv-id;
-                    color: Theme.text-secondary;
-                    wrap: word-wrap;
-                }
-
-                Rectangle {
+                if root.abstract-text != "" : Rectangle {
                     height: 1px;
                     background: Theme.divider;
                 }
-
-                // Notes
-                Text {
-                    text: "メモ";
+                if root.abstract-text != "" : Text {
+                    text: "アブストラクト";
                     font-size: 16px;
                     font-weight: 600;
                     color: Theme.text-primary;
                 }
-
-                Text {
-                    text: root.notes == ""
-                        ? "メモはありません。"
-                        : root.notes;
-
-                    color: root.notes == ""
-                        ? Theme.text-secondary
-                        : Theme.text-primary;
-
+                if root.abstract-text != "" : Text {
+                    text: root.abstract-expanded ? root.abstract-text : root.abstract-preview;
+                    color: Theme.text-primary;
+                    wrap: word-wrap;
+                }
+                if root.abstract-long : HorizontalBox {
+                    padding: 0px;
+                    Button {
+                        text: root.abstract-expanded ? "折りたたむ" : "続きを表示";
+                        clicked => {
+                            root.abstract-expanded = !root.abstract-expanded;
+                        }
+                    }
+                    Rectangle {
+                        horizontal-stretch: 1;
+                    }
+                }
+                if root.keywords-line != "" : Text {
+                    text: "キーワード: " + root.keywords-line;
+                    color: Theme.text-secondary;
                     wrap: word-wrap;
                 }
 
@@ -163,21 +313,64 @@ export component PaperDetail inherits Rectangle {
                     background: Theme.divider;
                 }
 
-                // Citation key
-                Text {
-                    text: "引用キー";
-                    font-size: 12px;
-                    color: Theme.text-secondary;
+                // Notes are personal metadata and are edited in place.
+                HorizontalBox {
+                    padding: 0px;
+                    spacing: 8px;
+                    Text {
+                        text: "メモ";
+                        font-size: 16px;
+                        font-weight: 600;
+                        vertical-alignment: center;
+                        color: Theme.text-primary;
+                    }
+                    if root.dirty && root.notes-editing : Text {
+                        text: "未保存";
+                        vertical-alignment: center;
+                        color: Theme.warning;
+                    }
+                    Rectangle {
+                        horizontal-stretch: 1;
+                    }
+                    if !root.notes-editing : Button {
+                        text: root.notes == "" ? "メモを書く" : "メモを編集";
+                        enabled: root.editable;
+                        clicked => {
+                            root.notes-editing = true;
+                        }
+                    }
+                    if root.notes-editing : Button {
+                        text: "メモを保存";
+                        primary: true;
+                        enabled: root.editable && root.dirty;
+                        clicked => {
+                            root.notes-save-requested();
+                        }
+                    }
+                    if root.notes-editing : Button {
+                        text: "取消";
+                        enabled: root.operable;
+                        clicked => {
+                            root.notes-cancel-requested();
+                        }
+                    }
                 }
-
-                Text {
-                    text: root.citation-key;
-                    color: Theme.text-primary;
+                if root.notes-editing : TextEdit {
+                    accessible-label: "メモの入力";
+                    enabled: root.editable;
+                    text <=> root.notes;
+                    min-height: 120px;
+                    init => {
+                        self.focus();
+                    }
+                    edited => {
+                        root.dirty = true;
+                    }
+                }
+                if !root.notes-editing : Text {
+                    text: root.notes == "" ? "メモはありません。" : root.notes;
+                    color: root.notes == "" ? Theme.text-secondary : Theme.text-primary;
                     wrap: word-wrap;
-                }
-
-                Rectangle {
-                    vertical-stretch: 1;
                 }
             }
         }
