@@ -93,6 +93,7 @@ export component MetadataView inherits VerticalBox {
             VerticalBox {
                 spacing:12px;alignment:start;
                 ProposalView {
+                    wide:root.width >= 600px;
                     proposal-rows:root.proposal-rows;
                     operable:root.metadata-operable && !root.associate-confirm;
                     resolve-metadata(id,accept)=>{root.resolve-metadata(id,accept);}

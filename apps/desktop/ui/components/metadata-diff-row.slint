@@ -1,0 +1,60 @@
+import { VerticalBox, HorizontalBox, Button } from "std-widgets.slint";
+import { ProposalRow } from "../types.slint";
+import { Theme } from "../theme.slint";
+
+component ComparedValue inherits Rectangle {
+    in property <string> heading;
+    in property <string> value;
+    in property <string> source;
+    background: Theme.surface;
+    border-radius:4px;
+    min-width:0px;
+    min-height: content.preferred-height;
+    content := VerticalBox {
+        padding:10px;spacing:6px;
+        Text {text:root.heading;font-weight:600;color:Theme.text-primary;wrap:word-wrap;min-width:0px;}
+        Text {text:root.value == "" ? "（空文字列）" : root.value;wrap:word-wrap;color:Theme.text-primary;min-width:0px;}
+        Text {text:"情報源: "+root.source;wrap:word-wrap;color:Theme.text-secondary;min-width:0px;}
+    }
+}
+export component MetadataDiffCard inherits Rectangle {
+    in property <ProposalRow> proposal;
+    in property <bool> operable;
+    in property <bool> wide;
+    callback resolve(string,bool);
+    private property <bool> details-open:false;
+    private property <bool> full-open:false;
+    background: root.proposal.conflict || root.proposal.stale ? Theme.diff-conflict : Theme.diff-current;
+    border-width:1px;border-color:Theme.border;border-radius:6px;
+    min-width:0px;
+    min-height: content.preferred-height;
+    content := VerticalBox {
+        padding:10px;spacing:8px;
+        Text {text:root.proposal.label+" / "+root.proposal.change-label;font-weight:600;wrap:word-wrap;color:Theme.text-primary;min-width:0px;}
+        Text {text:"承認待ち / "+root.proposal.reason;wrap:word-wrap;color:Theme.text-secondary;min-width:0px;}
+        if root.proposal.conflict : Text {text:"要確認: 現在値の保護・競合に関する承認が必要です。";wrap:word-wrap;color:Theme.warning;min-width:0px;}
+        if root.proposal.long-text : Button {text:root.full-open ? "長文を折りたたむ" : "全文を表示";clicked=>{root.full-open=!root.full-open;}}
+        if root.wide : HorizontalBox {
+            padding:0px;spacing:8px;
+            ComparedValue {heading:"現在値";value:root.full-open ? root.proposal.current : root.proposal.current-preview;source:root.proposal.current-source;horizontal-stretch:1;}
+            ComparedValue {heading:"提案値";value:root.full-open ? root.proposal.proposed : root.proposal.proposed-preview;source:root.proposal.source;horizontal-stretch:1;background:Theme.diff-proposed;}
+        }
+        if !root.wide : VerticalBox {
+            padding:0px;spacing:8px;
+            ComparedValue {heading:"現在値";value:root.full-open ? root.proposal.current : root.proposal.current-preview;source:root.proposal.current-source;}
+            ComparedValue {heading:"提案値";value:root.full-open ? root.proposal.proposed : root.proposal.proposed-preview;source:root.proposal.source;background:Theme.diff-proposed;}
+        }
+        Button {text:root.details-open ? "出典・改訂の詳細を閉じる" : "出典・改訂の詳細";clicked=>{root.details-open=!root.details-open;}}
+        if root.details-open : VerticalBox {
+            padding:0px;spacing:8px;
+            Text {text:"現在値の出典\n"+(root.proposal.current-details=="" ? "出典記録なし" : root.proposal.current-details);wrap:word-wrap;min-width:0px;color:Theme.text-secondary;}
+            Text {text:"提案値の出典\n"+root.proposal.proposed-details;wrap:word-wrap;min-width:0px;color:Theme.text-secondary;}
+        }
+        if root.proposal.stale : Text {text:"作成後に値が変わっています。表示を更新して確認してください。";wrap:word-wrap;color:Theme.warning;min-width:0px;}
+        HorizontalBox {
+            padding:0px;
+            Button {text:"提案値を採用";enabled:root.operable && !root.proposal.stale;clicked=>{root.resolve(root.proposal.id,true);}}
+            Button {text:"現在値を維持";enabled:root.operable;clicked=>{root.resolve(root.proposal.id,false);}}
+        }
+    }
+}

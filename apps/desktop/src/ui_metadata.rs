@@ -55,7 +55,21 @@ pub fn begin_form(ui: &MainWindow) {
     ui.set_detail_view(DetailView::MetadataCandidateEditor);
 }
 pub fn show_review(ui: &MainWindow, review: &MetadataReview) {
-    ui.set_review_label(format!("{} — 更新候補と版", review.state.paper.citation_key()).into());
+    ui.set_review_label(
+        format!(
+            "{}\n{} — 承認待ち {} 件（正規版切替を含む）",
+            review
+                .state
+                .paper
+                .bibliography()
+                .title
+                .as_deref()
+                .unwrap_or("タイトルなし"),
+            review.state.paper.citation_key(),
+            review.proposals.len()
+        )
+        .into(),
+    );
     let candidates=review.candidates.iter().map(|stored| {
         let identity=assess_identity(review.state.paper.bibliography(),&stored.candidate.bibliography);
         let label=match identity.outcome {IdentityMatch::Exact=>"識別子が一致",IdentityMatch::RelatedVersion=>"関連する版",IdentityMatch::NeedsReview=>"識別子に矛盾",_=>"同一性を判定できません"};
@@ -148,7 +162,70 @@ pub fn show_review(ui: &MainWindow, review: &MetadataReview) {
                     )
                 })
                 .unwrap_or_else(|| "版の切替。書誌情報は別途確認します。".into());
+            let change_label = match (&detail.current_value, &detail.proposed_value) {
+                (Some(current), proposed) => {
+                    match paper_core::service::compare_field_values(current, proposed.as_ref()) {
+                        Ok(Some(paper_core::service::FieldChangeKind::Unchanged)) => "変更なし",
+                        Ok(Some(paper_core::service::FieldChangeKind::Added)) => "追加",
+                        Ok(Some(paper_core::service::FieldChangeKind::Removed)) => "削除",
+                        Ok(Some(paper_core::service::FieldChangeKind::Modified)) => "変更",
+                        Ok(None) => "未提示",
+                        Err(_) => "比較できません",
+                    }
+                }
+                _ => "正規版切替（項目更新とは別操作）",
+            };
+            let current_source = if detail.current_revisions.is_empty() {
+                "出典記録なし".to_owned()
+            } else {
+                detail
+                    .current_revisions
+                    .iter()
+                    .map(|r| metadata::source_label(&r.provenance.source))
+                    .collect::<Vec<_>>()
+                    .join(" / ")
+            };
+            let current_details = detail
+                .current_revisions
+                .iter()
+                .map(|r| format!("改訂: {}\n{}", r.id, provenance_details(&r.provenance)))
+                .collect::<Vec<_>>()
+                .join("\n\n");
+            let proposed_details = match &detail.proposal.kind {
+                ProposalKind::FieldUpdate {
+                    candidate_revision, ..
+                } => format!(
+                    "提案: {}\n候補改訂: {}\n{}",
+                    detail.proposal.id,
+                    candidate_revision,
+                    detail
+                        .provenance
+                        .as_ref()
+                        .map(provenance_details)
+                        .unwrap_or_else(|| "出典記録なし".into())
+                ),
+                _ => format!(
+                    "提案: {}\n作成日時: {}\n正規版切替は書誌項目を直ちに置き換えません。",
+                    detail.proposal.id,
+                    detail.proposal.created_at.to_rfc3339()
+                ),
+            };
             ProposalRow {
+                current_preview: preview_text(&current).into(),
+                proposed_preview: preview_text(&proposed).into(),
+                change_label: change_label.into(),
+                conflict: matches!(
+                    detail.proposal.reason,
+                    ProposalReason::OverwriteManualValue
+                        | ProposalReason::ConflictingSources
+                        | ProposalReason::UnknownFreshness
+                        | ProposalReason::ConcurrentModification
+                        | ProposalReason::ManualAssociation
+                ),
+                current_source: current_source.into(),
+                current_details: current_details.into(),
+                proposed_details: proposed_details.into(),
+                long_text: current.chars().count() > 600 || proposed.chars().count() > 600,
                 id: detail.proposal.id.to_string().into(),
                 label: label.into(),
                 current: current.into(),
@@ -194,4 +271,39 @@ pub fn show_review(ui: &MainWindow, review: &MetadataReview) {
     ui.set_version_rows(ModelRc::new(VecModel::from(versions)));
     ui.set_load_required(false);
     ui.set_associate_confirm(false);
+}
+
+fn provenance_details(p: &Provenance) -> String {
+    format!(
+        "情報源: {}\nレコード: {}\n取得日時: {}\n情報源更新日時: {}",
+        metadata::source_label(&p.source),
+        p.source_record_id.as_deref().unwrap_or("（不明）"),
+        p.observed_at.to_rfc3339(),
+        p.source_updated_at
+            .map(|t| t.to_rfc3339())
+            .unwrap_or_else(|| "（不明）".into())
+    )
+}
+
+fn preview_text(value: &str) -> String {
+    let mut chars = value.chars();
+    let mut preview: String = chars.by_ref().take(600).collect();
+    if chars.next().is_some() {
+        preview.push_str("…（全文を表示できます）");
+    }
+    preview
+}
+
+#[cfg(test)]
+mod diff_display_tests {
+    use super::preview_text;
+    #[test]
+    fn unicode_preview_is_bounded_without_changing_short_text() {
+        assert_eq!(preview_text("α² 日本語"), "α² 日本語");
+        let long = "日本語α²".repeat(20000);
+        let preview = preview_text(&long);
+        assert!(preview.starts_with(&long.chars().take(600).collect::<String>()));
+        assert!(preview.chars().count() < 650);
+        assert!(preview.ends_with("（全文を表示できます）"));
+    }
 }

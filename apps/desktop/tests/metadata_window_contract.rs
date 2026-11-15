@@ -106,6 +106,23 @@ fn candidate_window_protects_input_manual_values_and_separate_canonical_approval
     assert_eq!(window.get_paper_title(), "My title");
     assert_eq!(window.get_year(), "2026");
     assert_eq!(window.get_proposal_rows().row_count(), 2);
+    let title_diff = window
+        .get_proposal_rows()
+        .iter()
+        .find(|r| r.label == "タイトル")
+        .unwrap();
+    assert_eq!(title_diff.change_label, "変更");
+    assert!(title_diff.conflict);
+    assert!(title_diff.current_details.contains("改訂:"));
+    assert!(title_diff.current_details.contains("情報源:"));
+    assert!(title_diff.proposed_details.contains("取得日時:"));
+    assert!(
+        title_diff
+            .proposed_details
+            .contains("情報源更新日時: 2026-01-01")
+    );
+    assert_eq!(title_diff.current, "My title");
+    assert_eq!(title_diff.proposed, "Publisher title");
     window.invoke_resolve_metadata(proposal(&window, "正規版の切替"), true);
     wait(&window);
     assert!(window.get_version_rows().row_data(0).unwrap().canonical);
