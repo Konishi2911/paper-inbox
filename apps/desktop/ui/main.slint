@@ -1,6 +1,7 @@
 import { VerticalBox, HorizontalBox, Button, LineEdit, TextEdit, ComboBox, CheckBox, ScrollView, AboutSlint } from "std-widgets.slint";
 import { Theme } from "theme.slint";
 import { PaperCard } from "components/paper-card.slint";
+import { Sidebar } from "components/sidebar.slint";
 
 export struct PaperRow { selected:bool, id:string, title:string, authors:string, year:string, citation-key:string }
 export struct AuthorRow { kind:int, given:string, name:string, orcid:string }
@@ -165,24 +166,40 @@ export component MainWindow inherits Window {
         }
         HorizontalBox {
             spacing:0px;vertical-stretch:1;
-            Rectangle {
-                width:root.sidebar-collapsed ? 64px : 208px;background:Theme.sidebar;
-                VerticalBox {
-                    padding:12px;spacing:12px;
-                    Text {text:root.sidebar-collapsed ? "＋" : "新規登録";color:Theme.text-muted;font-weight:600;}
-                    Button {accessible-label:"DOI / arXiv から登録";text:root.sidebar-collapsed ? "ID" : "DOI / arXiv から登録";enabled:root.operable;clicked=>{root.request-navigation(5,"");}}
-                    Button {accessible-label:"手動で登録";text:root.sidebar-collapsed ? "＋" : "手動で登録";enabled:root.operable;clicked=>{root.request-navigation(0,"");}}
-                    Rectangle {height:1px;background:Theme.divider;}
-                    Text {text:root.sidebar-collapsed ? "本" : "ライブラリ";color:Theme.text-muted;font-weight:600;}
-                    Button {accessible-label:"すべての文献";text:root.sidebar-collapsed ? "全" : "すべての文献";enabled:root.operable;clicked=>{root.show-deleted=false;root.search-text="";root.offset=0;root.search();}}
-                    Button {accessible-label:"削除済み";text:root.sidebar-collapsed ? "削" : "削除済み";enabled:root.operable;clicked=>{root.show-deleted=true;root.search-text="";root.offset=0;root.search();}}
-                    Rectangle {height:1px;background:Theme.divider;}
-                    Button {text:root.sidebar-collapsed ? "出" : "BibTeX 出力 ("+root.selected-count+")";enabled:root.operable;clicked=>{root.export-settings-open=!root.export-settings-open;}}
-                    Rectangle {vertical-stretch:1;background:transparent;}
-                    if !root.sidebar-collapsed : Text {text:root.database-path;wrap:word-wrap;font-size:11px;color:Theme.text-secondary;}
-                    Button {accessible-label:"このアプリについて";text:root.sidebar-collapsed ? "i" : "このアプリについて";enabled:!root.about-open && !root.confirm-discard && !root.confirm-delete && !root.export-confirm;clicked=>{root.about-open=true;}}
-                    Button {text:root.sidebar-collapsed ? "↻" : "保存先に再接続";enabled:!root.busy && !root.about-open && !root.export-confirm;clicked=>{root.request-navigation(2,"");}}
+            Sidebar {
+                width: root.sidebar-collapsed ? 60px : 200px;
+
+                collapsed: root.sidebar-collapsed;
+                operable: root.operable;
+
+                selected-count: root.selected-count;
+                database-path: root.database-path;
+
+                can-open-about: !root.about-open
+                    && !root.confirm-discard
+                    && !root.confirm-delete
+                    && !root.export-confirm;
+
+                can-reconnect: !root.busy
+                    && !root.about-open
+                    && !root.confirm-discard
+                    && !root.confirm-delete
+                    && !root.export-confirm;
+
+                
+                import-requested => {root.request-navigation(5,"");}
+                create-requested => {root.request-navigation(0,"");}
+
+                library-requested(deleted) => {
+                    root.show-deleted = deleted;
+                    root.search-text = "";
+                    root.offset = 0;
+                    root.search();
                 }
+
+                export-requested => { root.export-settings-open = !root.export-settings-open; }
+                about-requested => { root.about-open = true; }
+                reconnect-requested => { root.request-navigation(2,""); }
             }
             Rectangle {
                 width:root.sidebar-collapsed ? 420px : 380px;background:Theme.list-background;

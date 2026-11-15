@@ -1,0 +1,177 @@
+import {
+    VerticalBox,
+    Button
+} from "std-widgets.slint";
+
+import { Theme } from "../theme.slint";
+
+export component Sidebar inherits Rectangle {
+    // Input properties
+    in property <bool> collapsed;
+    in property <bool> operable;
+    in property <bool> can-open-about;
+    in property <bool> can-reconnect;
+
+    in property <int> selected-count;
+    in property <string> database-path;
+
+    // Callbacks
+    callback import-requested();
+    callback create-requested();
+    callback library-requested(bool);
+    callback export-requested();
+    callback about-requested();
+    callback reconnect-requested();
+
+    // Appearance
+    background: Theme.sidebar;
+
+    VerticalBox {
+        padding: 12px;
+        spacing: 12px;
+
+        // Import section
+        Text {
+            text: root.collapsed ? "＋" : "新規登録";
+            color: Theme.text-muted;
+            font-weight: 600;
+        }
+
+        Button {
+            accessible-label: "DOI / arXiv から登録";
+
+            text: root.collapsed
+                ? "ID"
+                : "DOI / arXiv から登録";
+
+            enabled: root.operable;
+
+            clicked => {
+                root.import-requested();
+            }
+        }
+
+        Button {
+            accessible-label: "手動で登録";
+
+            text: root.collapsed
+                ? "＋"
+                : "手動で登録";
+
+            enabled: root.operable;
+
+            clicked => {
+                root.create-requested();
+            }
+        }
+
+        Rectangle {
+            height: 1px;
+            background: Theme.divider;
+        }
+
+        // Library section
+        Text {
+            text: root.collapsed
+                ? "本"
+                : "ライブラリ";
+
+            color: Theme.text-muted;
+            font-weight: 600;
+        }
+
+        Button {
+            accessible-label: "すべての文献";
+
+            text: root.collapsed
+                ? "全"
+                : "すべての文献";
+
+            enabled: root.operable;
+
+            clicked => {
+                root.library-requested(false);
+            }
+        }
+
+        Button {
+            accessible-label: "削除済み";
+
+            text: root.collapsed
+                ? "削"
+                : "削除済み";
+
+            enabled: root.operable;
+
+            clicked => {
+                root.library-requested(true);
+            }
+        }
+
+        Rectangle {
+            height: 1px;
+            background: Theme.divider;
+        }
+
+        // Export section
+        Button {
+            accessible-label: "BibTeX 出力";
+
+            text: root.collapsed
+                ? "出"
+                : "BibTeX 出力 ("
+                    + root.selected-count
+                    + ")";
+
+            enabled: root.operable;
+
+            clicked => {
+                root.export-requested();
+            }
+        }
+
+        // Flexible spacer
+        Rectangle {
+            vertical-stretch: 1;
+            background: transparent;
+        }
+
+        // Database information
+        if !root.collapsed : Text {
+            text: root.database-path;
+            wrap: word-wrap;
+            font-size: 11px;
+            color: Theme.text-secondary;
+        }
+
+        // Application information
+        Button {
+            accessible-label: "このアプリについて";
+
+            text: root.collapsed
+                ? "i"
+                : "このアプリについて";
+
+            enabled: root.can-open-about;
+
+            clicked => {
+                root.about-requested();
+            }
+        }
+
+        // Reconnect
+        Button {
+            accessible-label: "保存先に再接続";
+
+            text: root.collapsed
+                ? "↻"
+                : "保存先に再接続";
+
+            enabled: root.can-reconnect;
+
+            clicked => {
+                root.reconnect-requested();
+            }
+        }
+    }
+}
