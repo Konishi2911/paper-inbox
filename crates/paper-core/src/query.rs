@@ -123,6 +123,8 @@ pub enum DeletionFilter {
 #[derive(Clone, Debug)]
 pub struct MetadataProposalDetail {
     pub proposal: crate::model::UpdateProposal,
+    /// All current heads: never invent a single source for divergent revisions.
+    pub current_revisions: Vec<crate::model::FieldRevision>,
     pub expected_value: Option<crate::model::BibliographyValue>,
     pub current_value: Option<crate::model::BibliographyValue>,
     pub proposed_value: Option<crate::model::BibliographyValue>,

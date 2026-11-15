@@ -24,3 +24,6 @@ pub use candidates::{
 
 mod citation_keys;
 pub use citation_keys::suggest_citation_key;
+
+mod field_diff;
+pub use field_diff::{FieldChangeKind, FieldDiffError, compare_field_values};

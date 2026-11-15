@@ -802,3 +802,28 @@ fn held_identity_conflicts_stale_association_and_batch_resolution_are_atomic() {
         Some("manual title")
     );
 }
+
+#[test]
+fn review_keeps_current_and_candidate_revision_sources_separate() {
+    let f = Fixture::new();
+    let s = f.open();
+    let p = create(&s);
+    let mut c = candidate();
+    c.provenance.observed_at = time(3);
+    submit(&s, &p, c);
+    let review = s.metadata_review(p.id()).unwrap();
+    let detail=review.proposals.iter().find(|d|matches!(d.proposal.kind,ProposalKind::FieldUpdate {target,..} if target.field==BibliographyField::Title)).unwrap();
+    assert_eq!(detail.current_revisions.len(), 1);
+    let current = &detail.current_revisions[0];
+    assert_eq!(current.provenance.source, MetadataSource::Manual);
+    assert_eq!(current.value, detail.current_value.clone().unwrap());
+    let ProposalKind::FieldUpdate { expected_heads, .. } = &detail.proposal.kind else {
+        panic!("field proposal")
+    };
+    assert_eq!(expected_heads, &vec![current.id]);
+    let source = detail.provenance.as_ref().unwrap();
+    assert_eq!(source.source, MetadataSource::Crossref);
+    assert_eq!(source.observed_at, time(3));
+    assert_eq!(source.source_updated_at, Some(time(2)));
+    assert_ne!(source.observed_at, current.provenance.observed_at);
+}

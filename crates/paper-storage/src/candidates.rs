@@ -616,7 +616,15 @@ pub(super) fn details(db: &Connection, paper: PaperId) -> Result<Vec<MetadataPro
                 }
                 _ => (None, None, None, None),
             };
+            let current_revisions = match &proposal.kind {
+                ProposalKind::FieldUpdate { target, .. } => sql::heads(db, target)?
+                    .into_iter()
+                    .map(|id| sql::read_revision(db, id))
+                    .collect::<Result<Vec<_>>>()?,
+                _ => Vec::new(),
+            };
             Ok(MetadataProposalDetail {
+                current_revisions,
                 proposal,
                 expected_value,
                 current_value,
