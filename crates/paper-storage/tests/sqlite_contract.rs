@@ -777,7 +777,7 @@ fn local_identity_persists_and_v1_upgrade_keeps_data() {
         .raw()
         .pragma_query_value(None, "user_version", |r| r.get(0))
         .unwrap();
-    assert_eq!(version, 2);
+    assert_eq!(version, 4);
     drop(reopened);
     db.raw().pragma_update(None, "user_version", 99).unwrap();
     assert!(SqliteLibrary::open_local(&db.path).is_err());

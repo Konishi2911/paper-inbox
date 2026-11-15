@@ -10,7 +10,9 @@ use std::{
     path::Path,
     sync::{Mutex, MutexGuard},
 };
+mod candidates;
 mod sql;
+mod versions;
 
 pub type Result<T> = std::result::Result<T, StorageError>;
 #[derive(Debug, thiserror::Error)]
@@ -35,6 +37,16 @@ pub enum StorageError {
     Conflict(PaperId),
     #[error("Database lock was poisoned")]
     Poisoned,
+    #[error("Version not found: {0}")]
+    VersionNotFound(VersionId),
+    #[error("Candidate not found: {0}")]
+    CandidateNotFound(CandidateId),
+    #[error("Proposal not found: {0}")]
+    ProposalNotFound(ProposalId),
+    #[error(transparent)]
+    Candidate(#[from] paper_core::service::CandidateError),
+    #[error("Invalid operation: {0}")]
+    InvalidOperation(&'static str),
 }
 
 /// Local normalized SQLite store. Remote event application is not implemented yet.
@@ -59,7 +71,7 @@ impl SqliteLibrary {
         db.busy_timeout(std::time::Duration::from_secs(5))?;
         db.pragma_update(None, "foreign_keys", true)?;
         let version: u32 = db.pragma_query_value(None, "user_version", |r| r.get(0))?;
-        if version > 2 {
+        if version > 4 {
             return Err(StorageError::Corrupt(format!(
                 "Unsupported schema version {version}"
             )));
@@ -92,7 +104,9 @@ impl SqliteLibrary {
                 [device_id.to_string()],
             )?;
         }
-        tx.pragma_update(None, "user_version", 2)?;
+        versions::migrate(&tx)?;
+        candidates::migrate(&tx)?;
+        tx.pragma_update(None, "user_version", 4)?;
         tx.commit()?;
         Ok(Self {
             connection: Mutex::new(db),
@@ -152,6 +166,75 @@ impl SqliteLibrary {
     ) -> Result<CommitResult> {
         let mut result = CommitResult::default();
         let (mut paper, kind, revision) = match command {
+            LibraryCommand::SubmitMetadataCandidate {
+                paper_id,
+                candidate,
+            } => return candidates::submit(self, tx, paper_id, candidate, now),
+            LibraryCommand::AssociateMetadataCandidate {
+                candidate_id,
+                expected,
+            } => return candidates::associate(self, tx, candidate_id, expected, now),
+            LibraryCommand::ResolveProposal {
+                proposal_id,
+                resolution,
+            } => return candidates::resolve(self, tx, proposal_id, resolution, now),
+            LibraryCommand::SetCanonicalVersion {
+                paper_id,
+                version_id,
+            } => return candidates::set_canonical(self, tx, paper_id, version_id, now),
+            LibraryCommand::ProposeCanonicalVersion {
+                paper_id,
+                version_id,
+            } => {
+                let mut result = CommitResult::default();
+                candidates::propose_canonical(
+                    self,
+                    tx,
+                    paper_id,
+                    version_id,
+                    None,
+                    ProposalReason::CanonicalVersionSelection,
+                    now,
+                    &mut result,
+                )?;
+                return Ok(result);
+            }
+
+            LibraryCommand::AddVersion { version } => {
+                let present = BibliographyField::ALL
+                    .into_iter()
+                    .filter(|f| version.bibliography.value(*f).has_initial_value())
+                    .collect::<Vec<_>>();
+                let paper_id = version.paper_id;
+                let id = version.id;
+                let kind = version.kind;
+                let mut result = versions::add(
+                    self,
+                    tx,
+                    version,
+                    &Provenance {
+                        source: MetadataSource::Manual,
+                        source_record_id: None,
+                        observed_at: now,
+                        source_updated_at: None,
+                    },
+                    &present,
+                    now,
+                )?;
+                if kind == VersionKind::VersionOfRecord {
+                    candidates::propose_canonical(
+                        self,
+                        tx,
+                        paper_id,
+                        id,
+                        None,
+                        ProposalReason::PublisherVersionDiscovered,
+                        now,
+                        &mut result,
+                    )?;
+                }
+                return Ok(result);
+            }
             LibraryCommand::CreatePaper { paper } => {
                 paper
                     .bibliography()
@@ -169,8 +252,16 @@ impl SqliteLibrary {
                 value,
                 expected_heads,
             } => {
-                if version_id.is_some() {
-                    return Err(StorageError::Unsupported("version editing"));
+                if let Some(version_id) = version_id {
+                    return versions::edit(
+                        self,
+                        tx,
+                        paper_id,
+                        version_id,
+                        value,
+                        expected_heads,
+                        now,
+                    );
                 }
                 let paper = sql::get(tx, paper_id)?.ok_or(StorageError::NotFound(paper_id))?;
                 let target = FieldTarget {
@@ -192,6 +283,7 @@ impl SqliteLibrary {
                 let id = match &command {
                     LibraryCommand::ChangeCitationKey { paper_id, .. }
                     | LibraryCommand::DeletePaper { paper_id }
+                    | LibraryCommand::SetCanonicalVersion { paper_id, .. }
                     | LibraryCommand::RestorePaper { paper_id }
                     | LibraryCommand::UpdateNotes { paper_id, .. }
                     | LibraryCommand::SetReadingStatus { paper_id, .. }
@@ -354,63 +446,43 @@ impl SqliteLibrary {
         Ok(result)
     }
 }
-const ALL_FIELDS: &[BibliographyField] = &[
-    BibliographyField::Title,
-    BibliographyField::Authors,
-    BibliographyField::Editors,
-    BibliographyField::PublicationType,
-    BibliographyField::ContainerTitle,
-    BibliographyField::Publisher,
-    BibliographyField::Year,
-    BibliographyField::Month,
-    BibliographyField::Volume,
-    BibliographyField::Issue,
-    BibliographyField::Pages,
-    BibliographyField::ArticleNumber,
-    BibliographyField::Identifiers,
-    BibliographyField::Abstract,
-    BibliographyField::Keywords,
-];
-fn save_revision(db: &Connection, snapshot: &str, revision: &FieldRevision) -> Result<()> {
-    db.execute(
-        "INSERT INTO revisions VALUES (?1,?2,?3,?4,'Manual',NULL,?5,NULL,?6)",
-        params![
-            revision.id.to_string(),
-            revision.paper_id.to_string(),
-            sql::field_name(revision.value.field()),
-            snapshot,
-            revision
-                .provenance
-                .observed_at
-                .to_rfc3339_opts(chrono::SecondsFormat::Nanos, true),
-            revision
-                .created_at
-                .to_rfc3339_opts(chrono::SecondsFormat::Nanos, true)
-        ],
-    )?;
+const ALL_FIELDS: &[BibliographyField] = &BibliographyField::ALL;
+fn record_revision(db: &Connection, bibliography: &str, revision: &FieldRevision) -> Result<()> {
+    let (source, detail) = sql::source_name(&revision.provenance.source);
+    db.execute("INSERT INTO revisions(id,paper_id,field,bibliography_id,source,source_record_id,observed_at,source_updated_at,created_at,version_id,source_detail) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11)",params![revision.id.to_string(),revision.paper_id.to_string(),sql::field_name(revision.value.field()),bibliography,source,revision.provenance.source_record_id,revision.provenance.observed_at.to_rfc3339_opts(chrono::SecondsFormat::Nanos,true),revision.provenance.source_updated_at.map(|t|t.to_rfc3339_opts(chrono::SecondsFormat::Nanos,true)),revision.created_at.to_rfc3339_opts(chrono::SecondsFormat::Nanos,true),revision.version_id.map(|id|id.to_string()),detail])?;
     for parent in &revision.parents {
         db.execute(
             "INSERT INTO revision_parents VALUES (?1,?2)",
             params![revision.id.to_string(), parent.to_string()],
         )?;
     }
+    Ok(())
+}
+fn set_head(db: &Connection, revision: &FieldRevision) -> Result<()> {
     db.execute(
-        "DELETE FROM field_heads WHERE paper_id=?1 AND field=?2",
-        params![
-            revision.paper_id.to_string(),
-            sql::field_name(revision.value.field())
-        ],
-    )?;
-    db.execute(
-        "INSERT INTO field_heads VALUES (?1,?2,?3)",
+        "DELETE FROM field_heads WHERE paper_id=?1 AND field=?2 AND version_id IS ?3",
         params![
             revision.paper_id.to_string(),
             sql::field_name(revision.value.field()),
-            revision.id.to_string()
+            revision.version_id.map(|id| id.to_string())
+        ],
+    )?;
+    db.execute(
+        "INSERT INTO field_heads(paper_id,field,revision_id,version_id) VALUES (?1,?2,?3,?4)",
+        params![
+            revision.paper_id.to_string(),
+            sql::field_name(revision.value.field()),
+            revision.id.to_string(),
+            revision.version_id.map(|id| id.to_string())
         ],
     )?;
     Ok(())
 }
+fn save_revision(db: &Connection, bibliography: &str, revision: &FieldRevision) -> Result<()> {
+    record_revision(db, bibliography, revision)?;
+    set_head(db, revision)
+}
+
 fn append_event(
     db: &Connection,
     device: DeviceId,
@@ -507,8 +579,11 @@ impl PaperRepository for SqliteLibrary {
             values.push(i64::from(v).into());
         }
         // These entities cannot yet be added through this store.
-        if f.has_attachment == Some(true) || f.has_pending_proposal == Some(true) {
+        if f.has_attachment == Some(true) {
             conditions.push("0".into());
+        }
+        if let Some(pending) = f.has_pending_proposal {
+            conditions.push(if pending {"EXISTS(SELECT 1 FROM update_proposals u WHERE u.paper_id=p.id AND u.status='Pending')"} else {"NOT EXISTS(SELECT 1 FROM update_proposals u WHERE u.paper_id=p.id AND u.status='Pending')"}.into());
         }
         let from = format!(
             " FROM papers p JOIN paper_snapshots s ON p.snapshot_id=s.id JOIN bibliographies b ON s.bibliography_id=b.id WHERE {}",
@@ -564,7 +639,7 @@ impl PaperRepository for SqliteLibrary {
                     archived: m.archived,
                     tags: m.tags.clone(),
                     has_attachment: false,
-                    has_pending_proposal: false,
+                    has_pending_proposal: db.query_row("SELECT EXISTS(SELECT 1 FROM update_proposals WHERE paper_id=?1 AND status='Pending')",[p.id().to_string()],|r|r.get(0))?,
                     created_at: p.created_at(),
                     updated_at: p.updated_at(),
                 })
@@ -575,23 +650,33 @@ impl PaperRepository for SqliteLibrary {
             total_count: total_count as usize,
         })
     }
-    fn versions(&self, _paper_id: PaperId) -> Result<Vec<PaperVersion>> {
-        Ok(vec![])
+    fn versions(&self, paper_id: PaperId) -> Result<Vec<PaperVersion>> {
+        let db = self.lock()?;
+        let mut stmt =
+            db.prepare("SELECT snapshot_id FROM paper_versions WHERE paper_id=?1 ORDER BY id")?;
+        let snapshots = stmt
+            .query_map([paper_id.to_string()], |r| r.get::<_, String>(0))?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        snapshots
+            .into_iter()
+            .map(|s| versions::read_snapshot(&db, &s))
+            .collect()
     }
     fn attachments(&self, _paper_id: PaperId) -> Result<Vec<Attachment>> {
         Ok(vec![])
     }
     fn revisions(&self, target: &FieldTarget) -> Result<Vec<FieldRevision>> {
-        if target.version_id.is_some() {
-            return Err(StorageError::Unsupported("version revisions"));
-        }
         let db = self.lock()?;
         let mut stmt = db.prepare(
-            "SELECT id FROM revisions WHERE paper_id=?1 AND field=?2 ORDER BY created_at,id",
+            "SELECT id FROM revisions WHERE paper_id=?1 AND field=?2 AND version_id IS ?3 ORDER BY created_at,id",
         )?;
         let ids = stmt
             .query_map(
-                params![target.paper_id.to_string(), sql::field_name(target.field)],
+                params![
+                    target.paper_id.to_string(),
+                    sql::field_name(target.field),
+                    target.version_id.map(|id| id.to_string())
+                ],
                 |r| r.get::<_, String>(0),
             )?
             .collect::<std::result::Result<Vec<_>, _>>()?;
@@ -606,8 +691,8 @@ impl PaperRepository for SqliteLibrary {
             .map(|id| sql::read_revision(&db, id))
             .collect()
     }
-    fn pending_proposals(&self, _paper_id: PaperId) -> Result<Vec<UpdateProposal>> {
-        Ok(vec![])
+    fn pending_proposals(&self, paper_id: PaperId) -> Result<Vec<UpdateProposal>> {
+        candidates::pending(&*self.lock()?, paper_id)
     }
 }
 impl LibraryStore for SqliteLibrary {
@@ -641,6 +726,18 @@ impl LibraryStore for SqliteLibrary {
             let p = sql::read_snapshot(&db, &snapshot)?;
             let operation = match kind.as_str() {
                 "PaperCreated" => SyncOperation::PaperCreated(p),
+                "CanonicalVersionChanged" => SyncOperation::CanonicalVersionChanged {
+                    paper_id: p.id(),
+                    version_id: p.canonical_version(),
+                },
+                "PaperVersionAdded" => {
+                    let v: String = db.query_row(
+                        "SELECT version_snapshot_id FROM events WHERE id=?1",
+                        [&id],
+                        |r| r.get(0),
+                    )?;
+                    SyncOperation::PaperVersionAdded(versions::read_snapshot(&db, &v)?)
+                }
                 "FieldRevisionCreated" | "FieldHeadsChanged" => {
                     let revision = sql::read_revision(
                         &db,
@@ -680,7 +777,7 @@ impl LibraryStore for SqliteLibrary {
                 },
                 "PaperDeleted" => SyncOperation::PaperDeleted(p.id()),
                 "PaperRestored" => SyncOperation::PaperRestored(p.id()),
-                _ => return Err(StorageError::Corrupt(format!("Unknown event kind {kind}"))),
+                _ => candidates::read_event(&db, &id, &kind)?,
             };
             let mut parent_stmt = db.prepare(
                 "SELECT parent_id FROM event_parents WHERE event_id=?1 ORDER BY parent_id",
@@ -733,4 +830,32 @@ fn read_edit_state(db: &Connection, id: PaperId) -> Result<PaperEditState> {
         })
         .collect::<Result<Vec<_>>>()?;
     Ok(PaperEditState { paper, heads })
+}
+
+impl SqliteLibrary {
+    pub fn metadata_review(&self, id: PaperId) -> Result<MetadataReview> {
+        let guard = self.lock()?;
+        let db = guard.unchecked_transaction()?;
+        let state = read_edit_state(&db, id)?;
+        let candidates = candidates::list_candidates(&db, id)?;
+        let proposals = candidates::details(&db, id)?;
+        let mut stmt =
+            db.prepare("SELECT snapshot_id FROM paper_versions WHERE paper_id=?1 ORDER BY id")?;
+        let ids = stmt
+            .query_map([id.to_string()], |r| r.get::<_, String>(0))?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        let versions = ids
+            .into_iter()
+            .map(|id| versions::read_snapshot(&db, &id))
+            .collect::<Result<Vec<_>>>()?;
+        Ok(MetadataReview {
+            state,
+            candidates,
+            proposals,
+            versions,
+        })
+    }
+    pub fn proposal(&self, id: ProposalId) -> Result<UpdateProposal> {
+        candidates::read_proposal(&*self.lock()?, id)
+    }
 }

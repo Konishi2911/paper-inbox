@@ -39,4 +39,4 @@ cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace
 ```
 
-External candidate ingestion, update proposals and their approval UI remain the next milestone. Title-based duplicate suggestions and automatic document merge are not implemented here.
+Candidate ingestion, field/canonical proposals and the approval UI are described in [metadata-candidates.md](metadata-candidates.md). Title-based duplicate suggestions and automatic document merge remain unimplemented.

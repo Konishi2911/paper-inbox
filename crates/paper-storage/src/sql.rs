@@ -149,13 +149,21 @@ pub fn read_bibliography(db: &Connection, id: &str) -> Result<Bibliography> {
 pub fn write_snapshot(db: &Connection, id: &str, paper: &Paper) -> Result<()> {
     write_bibliography(db, id, paper.bibliography())?;
     let m = paper.metadata();
-    if paper.canonical_version().is_some() || !m.tags.is_empty() || !m.collections.is_empty() {
+    if !m.tags.is_empty() || !m.collections.is_empty() {
         return Err(StorageError::Unsupported(
-            "versions, tags and collections are not implemented yet",
+            "tags and collections are not implemented yet",
         ));
     }
+    if let Some(id) = paper.canonical_version() {
+        let v = super::versions::read(db, id)?.ok_or(StorageError::VersionNotFound(id))?;
+        if v.paper_id != paper.id() {
+            return Err(StorageError::InvalidOperation(
+                "Canonical version belongs to another paper",
+            ));
+        }
+    }
     db.execute(
-        "INSERT INTO paper_snapshots VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11)",
+        "INSERT INTO paper_snapshots(id,paper_id,bibliography_id,citation_key,created_at,updated_at,deleted_at,notes,reading_status,favorite,archived,canonical_version) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12)",
         params![
             id,
             paper.id().to_string(),
@@ -173,7 +181,8 @@ pub fn write_snapshot(db: &Connection, id: &str, paper: &Paper) -> Result<()> {
             m.notes,
             status_name(m.reading_status),
             m.favorite,
-            m.archived
+            m.archived,
+            paper.canonical_version().map(|id|id.to_string())
         ],
     )?;
     Ok(())
@@ -182,11 +191,16 @@ pub fn read_snapshot(db: &Connection, id: &str) -> Result<Paper> {
     let data = db.query_row("SELECT paper_id,bibliography_id,citation_key,created_at,updated_at,deleted_at,notes,reading_status,favorite,archived FROM paper_snapshots WHERE id=?1", [id], |r| {
         Ok((r.get::<_,String>(0)?,r.get::<_,String>(1)?,r.get::<_,String>(2)?,r.get::<_,String>(3)?,r.get::<_,String>(4)?,r.get::<_,Option<String>>(5)?,r.get::<_,String>(6)?,r.get::<_,String>(7)?,r.get::<_,bool>(8)?,r.get::<_,bool>(9)?))
     })?;
+    let canonical: Option<String> = db.query_row(
+        "SELECT canonical_version FROM paper_snapshots WHERE id=?1",
+        [id],
+        |r| r.get(0),
+    )?;
     Ok(Paper::from_parts(
         decode(data.0)?,
         decode(data.2)?,
         read_bibliography(db, &data.1)?,
-        None,
+        canonical.map(decode).transpose()?,
         UserMetadata {
             notes: data.6,
             reading_status: status(data.7)?,
@@ -211,37 +225,19 @@ pub fn get(db: &Connection, id: PaperId) -> Result<Option<Paper>> {
 }
 
 pub fn value(b: &Bibliography, field: BibliographyField) -> BibliographyValue {
-    use BibliographyField as F;
-    match field {
-        F::Title => BibliographyValue::Title(b.title.clone()),
-        F::Authors => BibliographyValue::Authors(b.authors.clone()),
-        F::Editors => BibliographyValue::Editors(b.editors.clone()),
-        F::PublicationType => BibliographyValue::PublicationType(b.publication.kind),
-        F::ContainerTitle => {
-            BibliographyValue::ContainerTitle(b.publication.container_title.clone())
-        }
-        F::Publisher => BibliographyValue::Publisher(b.publication.publisher.clone()),
-        F::Year => BibliographyValue::Year(b.publication.year),
-        F::Month => BibliographyValue::Month(b.publication.month),
-        F::Volume => BibliographyValue::Volume(b.publication.volume.clone()),
-        F::Issue => BibliographyValue::Issue(b.publication.issue.clone()),
-        F::Pages => BibliographyValue::Pages(b.publication.pages.clone()),
-        F::ArticleNumber => BibliographyValue::ArticleNumber(b.publication.article_number.clone()),
-        F::Identifiers => BibliographyValue::Identifiers(b.identifiers.clone()),
-        F::Abstract => BibliographyValue::Abstract(b.abstract_text.clone()),
-        F::Keywords => BibliographyValue::Keywords(b.keywords.clone()),
-    }
+    b.value(field)
 }
 pub fn heads(db: &Connection, target: &FieldTarget) -> Result<Vec<RevisionId>> {
-    if target.version_id.is_some() {
-        return Err(StorageError::Unsupported("version revisions"));
-    }
     let mut stmt = db.prepare(
-        "SELECT revision_id FROM field_heads WHERE paper_id=?1 AND field=?2 ORDER BY revision_id",
+        "SELECT revision_id FROM field_heads WHERE paper_id=?1 AND field=?2 AND version_id IS ?3 ORDER BY revision_id",
     )?;
     let ids = stmt
         .query_map(
-            params![target.paper_id.to_string(), field_name(target.field)],
+            params![
+                target.paper_id.to_string(),
+                field_name(target.field),
+                target.version_id.map(|id| id.to_string())
+            ],
             |r| r.get::<_, String>(0),
         )?
         .collect::<std::result::Result<Vec<_>, _>>()?;
@@ -251,9 +247,16 @@ pub fn read_revision(db: &Connection, id: RevisionId) -> Result<FieldRevision> {
     let d = db.query_row("SELECT paper_id,field,bibliography_id,source,source_record_id,observed_at,source_updated_at,created_at FROM revisions WHERE id=?1", [id.to_string()], |r| {
         Ok((r.get::<_,String>(0)?,r.get::<_,String>(1)?,r.get::<_,String>(2)?,r.get::<_,String>(3)?,r.get::<_,Option<String>>(4)?,r.get::<_,String>(5)?,r.get::<_,Option<String>>(6)?,r.get::<_,String>(7)?))
     })?;
-    if d.3 != "Manual" {
-        return Err(StorageError::Corrupt("Unsupported revision source".into()));
-    }
+    let extra = db.query_row(
+        "SELECT version_id,source_detail FROM revisions WHERE id=?1",
+        [id.to_string()],
+        |r| {
+            Ok((
+                r.get::<_, Option<String>>(0)?,
+                r.get::<_, Option<String>>(1)?,
+            ))
+        },
+    )?;
     let mut stmt = db.prepare(
         "SELECT parent_id FROM revision_parents WHERE revision_id=?1 ORDER BY parent_id",
     )?;
@@ -266,15 +269,53 @@ pub fn read_revision(db: &Connection, id: RevisionId) -> Result<FieldRevision> {
     Ok(FieldRevision {
         id,
         paper_id: decode(d.0)?,
-        version_id: None,
+        version_id: extra.0.map(decode).transpose()?,
         parents,
         value: value(&read_bibliography(db, &d.2)?, field(d.1)?),
         provenance: Provenance {
-            source: MetadataSource::Manual,
+            source: source(d.3, extra.1)?,
             source_record_id: d.4,
             observed_at: time(d.5)?,
             source_updated_at: d.6.map(time).transpose()?,
         },
         created_at: time(d.7)?,
+    })
+}
+
+codec!(
+    version_name,
+    version_kind,
+    VersionKind,
+    [
+        VersionOfRecord,
+        AcceptedManuscript,
+        SubmittedManuscript,
+        Preprint,
+        Unknown
+    ]
+);
+pub fn source_name(source: &MetadataSource) -> (&'static str, Option<&str>) {
+    match source {
+        MetadataSource::Manual => ("Manual", None),
+        MetadataSource::Publisher => ("Publisher", None),
+        MetadataSource::Crossref => ("Crossref", None),
+        MetadataSource::OpenAlex => ("OpenAlex", None),
+        MetadataSource::Arxiv => ("Arxiv", None),
+        MetadataSource::PdfEmbedded => ("PdfEmbedded", None),
+        MetadataSource::Other(label) => ("Other", Some(label)),
+    }
+}
+pub fn source(kind: String, detail: Option<String>) -> Result<MetadataSource> {
+    Ok(match kind.as_str() {
+        "Manual" => MetadataSource::Manual,
+        "Publisher" => MetadataSource::Publisher,
+        "Crossref" => MetadataSource::Crossref,
+        "OpenAlex" => MetadataSource::OpenAlex,
+        "Arxiv" => MetadataSource::Arxiv,
+        "PdfEmbedded" => MetadataSource::PdfEmbedded,
+        "Other" => MetadataSource::Other(
+            detail.ok_or(StorageError::Corrupt("Missing source label".into()))?,
+        ),
+        _ => return Err(StorageError::Corrupt("Unknown metadata source".into())),
     })
 }
