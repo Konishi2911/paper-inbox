@@ -1,25 +1,27 @@
-# Local persistence milestone
+# paper-storage
 
-The SQLite implementation stores bibliography, ordered contributors and keywords as relational rows. There are no JSON payloads. `papers` points to an immutable `paper_snapshots` row; revisions and outbox events refer to the corresponding historical snapshot. Historical data therefore stays unchanged when the current paper is edited. Publication and identifier scalars are columns of `bibliographies` (one-to-one with a bibliography snapshot).
+`paper-core` の保存ポートを実装する SQLite アダプターです。書誌情報・著者・キーワード・版・候補・履歴を正規化したテーブルに保存します。
 
-Implemented commands: CreatePaper, EditBibliography for paper-level and version-level fields, ChangeCitationKey, UpdateNotes, SetReadingStatus, SetFavorite, SetArchived, DeletePaper and RestorePaper. Creation seeds manual revisions only for supplied bibliography fields. None, blank strings, empty lists, Unknown publication type and an empty identifier set are initially unset and have no heads, allowing later external completion. Clients must read active revisions before editing; an initially unset field uses an empty expected-head list. Every explicit edit, including clearing a value, creates a protected manual revision. Identifiers remain a single field: supplying any identifier protects the initial identifier set as a whole. Existing historical revisions are never retroactively removed. Expected heads are compared as a set; duplicate expected IDs are rejected. Edits to deleted papers are rejected.
+## 主な責務
 
-Citation keys are case-sensitive and unique across all papers, including deleted papers. Deletion is soft. Get returns deleted papers; search defaults to active papers and also supports Deleted and All via DeletionFilter. A restore keeps identity and history. CreatePaper is an explicit manual creation API, not an external metadata import API.
+- 不変のスナップショットとリビジョンによる履歴保持
+- 一括保存、項目の履歴と文献全体に対する競合検査、失敗時の全体ロールバック
+- 削除済み文献を含む引用キーの一意性と復元
+- 更新候補の再投入制御、項目別承認、独立した版と正規版切替
+- スキーマ移行、ローカル端末 ID、同期イベントの記録
 
-Each commit uses BEGIN IMMEDIATE to serialize writers and atomically update the current paper, revisions, field heads, device sequence and pending events. Immutable snapshots are retained; compaction is not implemented. Clock values are passed explicitly by commit_at for tests; commit uses Utc::now. Stored timestamps use UTC with fixed nanosecond precision. A timestamp earlier than the previous paper update is rejected.
+同期イベントの記録は遠隔同期の実装ではありません。添付、タグ、コレクション、重複統合、遠隔イベントの適用は未対応です。
 
-Search supports title, citation key and author substring matching; publication type, reading status, year, favorite and archive filters; deterministic sorting with an ID tie-breaker; and offset pagination. Text matching is literal (SQL parameters, no LIKE wildcard interpretation). SQLite lower() currently provides ASCII case folding, not full Unicode case folding. Count and page are read in one transaction. Relevance ranking and tag/collection filters explicitly return Unsupported.
+SQL の保存形式、検索・時刻・履歴・移行・候補の詳細な契約は[保存層の契約](../../docs/storage-contracts.md)を参照してください。アプリの保存先は[ルート README](../../README.md#データの保存)にあります。
 
-Attachments, tags, collections, duplicate merges and remote event application remain unsupported. Repository lists and existence filters for these unsupported entities return no entities. Versions, metadata candidates and field/canonical proposals are persisted; pending-proposal search filters use actual pending rows. Pending events and upload acknowledgements persist locally, but this is not a working synchronization transport. Event sequence and parent chains are currently per device; cross-device causal dependencies must be designed before remote application is enabled.
+## 検証
 
-Schema version 4 is installed transactionally. Existing version-1/2 databases gain normalized version snapshots, candidates, present-field lists, proposals and proposal heads without rewriting existing history. Version 1 also adds local_settings, which retains the desktop local device ID across restarts. Existing paper, revision and event data is preserved. Newer versions are rejected without modifying their schema version.
+```sh
+cargo test -p paper-core -p paper-storage --locked
+```
 
-Verification: `cargo test -p paper-core -p paper-storage`. Integration tests use isolated real SQLite files, reopen them, and inject an SQL trigger failure after state changes to verify rollback. They also cover independent/concurrent connections, history, event immutability, upload acknowledgements, every bibliography field and unsupported operations.
+テストは独立した SQLite ファイル、再読込・再起動、複数接続、途中失敗の注入を使い、履歴保持・競合・原子性を検証します。
 
-Atomic form saves use load_edit_state and commit_batch_at. The expected full document and every field head are checked under BEGIN IMMEDIATE before any command is applied. A mismatch rejects the entire batch. All command results, history and outbox changes roll back together on failure. Empty unchanged batches create no events.
+## ライセンス
 
-DOI/arXiv legacy strings use compatibility restoration: invalid strings are retained as raw values with warnings, and unrelated saves preserve them. New inputs and identifier edits use validated types. No schema migration or automatic historical rewrite is required. get_many reads selected documents in a single transaction for export.
-
-See [metadata-candidates.md](../../docs/metadata-candidates.md) for candidate identity, explicit deletions, approval, version selection and retry contracts.
-
-RegisterMetadataCandidate atomically records a confirmed new-paper acquisition, source-backed field adoption and a separate pending canonical proposal. citation_keys reads all current keys, including deleted papers, with an optional edited-paper exclusion. See ../../docs/metadata-lookup-and-keys.md.
+[MIT](../../LICENSE-MIT) OR [Apache-2.0](../../LICENSE-APACHE)。[第三者ライセンス](../../docs/licenses.md)も参照してください。
