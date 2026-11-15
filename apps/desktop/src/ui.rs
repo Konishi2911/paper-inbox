@@ -21,6 +21,11 @@ enum Request {
     Open(PaperId),
     Save(PaperForm),
     Delete(bool),
+    ReviewMetadata(PaperId),
+    SubmitCandidate(crate::metadata::CandidateForm),
+    AssociateCandidate(CandidateId),
+    ResolveMetadata(ProposalId, bool),
+    ProposeCanonical(VersionId),
     PrepareExport {
         ids: Vec<PaperId>,
         path: PathBuf,
@@ -47,6 +52,9 @@ struct Reply {
     offset: Option<i32>,
     export_preview: Option<(String, String, String, bool)>,
     clear_export: bool,
+    metadata: Option<MetadataReview>,
+    close_metadata: bool,
+    close_candidate: bool,
 }
 struct Worker {
     config: Config,
@@ -54,6 +62,7 @@ struct Worker {
     editing: Option<PaperEditState>,
     query: PaperQuery,
     pending_export: Option<PreparedExport>,
+    review: Option<MetadataReview>,
 }
 impl Worker {
     fn handle(&mut self, request: Request) -> Reply {
@@ -66,6 +75,7 @@ impl Worker {
                     self.app = Some(Application { store });
                     self.editing = None;
                     self.pending_export = None;
+                    self.review = None;
                     match self.app.as_ref().unwrap().list(&self.query) {
                         Ok(list) => Reply {
                             list: Some(list),
@@ -76,6 +86,7 @@ impl Worker {
                                 identifier_warning: String::new(),
                             }),
                             ready: Some(true),
+                            close_metadata: true,
                             message: "準備ができました。".into(),
                             ..Default::default()
                         },
@@ -135,6 +146,7 @@ impl Worker {
                     Reply {
                         editor: Some(view),
                         message: "文献を読み込みました。".into(),
+                        close_metadata: true,
                         ..Default::default()
                     }
                 }
@@ -167,6 +179,99 @@ impl Worker {
                             "復元しました。"
                         },
                     ),
+                    Err(e) => Reply {
+                        message: e.to_string(),
+                        ..Default::default()
+                    },
+                }
+            }
+            Request::ReviewMetadata(id) => match app.metadata_review(id) {
+                Ok(review) => {
+                    self.editing = Some(review.state.clone());
+                    self.review = Some(review.clone());
+                    Reply {
+                        editor: Some(view(&review.state)),
+                        close_candidate: true,
+                        metadata: Some(review),
+                        message: "候補・提案・版を読み込みました。".into(),
+                        ..Default::default()
+                    }
+                }
+                Err(e) => Reply {
+                    message: e.to_string(),
+                    ..Default::default()
+                },
+            },
+            Request::SubmitCandidate(form) => {
+                let Some(review) = &self.review else {
+                    return Reply {
+                        message: "文献の候補画面を開き直してください。".into(),
+                        ..Default::default()
+                    };
+                };
+                let id = review.state.paper.id();
+                match app.submit_candidate(&review.state, &form) {
+                    Ok(()) => self.after_metadata(id, "候補を保存しました。", true),
+                    Err(e) => Reply {
+                        message: e.to_string(),
+                        ..Default::default()
+                    },
+                }
+            }
+            Request::AssociateCandidate(candidate) => {
+                let Some(review) = &self.review else {
+                    return Reply {
+                        message: "候補画面を開き直してください。".into(),
+                        ..Default::default()
+                    };
+                };
+                let id = review.state.paper.id();
+                match app.associate_candidate(&review.state, candidate) {
+                    Ok(()) => self.after_metadata(
+                        id,
+                        "候補を同じ文献の版として登録しました。差分は提案を確認してください。",
+                        false,
+                    ),
+                    Err(e) => Reply {
+                        message: e.to_string(),
+                        ..Default::default()
+                    },
+                }
+            }
+            Request::ResolveMetadata(proposal, accept) => {
+                let Some(review) = &self.review else {
+                    return Reply {
+                        message: "候補画面を開き直してください。".into(),
+                        ..Default::default()
+                    };
+                };
+                let id = review.state.paper.id();
+                match app.resolve_metadata(&review.state, proposal, accept) {
+                    Ok(()) => self.after_metadata(
+                        id,
+                        if accept {
+                            "提案を採用しました。"
+                        } else {
+                            "提案を拒否しました。"
+                        },
+                        false,
+                    ),
+                    Err(e) => Reply {
+                        message: e.to_string(),
+                        ..Default::default()
+                    },
+                }
+            }
+            Request::ProposeCanonical(version) => {
+                let Some(review) = &self.review else {
+                    return Reply {
+                        message: "版の画面を開き直してください。".into(),
+                        ..Default::default()
+                    };
+                };
+                let id = review.state.paper.id();
+                match app.propose_canonical(&review.state, version) {
+                    Ok(()) => self.after_metadata(id, "正規版の切替提案を作成しました。", false),
                     Err(e) => Reply {
                         message: e.to_string(),
                         ..Default::default()
@@ -242,6 +347,32 @@ impl Worker {
             }
             Request::Initialize | Request::Shutdown => unreachable!(),
         }
+    }
+    fn after_metadata(&mut self, id: PaperId, message: &str, close_candidate: bool) -> Reply {
+        let mut reply = Reply {
+            message: message.into(),
+            close_candidate,
+            ..Default::default()
+        };
+        let app = self.app.as_ref().unwrap();
+        match app.metadata_review(id) {
+            Ok(review) => {
+                self.editing = Some(review.state.clone());
+                self.review = Some(review.clone());
+                reply.editor = Some(view(&review.state));
+                reply.metadata = Some(review);
+            }
+            Err(e) => {
+                reply.load_required = true;
+                reply.message = format!(
+                    "{message} 再読込には失敗しました。保存を繰り返さず、表示を更新してください: {e}"
+                );
+            }
+        }
+        if let Ok(list) = app.list(&self.query) {
+            reply.list = Some(list);
+        }
+        reply
     }
     fn after_save(&mut self, id: PaperId, message: &str) -> Reply {
         let app = self.app.as_ref().unwrap();
@@ -330,6 +461,7 @@ pub fn attach(ui: &MainWindow, config: Config) -> Controller {
             app: None,
             editing: None,
             pending_export: None,
+            review: None,
             query: PaperQuery {
                 pagination: Pagination {
                     limit: 20,
@@ -373,7 +505,13 @@ pub fn attach(ui: &MainWindow, config: Config) -> Controller {
                     Request::Initialize
                 }
                 _ => match uuid::Uuid::parse_str(&id) {
-                    Ok(id) => Request::Open(PaperId::from_uuid(id)),
+                    Ok(id) => {
+                        if action == 4 {
+                            Request::ReviewMetadata(PaperId::from_uuid(id))
+                        } else {
+                            Request::Open(PaperId::from_uuid(id))
+                        }
+                    }
                     Err(_) => {
                         ui.set_status("文献 ID を読み取れません。".into());
                         return;
@@ -471,6 +609,65 @@ pub fn attach(ui: &MainWindow, config: Config) -> Controller {
         }
     });
     let weak = ui.as_weak();
+    ui.on_begin_candidate(move || {
+        if let Some(ui) = weak.upgrade() {
+            crate::ui_metadata::begin_form(&ui);
+        }
+    });
+    let tx = sender.clone();
+    let weak = ui.as_weak();
+    ui.on_submit_candidate(move || {
+        if let Some(ui) = weak.upgrade() {
+            dispatch(
+                &ui,
+                &tx,
+                Request::SubmitCandidate(crate::ui_metadata::read_form(&ui)),
+            );
+        }
+    });
+    let tx = sender.clone();
+    let weak = ui.as_weak();
+    ui.on_associate_candidate(move |id| {
+        if let Some(ui) = weak.upgrade() {
+            match uuid::Uuid::parse_str(&id) {
+                Ok(id) => dispatch(
+                    &ui,
+                    &tx,
+                    Request::AssociateCandidate(CandidateId::from_uuid(id)),
+                ),
+                Err(_) => ui.set_status("候補の表示を更新してください。".into()),
+            }
+        }
+    });
+    let tx = sender.clone();
+    let weak = ui.as_weak();
+    ui.on_resolve_metadata(move |id, accept| {
+        if let Some(ui) = weak.upgrade() {
+            match uuid::Uuid::parse_str(&id) {
+                Ok(id) => dispatch(
+                    &ui,
+                    &tx,
+                    Request::ResolveMetadata(ProposalId::from_uuid(id), accept),
+                ),
+                Err(_) => ui.set_status("提案の表示を更新してください。".into()),
+            }
+        }
+    });
+    let tx = sender.clone();
+    let weak = ui.as_weak();
+    ui.on_propose_canonical(move |id| {
+        if let Some(ui) = weak.upgrade() {
+            match uuid::Uuid::parse_str(&id) {
+                Ok(id) => dispatch(
+                    &ui,
+                    &tx,
+                    Request::ProposeCanonical(VersionId::from_uuid(id)),
+                ),
+                Err(_) => ui.set_status("版の表示を更新してください。".into()),
+            }
+        }
+    });
+    let weak = ui.as_weak();
     ui.on_author_edit(move |index, field, text| {
         if let Some(ui) = weak.upgrade() {
             edit_author(&ui, index, |row| match field {
@@ -520,7 +717,7 @@ pub fn attach(ui: &MainWindow, config: Config) -> Controller {
     let weak = ui.as_weak();
     ui.window().on_close_requested(move || {
         if let Some(ui) = weak.upgrade()
-            && ui.get_dirty()
+            && (ui.get_dirty() || ui.get_candidate_dirty())
         {
             ui.invoke_request_navigation(3, "".into());
             return slint::CloseRequestResponse::KeepWindowShown;
@@ -607,6 +804,11 @@ fn query_from_ui(ui: &MainWindow) -> PaperQuery {
     }
 }
 fn apply_reply(ui: &MainWindow, reply: Reply) {
+    if reply.close_metadata {
+        ui.set_metadata_open(false);
+        ui.set_candidate_form_open(false);
+        ui.set_candidate_dirty(false);
+    }
     if let Some(offset) = reply.offset {
         ui.set_offset(offset);
     }
@@ -651,6 +853,13 @@ fn apply_reply(ui: &MainWindow, reply: Reply) {
         ui.set_dirty(false);
         ui.set_load_required(false);
         ui.set_confirm_delete(false);
+    }
+    if let Some(review) = reply.metadata {
+        crate::ui_metadata::show_review(ui, &review);
+    }
+    if reply.close_candidate {
+        ui.set_candidate_form_open(false);
+        ui.set_candidate_dirty(false);
     }
     if reply.saved {
         ui.set_dirty(false);

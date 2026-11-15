@@ -191,7 +191,9 @@ impl From<StorageError> for AppError {
             StorageError::Conflict(_)
             | StorageError::Edit(paper_core::command::EditError::Conflict { .. }) => Self::Conflict,
             StorageError::DuplicateCitationKey(_) => Self::DuplicateKey,
-            StorageError::NotFound(_) => Self::Missing,
+            StorageError::NotFound(_)
+            | StorageError::CandidateNotFound(_)
+            | StorageError::ProposalNotFound(_) => Self::Missing,
             other => Self::Storage(other.to_string()),
         }
     }

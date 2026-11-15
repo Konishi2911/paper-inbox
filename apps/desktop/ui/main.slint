@@ -1,6 +1,9 @@
 import { VerticalBox, HorizontalBox, Button, LineEdit, TextEdit, ComboBox, CheckBox, ScrollView } from "std-widgets.slint";
 export struct PaperRow { selected:bool, id:string, title:string, authors:string, year:string, citation-key:string }
 export struct AuthorRow { kind:int, given:string, name:string, orcid:string }
+export struct CandidateRow { id:string, label:string, details:string, held:bool }
+export struct ProposalRow { id:string, label:string, current:string, proposed:string, reason:string, source:string, stale:bool }
+export struct VersionRow { id:string, label:string, details:string, canonical:bool }
 export component MainWindow inherits Window {
     title:"Paper Inbox"; width:1160px; height:850px;
     in-out property <bool> busy:true;
@@ -45,6 +48,41 @@ export component MainWindow inherits Window {
     in-out property <bool> saved-paper:false;
     in-out property <bool> load-required:false;
     in-out property <string> editing-id;
+
+    in-out property <bool> metadata-open:false;
+    in-out property <bool> candidate-form-open:false;
+    in-out property <bool> candidate-dirty:false;
+    in-out property <string> review-label;
+    in-out property <[CandidateRow]> candidate-rows;
+    in-out property <[ProposalRow]> proposal-rows;
+    in-out property <[VersionRow]> version-rows;
+    in-out property <bool> associate-confirm:false;
+    in-out property <string> associate-id;
+    property <bool> metadata-operable:root.ready && !root.busy && !root.confirm-discard && !root.load-required;
+    in-out property <string> candidate-id;
+    in-out property <string> candidate-observed;
+    in-out property <int> candidate-source:0;
+    in-out property <int> candidate-kind:0;
+    in-out property <string> candidate-source-name;
+    in-out property <string> candidate-record;
+    in-out property <string> candidate-updated;
+    in-out property <string> candidate-doi;
+    in-out property <string> candidate-arxiv;
+    in-out property <string> candidate-title;
+    in-out property <string> candidate-year;
+    in-out property <string> candidate-container;
+    in-out property <string> candidate-publisher;
+    in-out property <string> candidate-abstract;
+    in-out property <bool> candidate-use-title:false;
+    in-out property <bool> candidate-use-year:false;
+    in-out property <bool> candidate-use-container:false;
+    in-out property <bool> candidate-use-publisher:false;
+    in-out property <bool> candidate-use-abstract:false;
+    callback begin-candidate();
+    callback submit-candidate();
+    callback associate-candidate(string);
+    callback resolve-metadata(string,bool);
+    callback propose-canonical(string);
     property <bool> operable:root.ready && !root.busy && !root.confirm-discard && !root.export-confirm;
     property <bool> editable:root.operable && !root.editor-deleted && !root.load-required;
     in-out property <bool> confirm-discard:false;
@@ -63,7 +101,7 @@ export component MainWindow inherits Window {
     callback author-kind(int,int);
     callback author-action(int,int);
     public function request-navigation(action:int,id:string) {
-        if (root.dirty) { root.pending-action=action;root.pending-id=id;root.confirm-discard=true; }
+        if (root.dirty || root.candidate-dirty) { root.pending-action=action;root.pending-id=id;root.confirm-discard=true; }
         else { root.navigate(action,id); }
     }
     VerticalBox {
@@ -76,7 +114,7 @@ export component MainWindow inherits Window {
         Text { text:root.status;wrap:word-wrap; }
         if root.confirm-discard : HorizontalBox {
             Text { text:"未保存の入力を破棄して移動しますか？"; }
-            Button { text:"破棄して移動";clicked=>{ root.confirm-discard=false;root.dirty=false;root.navigate(root.pending-action,root.pending-id); } }
+            Button { text:"破棄して移動";clicked=>{ root.confirm-discard=false;root.dirty=false;root.candidate-dirty=false;root.navigate(root.pending-action,root.pending-id); } }
             Button { text:"入力を続ける";clicked=>{ root.confirm-discard=false; } }
         }
         if root.export-confirm : VerticalBox {
@@ -91,7 +129,97 @@ export component MainWindow inherits Window {
                 Button {text:"キャンセル";enabled:!root.busy;clicked=>{root.cancel-export();}}
             }
         }
-        if !root.export-confirm : HorizontalBox {
+
+        if root.metadata-open && !root.export-confirm : VerticalBox {
+            Text {text:root.review-label;font-size:20px;wrap:word-wrap;}
+            HorizontalBox {
+                Button {text:"文献へ戻る";enabled:!root.busy && !root.confirm-discard;clicked=>{root.request-navigation(1,root.editing-id);}}
+                Button {text:"表示を更新";enabled:!root.busy && !root.confirm-discard;clicked=>{root.request-navigation(4,root.editing-id);}}
+                Button {text:"候補を入力";enabled:root.metadata-operable && !root.candidate-form-open && !root.associate-confirm;clicked=>{root.begin-candidate();}}
+            }
+            if root.candidate-form-open : VerticalBox {
+                Text {text:"情報源から得た候補を入力（通信は行いません）";font-weight:600;}
+                Text {text:"識別子は今回得た情報を入力してください。更新する項目にチェックを入れます。選択した空欄は削除提案、選択しない項目は変更なしになります。";wrap:word-wrap;}
+                ScrollView {
+                    vertical-stretch:1;
+                    VerticalBox {
+                        spacing:8px;
+                        Text {text:"情報源 / 版の種類";}
+                        HorizontalBox {
+                            ComboBox {enabled:root.metadata-operable;model:["Crossref","出版社","OpenAlex","arXiv","PDF","その他"];current-index<=>root.candidate-source;selected(v)=>{root.candidate-dirty=true;}}
+                            ComboBox {enabled:root.metadata-operable;model:["不明","出版社版","著者最終稿","投稿稿","プレプリント"];current-index<=>root.candidate-kind;selected(v)=>{root.candidate-dirty=true;}}
+                        }
+                        LineEdit {enabled:root.metadata-operable;text<=>root.candidate-source-name;placeholder-text:"その他の場合の情報源名";edited(v)=>{root.candidate-dirty=true;}}
+                        LineEdit {enabled:root.metadata-operable;text<=>root.candidate-record;placeholder-text:"情報源の記録ID（任意）";edited(v)=>{root.candidate-dirty=true;}}
+                        LineEdit {enabled:root.metadata-operable;text<=>root.candidate-updated;placeholder-text:"情報源の更新日時（任意、例: 2026-11-14T10:00:00+09:00）";edited(v)=>{root.candidate-dirty=true;}}
+                        Text {text:"同一性を確認する識別子（書誌項目への上書きは行いません）";wrap:word-wrap;}
+                        LineEdit {enabled:root.metadata-operable;text<=>root.candidate-doi;placeholder-text:"候補のDOI";edited(v)=>{root.candidate-dirty=true;}}
+                        LineEdit {enabled:root.metadata-operable;text<=>root.candidate-arxiv;placeholder-text:"候補のarXiv ID";edited(v)=>{root.candidate-dirty=true;}}
+                        CheckBox {enabled:root.metadata-operable;text:"タイトルを提示する";checked<=>root.candidate-use-title;toggled=>{root.candidate-dirty=true;}}
+                        LineEdit {enabled:root.metadata-operable && root.candidate-use-title;text<=>root.candidate-title;edited(v)=>{root.candidate-dirty=true;}}
+                        CheckBox {enabled:root.metadata-operable;text:"出版年を提示する";checked<=>root.candidate-use-year;toggled=>{root.candidate-dirty=true;}}
+                        LineEdit {enabled:root.metadata-operable && root.candidate-use-year;text<=>root.candidate-year;edited(v)=>{root.candidate-dirty=true;}}
+                        CheckBox {enabled:root.metadata-operable;text:"掲載先を提示する";checked<=>root.candidate-use-container;toggled=>{root.candidate-dirty=true;}}
+                        LineEdit {enabled:root.metadata-operable && root.candidate-use-container;text<=>root.candidate-container;edited(v)=>{root.candidate-dirty=true;}}
+                        CheckBox {enabled:root.metadata-operable;text:"出版社を提示する";checked<=>root.candidate-use-publisher;toggled=>{root.candidate-dirty=true;}}
+                        LineEdit {enabled:root.metadata-operable && root.candidate-use-publisher;text<=>root.candidate-publisher;edited(v)=>{root.candidate-dirty=true;}}
+                        CheckBox {enabled:root.metadata-operable;text:"概要を提示する";checked<=>root.candidate-use-abstract;toggled=>{root.candidate-dirty=true;}}
+                        TextEdit {enabled:root.metadata-operable && root.candidate-use-abstract;text<=>root.candidate-abstract;min-height:100px;edited=>{root.candidate-dirty=true;}}
+                    }
+                }
+                HorizontalBox {
+                    Button {text:"候補を登録";enabled:root.metadata-operable;clicked=>{root.submit-candidate();}}
+                    Button {text:"入力を破棄して戻る";enabled:!root.busy && !root.confirm-discard;clicked=>{root.candidate-dirty=false;root.candidate-form-open=false;}}
+                }
+            }
+            if !root.candidate-form-open : VerticalBox {
+                if root.associate-confirm : VerticalBox {
+                    Text {text:"この候補を選択中の文献の独立した版として登録しますか？ 同一性は未確定です。書誌項目の変更はすべて項目別の承認待ちになります。";wrap:word-wrap;}
+                    HorizontalBox {
+                        Button {text:"関連付けて版を登録";enabled:root.metadata-operable;clicked=>{root.associate-candidate(root.associate-id);}}
+                        Button {text:"キャンセル";enabled:!root.busy;clicked=>{root.associate-confirm=false;}}
+                    }
+                }
+                ScrollView {
+                    vertical-stretch:1;
+                    VerticalBox {
+                        spacing:12px;alignment:start;
+                        Text {text:"承認待ちの更新";font-size:18px;font-weight:600;}
+                        Text {text:"正規版の切替と書誌項目の採用は別々に承認します。手動で編集した値は、項目を採用するまで保持します。";wrap:word-wrap;}
+                        if root.proposal-rows.length==0 : Text {text:"承認待ちの更新はありません。";}
+                        for row in root.proposal-rows : VerticalBox {
+                            spacing:5px;padding:8px;
+                            Text {text:row.label;font-weight:600;wrap:word-wrap;}
+                            Text {text:"現在: "+row.current;wrap:word-wrap;}
+                            Text {text:"候補: "+row.proposed;wrap:word-wrap;}
+                            Text {text:row.reason+" / "+row.source;wrap:word-wrap;}
+                            if row.stale : Text {text:"作成後に値が変わっています。表示を更新して確認してください。";wrap:word-wrap;}
+                            HorizontalBox {
+                                Button {text:"採用";enabled:root.metadata-operable && !root.associate-confirm && !row.stale;clicked=>{root.resolve-metadata(row.id,true);}}
+                                Button {text:"拒否";enabled:root.metadata-operable && !root.associate-confirm;clicked=>{root.resolve-metadata(row.id,false);}}
+                            }
+                        }
+                        Text {text:"取得した候補";font-size:18px;font-weight:600;}
+                        if root.candidate-rows.length==0 : Text {text:"候補はまだ登録されていません。";}
+                        for row in root.candidate-rows : VerticalBox {
+                            spacing:5px;padding:8px;
+                            Text {text:row.label;font-weight:600;wrap:word-wrap;}
+                            Text {text:row.details;wrap:word-wrap;}
+                            if row.held : Button {text:"この文献へ関連付ける…";enabled:root.metadata-operable && !root.associate-confirm;clicked=>{root.associate-id=row.id;root.associate-confirm=true;}}
+                        }
+                        Text {text:"登録済みの版";font-size:18px;font-weight:600;}
+                        if root.version-rows.length==0 : Text {text:"版はまだ登録されていません。";}
+                        for row in root.version-rows : VerticalBox {
+                            spacing:5px;padding:8px;
+                            Text {text:(row.canonical ? "正規版: " : "")+row.label;font-weight:600;wrap:word-wrap;}
+                            Text {text:row.details;wrap:word-wrap;}
+                            if !row.canonical : Button {text:"正規版切替を提案";enabled:root.metadata-operable && !root.associate-confirm;clicked=>{root.propose-canonical(row.id);}}
+                        }
+                    }
+                }
+            }
+        }
+        if !root.export-confirm && !root.metadata-open : HorizontalBox {
             VerticalBox {
                 horizontal-stretch:1;min-width:310px;
                 HorizontalBox {
@@ -144,6 +272,7 @@ export component MainWindow inherits Window {
                         Text { text:root.dirty ? "未保存" : ""; }
                         Button { text:"再読込";enabled:root.operable && (root.saved-paper);clicked=>{ root.request-navigation(1,root.editing-id); } }
                     }
+                    Button { text:"候補・版を確認";enabled:root.editable && root.saved-paper;clicked=>{root.request-navigation(4,root.editing-id);} }
                     ScrollView {
                         vertical-stretch:1;
                         VerticalBox {

@@ -15,7 +15,7 @@ A worker thread owns database operations. The window remains responsive while wo
 
 Every form save is one SQLite transaction. Before any command runs, the complete original paper and all field heads are compared with a consistent current read. Any document/head change rejects the whole save, including citation key and user metadata changes. Only form fields changed by the user generate commands; untouched bibliography fields are not rewritten. No-op saves produce no events. The expected heads still protect explicit clears.
 
-Schema version 2 introduces a local-settings table holding the persistent local device ID. Version-1 databases are upgraded transactionally without rewriting paper/history/event rows. The explicit-device storage API remains available; the desktop uses `open_local` so a restart does not create another device identity. Newer schemas are rejected without downgrading them.
+Schema version 4 adds normalized candidates, proposals and version snapshots. The local-settings table holds the persistent local device ID. Version-1 databases are upgraded transactionally without rewriting paper/history/event rows. The explicit-device storage API remains available; the desktop uses `open_local` so a restart does not create another device identity. Newer schemas are rejected without downgrading them.
 
 Verification:
 
@@ -28,4 +28,10 @@ The desktop tests cover configuration parsing and fallback paths, real-file appl
 
 Select saved documents with the export checkbox, enter a .bib target path and prepare BibTeX output. Review warnings and the exact preview before confirming. Existing-file replacement is explicitly marked; cancel retains the original. Unsaved edits are not exported. See ../../docs/identifiers-and-export.md for identifier rules, compatibility, format mappings, file-publication guarantees and tests.
 
-External lookup, versions, attachments, tags/collections and remote synchronization remain future milestones. Search currently uses SQLite's ASCII case folding; full Unicode case folding/relevance ranking are not implemented.
+External lookup over the network, attachments, tags/collections and remote synchronization remain future milestones. Search currently uses SQLite's ASCII case folding; full Unicode case folding/relevance ranking are not implemented.
+
+Open a saved active paper and choose 「候補・版を確認」 to review field proposals, held candidates and independent versions. 「候補を入力」 records external information manually; it does not contact a provider. Enter the candidate's own DOI/arXiv identifiers as identity evidence. They are not copied from the current paper and are not submitted as identifier replacement. The screen currently accepts title, year, container, publisher and abstract updates; the storage API accepts all bibliography fields. Check only supplied fields: a checked empty field proposes deletion, and an unchecked field leaves the current value untouched.
+
+Exact identifier matches can fill missing values. Manual values, deletions, uncertain freshness and lower-priority versions remain proposals. Related, conflicting and unknown candidates stay held until explicit association. Association records an independent version and proposes all differences. Publisher versions create a canonical-switch proposal. Approving a switch changes the canonical pointer and runs the usual field update policy: manual changes remain separate approvals. Other registered versions can also be proposed as canonical. The window lists source record/update time and current/proposed values, supports adopt/reject, and retains draft inputs and their stable candidate ID after errors. Custom resolutions are available through the storage API; edit the paper manually for a custom value in the desktop.
+
+Additional contracts: metadata_form_contract checks explicit field presence and validation; metadata_window_contract exercises the real worker/callback path through failed input, discarded navigation, missing-value completion, field adoption/rejection, held association, canonical approval and restart. See ../../docs/metadata-candidates.md.
