@@ -1,39 +1,36 @@
 # 実装工程と現状監査
 
-監査日: 2026-11-15。対象HEAD: `8b64301`。本書の状態はこの監査時点を示す。機能が存在すること、コミット済みであること、工程の完了条件が検証済みであることは区別する。
+更新日: 2026-11-15。初回監査HEAD: `8b64301`。以後のStep 6修復、Step 7/8検証、Step 9分離を反映した。機能が存在すること、コミット済みであること、工程の完了条件が検証済みであることは区別する。
 
-## 作業ツリーと基準状態
+## 実装・検証の更新
 
-- 既存未コミット: `apps/desktop/ui/main.slint`（Step 8接続）、未追跡 `apps/desktop/ui/components/paper-detail.slint`。今回の文書整理では変更・コミットしない。
-- Step 1〜7の対応コミットは下表。Step 8はRust反映と回帰試験が不足し未完了。
-- Workspaceはcore/storage/metadata/desktopの4クレート。schemaは4、SQL正規化を維持。添付・FTS5・遠隔同期は未実装。
+- `6762f22`: 生成Enumに全テストを追従し、import不足・旧整数操作・fmt不一致を修復。
+- `26f69bb`: カードをpreferred-heightと暗黙サイズへ変更し、狭い幅の長文・出力チェックの見切れを修正。実ポインターのSplitter追従、最小/最大幅、縮小・開閉、操作不可条件を試験。
+- `ad32671`: 引き継いだStep 8を完成。正常reply時の著者表示/mode、保存失敗・取消・競合・新規遷移・削除復元、著者行番号を修正。既存未コミット2ファイルをこの工程で継承してコミット。
+- Step 9: PaperEditor分離。MainWindowのRust接続、親の判断、双方向編集値とdirty、生成AuthorRow/Enumを維持。
+- Workspaceはcore/storage/metadata/desktopの4クレート。schema 4のSQL契約は変更していない。
 
-## 既存の検証結果
+検証: workspaceのcheck/test、全ターゲットclippy（警告をエラー扱い）、fmt、diffチェック。`editor_window_contract`、`layout_window_contract`、`pane_layout_contract` とreply単体試験で実操作/状態を確認。公開APIの通信テストは通常どおり明示実行専用としてignored。
 
-| 検証 | 結果 | 既存の問題 |
-| --- | --- | --- |
-| `cargo check --workspace --offline --locked` | 通過 | 実アプリの型検査。テストの型検査を含まない |
-| `cargo test --workspace --offline --locked` | コンパイル失敗 | layout_window_contractのNavigationAction import不足。他の画面テストにも旧整数操作が残りE0308 |
-| `cargo clippy --workspace --all-targets --offline --locked -- -D warnings` | コンパイル失敗 | 同じ画面テストAPI不整合。lintを全体通過したとは扱わない |
-| `cargo fmt --all --check` | 不一致 | ui.rs先頭useの順序。今回の文書変更前から存在 |
+WSLg/winit-softwareの実描画でもワーカーと単一イベントループによる登録→閲覧→編集→保存エラー→取消、著者表示、縮小・サイドバー、Splitterを確認し、Binding Loopがないことと日本語/長文の描画を確認した。環境由来のxdg desktop settings通知バス接続警告は残り、機能の不具合と区別する。
 
-UIテストのコンパイル失敗のため、現HEAD全体のテスト成功やSplitterの実操作確認を主張しない。Binding Loopは式の静的確認のみで解消済みと断定しない。今回の文書変更は上記のコード不整合を導入していない。
+初回監査で存在したテストのコンパイル失敗・fmt不一致は修復済み。初回監査の未コミットUI変更はStep 8へ継承した。以後は未着手の工程を完了扱いにしない。
 
 ## Step 1〜13: UI構造
 
-「実装あり」は完了認定ではない。次の一工程では既存テストのAPI追従を回復し、Step 7/8の検証を先に行う。
+Step 1〜9を実装・検証済みとする。長期的なUI/a11y試験は引き続き各工程で行う。
 
 | Step | 工程 | 状態・根拠 | 依存と完了条件 |
 | --- | --- | --- | --- |
-| 1 | Theme | 実装・コミットあり `489b8d0` | 色トークンの参照、描画の整合を確認 |
-| 2 | PaperCard抽出 | 実装・コミットあり `4c16a23` | 親へのopened/selection callbackと選択・出力の独立性を試験 |
-| 3 | カード密度/hover | 実装・コミットあり `a8b0428` | 長文、多数著者、通常/出力モードで欠けず操作可能 |
-| 4 | Sidebar抽出 | 実装・コミットあり `776f369` | 子にDB/全体遷移を入れず既存操作・折り畳みを保持 |
-| 5 | 操作条件 | 実装・コミットあり `d66f7fa` | 削除/破棄/About/出力確認中と処理中の無効操作防止を試験 |
-| 6 | 操作Enum | アプリ移行あり `4b6b25f`、テスト追従不足 | 生成Enumを全呼出側で利用し、著者の実行順/行番号を試験 |
-| 7 | Splitter | 実装・コミットあり `8b64301`、実動作検証未完 | 6。ドラッグ追従、縮小/開閉、最小幅、Binding Loopなしを確認 |
-| 8 | 閲覧/編集分離 | 未コミットで進行中 | 6/7。著者表示、選択/新規/切替時のmode、保存成功・失敗・再読込失敗・取消の契約を試験 |
-| 9 | PaperEditor抽出 | 未着手 | 8完了。親API/双方向bind/dirty/削除復元/確認を維持し外観変更を混ぜない |
+| 1 | Theme | 完了 `489b8d0` | 色トークンの参照、描画の整合を確認 |
+| 2 | PaperCard抽出 | 完了 `4c16a23` | 親へのopened/selection callbackと選択・出力の独立性を試験 |
+| 3 | カード密度/hover | 完了 `a8b0428`、高さ追従を修正 | 長文、多数著者、通常/出力モードで欠けず操作可能 |
+| 4 | Sidebar抽出 | 完了 `776f369` | 子にDB/全体遷移を入れず既存操作・折り畳みを保持 |
+| 5 | 操作条件 | 完了 `d66f7fa`、確認中操作を回帰試験 | 削除/破棄/About/出力確認中と処理中の無効操作防止を試験 |
+| 6 | 操作Enum | 完了、テスト追従 `6762f22` | 生成Enumを全呼出側で利用し、著者の実行順/行番号を試験 |
+| 7 | Splitter | 完了、操作試験 `26f69bb` | 6。ドラッグ追従、縮小/開閉、最小幅、Binding Loopなしを確認 |
+| 8 | 閲覧/編集分離 | 完了 `ad32671` | 6/7。著者表示、選択/新規/切替時のmode、保存成功・失敗・再読込失敗・取消の契約を試験 |
+| 9 | PaperEditor抽出 | 完了 | 8完了。親API/双方向bind/dirty/削除復元/確認を維持し外観変更を混ぜない |
 | 10 | AuthorEditor抽出 | 未着手 | 9。個人/団体/Literal、追加削除上下、実行行番号と順序を試験 |
 | 11 | PaperList抽出 | 未着手 | 2/7/10。検索/sort/page、幅、出力選択を維持 |
 | 12 | 機能画面抽出 | 部分的（AboutDialogは同一ファイル）、本抽出は未着手 | 9〜11。Import/Metadata/Proposal/Export/各Dialogを必要単位で順次分離 |
@@ -54,16 +51,10 @@ UIテストのコンパイル失敗のため、現HEAD全体のテスト成功�
 | 20 | Context menu | 未着手 | 14/18/19。単一/複数/削除済みで適用可能な操作を限定 |
 | 21 | UI設定永続化 | 未着手。ConfigはCLI DBパスのみ | 保存方式/互換性を決定。窓/幅/折り畳み/sort/themeの復元と既定値 |
 | 22 | Dark mode | 未着手。固定Themeのみ | 1/21。標準widgetと独自配色の整合、OS/手動設定優先度を決定 |
-| 23 | A11y/UI回帰 | accessible-label、headless入力試験あり。ただし現在テストcompile不能 | 毎工程実施。focus/keyboard/縮小/長文/空/失敗/dirty/非同期を検証 |
+| 23 | A11y/UI回帰 | accessible-label、headless入力試験あり。検証を回復済み | 毎工程実施。focus/keyboard/縮小/長文/空/失敗/dirty/非同期を検証 |
 
 ## 次の一工程
 
-Step 9へは進まず、**Step 8を完成させるための既存不整合修復と検証**を行う。
+**Step 10: AuthorEditorの分離**。Step 9で切り出したPaperEditorの著者部分だけを対象とし、個人/団体/Literal、ORCID、追加・削除・上下、行番号と順序を維持する。公開MainWindow/Rust接続と生成型は引き続き維持する。
 
-1. Step 6の全テストを生成Enumへ追従させ、import・引数順・実際の著者行番号を確認する。
-2. Step 7の長文カード/出力チェック/幅drag/縮小/サイドバー開閉を検証し、既存不具合があれば局所修正する。
-3. Step 8の未コミット部分を保持してRustのapply_replyへ著者表示とmode遷移を接続する。取消はDB再読込、保存失敗は保持、成功は正常再読込後のみ閲覧へ戻す。
-4. 全check/test/clippy/fmtとUI実操作を確認し、できなかった確認は明記する。
-5. 工程ごとにコミット。ユーザー作業の取り込みは作業範囲を確認して行い、履歴を書き換えない。
-
-その完了後、Step 9ではフォームを `components/paper-editor.slint` に移すだけに絞る。Step 14以降の未確定仕様、DB変更、同期設計を同時に導入しない。
+Step 11以降の一覧分割、Step 13の排他画面Enum、Step 14の選択仕様、DB/同期設計を同時に混ぜない。
