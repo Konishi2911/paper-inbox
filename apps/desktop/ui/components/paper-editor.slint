@@ -1,4 +1,5 @@
 import { VerticalBox, HorizontalBox, Button, LineEdit, TextEdit, ComboBox, CheckBox, ScrollView } from "std-widgets.slint";
+import { AuthorEditor } from "author-editor.slint";
 import { AuthorAction, AuthorRow } from "../types.slint";
 
 // The parent owns navigation, persistence and confirmation state.
@@ -54,36 +55,12 @@ export component PaperEditor inherits VerticalBox {
             LineEdit { enabled:root.editable; text<=>root.citation-key;edited(text)=>{ root.dirty=true; } }
             Text { text:"タイトル"; }
             LineEdit { accessible-label:"文献タイトル";enabled:root.editable; text<=>root.paper-title;edited(text)=>{ root.dirty=true; } }
-            Text { text:"著者（上から順に保存）"; }
-            for author[i] in root.author-rows : VerticalBox {
-                HorizontalBox {
-                    ComboBox { enabled:root.editable; current-index:author.kind;model:["個人","団体","表記をそのまま使用"];selected(value)=>{ root.author-kind(i,self.current-index); } }
-                    Button {
-                        text:"↑";
-                        enabled:root.editable && (i>0);
-                        clicked=>{ root.author-action(AuthorAction.move-up, i); }
-                    }
-                    Button {
-                        text:"↓";
-                        enabled:root.editable && (i+1 < root.author-rows.length);
-                        clicked=>{ root.author-action(AuthorAction.move-down, i); }
-                    }
-                    Button {
-                        enabled:root.editable;
-                        text:"削除";
-                        clicked=>{ root.author-action(AuthorAction.remove, i); }
-                    }
-                }
-                HorizontalBox {
-                    LineEdit { enabled:root.editable; text:author.name;placeholder-text:author.kind==0 ? "姓" : "名称";edited(text)=>{ root.author-edit(i,0,text); } }
-                    if author.kind==0 : LineEdit { enabled:root.editable; text:author.given;placeholder-text:"名（任意）";edited(text)=>{ root.author-edit(i,1,text); } }
-                }
-                LineEdit { enabled:root.editable; text:author.orcid;placeholder-text:"ORCID（任意）";edited(text)=>{ root.author-edit(i,2,text); } }
-            }
-            Button {
-                enabled:root.editable;
-                text:"著者を追加";
-                clicked=>{ root.author-action(AuthorAction.add, 0); }
+            AuthorEditor {
+                author-rows:root.author-rows;
+                editable:root.editable;
+                author-edit(index,field,value)=>{root.author-edit(index,field,value);}
+                author-kind(index,kind)=>{root.author-kind(index,kind);}
+                author-action(action,index)=>{root.author-action(action,index);}
             }
             Text { text:"出版種別"; }
             ComboBox { enabled:root.editable; model:["未指定","学術誌論文","会議論文","書籍","書籍の章","修士論文","博士論文","学位論文","技術報告","プレプリント","特許","その他"];current-index<=>root.publication-type;selected(index)=>{ root.dirty=true; } }

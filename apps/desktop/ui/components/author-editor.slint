@@ -1,0 +1,42 @@
+import { VerticalBox, HorizontalBox, Button, LineEdit, ComboBox } from "std-widgets.slint";
+import { AuthorAction, AuthorRow } from "../types.slint";
+
+export component AuthorEditor inherits VerticalBox {
+    in property <[AuthorRow]> author-rows;
+    in property <bool> editable;
+    callback author-edit(int,int,string);
+    callback author-kind(int,int);
+    callback author-action(AuthorAction,int);
+    padding:0px;spacing:8px;
+    Text { text:"著者（上から順に保存）"; }
+    for author[i] in root.author-rows : VerticalBox {
+        HorizontalBox {
+            ComboBox { enabled:root.editable; current-index:author.kind;model:["個人","団体","表記をそのまま使用"];selected(value)=>{ root.author-kind(i,self.current-index); } }
+            Button {
+                text:"↑";
+                enabled:root.editable && (i>0);
+                clicked=>{ root.author-action(AuthorAction.move-up, i); }
+            }
+            Button {
+                text:"↓";
+                enabled:root.editable && (i+1 < root.author-rows.length);
+                clicked=>{ root.author-action(AuthorAction.move-down, i); }
+            }
+            Button {
+                enabled:root.editable;
+                text:"削除";
+                clicked=>{ root.author-action(AuthorAction.remove, i); }
+            }
+        }
+        HorizontalBox {
+            LineEdit { enabled:root.editable; text:author.name;placeholder-text:author.kind==0 ? "姓" : "名称";edited(text)=>{ root.author-edit(i,0,text); } }
+            if author.kind==0 : LineEdit { enabled:root.editable; text:author.given;placeholder-text:"名（任意）";edited(text)=>{ root.author-edit(i,1,text); } }
+        }
+        LineEdit { enabled:root.editable; text:author.orcid;placeholder-text:"ORCID（任意）";edited(text)=>{ root.author-edit(i,2,text); } }
+    }
+    Button {
+        enabled:root.editable;
+        text:"著者を追加";
+        clicked=>{ root.author-action(AuthorAction.add, 0); }
+    }
+}
