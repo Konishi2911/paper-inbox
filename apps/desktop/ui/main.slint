@@ -1,15 +1,14 @@
 import { VerticalBox, HorizontalBox, Button, LineEdit, TextEdit, ComboBox, CheckBox, ScrollView, AboutSlint } from "std-widgets.slint";
 import { Theme } from "theme.slint";
-import { PaperCard } from "components/paper-card.slint";
+import { PaperList } from "components/paper-list.slint";
 import { Sidebar } from "components/sidebar.slint";
 import { Splitter } from "components/splitter.slint";
 import { PaperDetail } from "components/paper-detail.slint";
 import { PaperEditor } from "components/paper-editor.slint";
-import { AuthorAction, NavigationAction, AuthorRow } from "types.slint";
+import { AuthorAction, NavigationAction, AuthorRow, PaperRow } from "types.slint";
 
-export { AuthorAction, NavigationAction, AuthorRow } from "types.slint";
+export { AuthorAction, NavigationAction, AuthorRow, PaperRow } from "types.slint";
 
-export struct PaperRow { selected:bool, id:string, title:string, authors:string, year:string, citation-key:string }
 export struct CandidateRow { id:string, label:string, details:string, held:bool }
 export struct ProposalRow { id:string, label:string, current:string, proposed:string, reason:string, source:string, stale:bool }
 export struct VersionRow { id:string, label:string, details:string, canonical:bool }
@@ -258,48 +257,23 @@ export component MainWindow inherits Window {
                 about-requested => { root.about-open = true; }
                 reconnect-requested => { root.request-navigation(NavigationAction.reconnect,""); }
             }
-            paper-list := Rectangle {
+            paper-list := PaperList {
                 preferred-width: root.paper-list-width;
                 min-width: root.paper-list-min-width;
                 horizontal-stretch: 0;
-
-                background: Theme.list-background;
-                VerticalBox {
-                    padding:16px;spacing:10px;
-                    Text {text:root.show-deleted ? "削除済み" : "すべての文献";font-size:20px;font-weight:700;color:Theme.text-primary;}
-                    HorizontalBox {
-                        LineEdit {enabled:root.operable;text<=>root.search-text;placeholder-text:"タイトル・著者・引用キーを検索";accepted=>{root.offset=0;root.search();}}
-                        Button {enabled:root.operable;text:"検索";clicked=>{root.offset=0;root.search();}}
-                    }
-                    CheckBox {enabled:root.operable && !root.show-deleted;text:"アーカイブを含める";checked<=>root.include-archived;toggled=>{root.offset=0;root.search();}}
-                    ComboBox {enabled:root.operable;model:["追加日の新しい順","タイトル順","出版年の新しい順"];current-index<=>root.sort-index;selected(index)=>{root.offset=0;root.search();}}
-                    ScrollView {
-                        vertical-stretch:1;
-                        VerticalBox {
-                            spacing:8px;alignment:start;
-                            for row in root.papers : PaperCard {
-                                title: row.title;
-                                authors: row.authors;
-                                year: row.year;
-                                citation-key: row.citation-key;
-
-                                active: root.editing-id == row.id;
-                                selected: row.selected;
-                                operable: root.operable;
-                                export-mode: root.export-settings-open;
-
-                                opened => {root.open-paper(row.id);}
-                                selection-changed(checked) => {root.select-paper(row.id, checked);}
-                            }
-                            if root.papers.length==0 : Text {text:root.search-text!="" ? "一致する文献がありません。検索語を変えてください。" : (root.show-deleted ? "削除済みの文献はありません。" : "文献がまだありません。左のメニューから登録しましょう。");wrap:word-wrap;color:Theme.text-secondary;}
-                        }
-                    }
-                    HorizontalBox {
-                        Button {text:"前へ";enabled:root.operable && root.offset>0;clicked=>{root.offset=max(0,root.offset - 20);root.search();}}
-                        Text {text:root.total==0 ? "0件" : (root.offset+1)+"–"+min(root.offset+20,root.total)+" / "+root.total;horizontal-alignment:center;}
-                        Button {text:"次へ";enabled:root.operable && root.offset+20<root.total;clicked=>{root.offset+=20;root.search();}}
-                    }
-                }
+                editing-id : root.editing-id;
+                export-settings-open : root.export-settings-open;
+                include-archived <=> root.include-archived;
+                offset <=> root.offset;
+                opened(arg0)=>{root.open-paper(arg0);}
+                operable : root.operable;
+                papers : root.papers;
+                search()=>{root.search();}
+                search-text <=> root.search-text;
+                select-paper(arg0,arg1)=>{root.select-paper(arg0,arg1);}
+                show-deleted : root.show-deleted;
+                sort-index <=> root.sort-index;
+                total : root.total;
             }
             Splitter {
                 target-width: paper-list.width;
