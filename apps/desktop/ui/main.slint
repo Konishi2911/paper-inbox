@@ -2,6 +2,7 @@ import { VerticalBox, HorizontalBox, Button, LineEdit, TextEdit, ComboBox, Check
 import { Theme } from "theme.slint";
 import { PaperCard } from "components/paper-card.slint";
 import { Sidebar } from "components/sidebar.slint";
+import { Splitter } from "components/splitter.slint";
 import { AuthorAction, NavigationAction } from "types.slint";
 
 export { AuthorAction, NavigationAction } from "types.slint";
@@ -127,6 +128,16 @@ export component MainWindow inherits Window {
     in-out property <bool> candidate-use-container:false;
     in-out property <bool> candidate-use-publisher:false;
     in-out property <bool> candidate-use-abstract:false;
+
+    // Pane layout
+    in-out property <length> paper-list-width: 380px;
+
+    property <length> sidebar-width:
+        root.sidebar-collapsed ? 64px : 208px;
+
+    property <length> paper-list-min-width: 260px;
+    property <length> paper-detail-min-width: 360px;
+
     callback begin-candidate();
     callback submit-candidate();
     callback associate-candidate(string);
@@ -209,7 +220,7 @@ export component MainWindow inherits Window {
         HorizontalBox {
             spacing:0px;vertical-stretch:1;
             Sidebar {
-                width: root.sidebar-collapsed ? 60px : 200px;
+                width: root.sidebar-width;
 
                 collapsed: root.sidebar-collapsed;
                 operable: root.operable;
@@ -242,8 +253,12 @@ export component MainWindow inherits Window {
                 about-requested => { root.about-open = true; }
                 reconnect-requested => { root.request-navigation(NavigationAction.reconnect,""); }
             }
-            Rectangle {
-                width:root.sidebar-collapsed ? 420px : 380px;background:Theme.list-background;
+            paper-list := Rectangle {
+                preferred-width: root.paper-list-width;
+                min-width: root.paper-list-min-width;
+                horizontal-stretch: 0;
+
+                background: Theme.list-background;
                 VerticalBox {
                     padding:16px;spacing:10px;
                     Text {text:root.show-deleted ? "削除済み" : "すべての文献";font-size:20px;font-weight:700;color:Theme.text-primary;}
@@ -281,9 +296,23 @@ export component MainWindow inherits Window {
                     }
                 }
             }
-            Rectangle {width:1px;background:Theme.border;}
+            Splitter {
+                target-width: paper-list.width;
+                operable: root.operable;
+
+                resize-requested(new-width) => {
+                    root.paper-list-width = clamp(
+                        new-width,
+                        root.paper-list-min-width,
+                        root.width - root.sidebar-width - root.paper-detail-min-width - 8px
+                    );
+                }
+            }
             Rectangle {
-                horizontal-stretch:1;background:Theme.surface;
+                horizontal-stretch:1;
+                min-width:root.paper-detail-min-width;
+
+                background:Theme.surface;
                 VerticalBox {
                     padding:20px;spacing:12px;
                     if root.confirm-discard : VerticalBox {
