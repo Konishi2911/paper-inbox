@@ -1,3 +1,4 @@
+use paper_desktop::NavigationAction;
 use paper_desktop::{MainWindow, config::Config, ui};
 use slint::{ComponentHandle, Model};
 use std::time::{Duration, Instant};
@@ -52,7 +53,7 @@ fn candidate_window_protects_input_manual_values_and_separate_canonical_approval
     wait(&window);
     assert!(window.get_saved_paper(), "{}", window.get_status());
     let id = window.get_editing_id();
-    window.invoke_request_navigation(4, id.clone());
+    window.invoke_request_navigation(NavigationAction::MetadataReview, id.clone());
     wait(&window);
     assert!(window.get_metadata_open());
     window.invoke_begin_candidate();
@@ -65,7 +66,7 @@ fn candidate_window_protects_input_manual_values_and_separate_canonical_approval
     assert!(window.get_candidate_dirty());
     assert_eq!(window.get_candidate_id(), candidate_id);
     assert_eq!(window.get_candidate_doi(), "invalid");
-    window.invoke_request_navigation(1, id.clone());
+    window.invoke_request_navigation(NavigationAction::OpenPaper, id.clone());
     assert!(window.get_confirm_discard());
     assert!(window.get_metadata_open());
     window.set_confirm_discard(false);
@@ -119,10 +120,10 @@ fn candidate_window_protects_input_manual_values_and_separate_canonical_approval
     // A discarded candidate form must not reappear on refresh.
     window.invoke_begin_candidate();
     window.set_candidate_dirty(false);
-    window.invoke_request_navigation(4, id.clone());
+    window.invoke_request_navigation(NavigationAction::MetadataReview, id.clone());
     wait(&window);
     assert!(!window.get_candidate_form_open());
-    window.invoke_request_navigation(1, id.clone());
+    window.invoke_request_navigation(NavigationAction::OpenPaper, id.clone());
     wait(&window);
     assert!(!window.get_metadata_open());
     drop(controller);
@@ -135,7 +136,7 @@ fn candidate_window_protects_input_manual_values_and_separate_canonical_approval
         },
     );
     wait(&window);
-    window.invoke_navigate(4, id);
+    window.invoke_navigate(NavigationAction::MetadataReview, id);
     wait(&window);
     assert_eq!(window.get_version_rows().row_count(), 2);
     assert_eq!(window.get_candidate_rows().row_count(), 2);

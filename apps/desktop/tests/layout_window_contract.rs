@@ -1,4 +1,5 @@
 use i_slint_backend_testing::ElementHandle;
+use paper_desktop::NavigationAction;
 use paper_desktop::{MainWindow, config::Config, ui};
 use slint::{
     ComponentHandle, Model,
@@ -205,7 +206,7 @@ fn three_panes_support_direct_clicks_collapsing_export_and_protected_navigation(
         "export checkbox does not open a paper"
     );
 
-    window.invoke_request_navigation(4, first_id.clone());
+    window.invoke_request_navigation(NavigationAction::MetadataReview, first_id.clone());
     wait(&window);
     assert!(window.get_metadata_open());
     assert_eq!(window.get_papers().row_count(), 2);

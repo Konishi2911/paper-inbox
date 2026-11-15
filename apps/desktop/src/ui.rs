@@ -1,6 +1,6 @@
 use crate::export::{self, PreparedExport};
 use crate::{
-    AuthorAction, NavigationAction, AuthorRow, MainWindow, PaperRow,
+    AuthorAction, AuthorRow, MainWindow, NavigationAction, PaperRow,
     application::{Application, AuthorInput, PaperForm},
     config::Config,
 };

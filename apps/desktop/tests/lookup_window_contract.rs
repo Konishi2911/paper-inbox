@@ -1,4 +1,5 @@
 use paper_core::{model::*, ports::PaperRepository};
+use paper_desktop::NavigationAction;
 use paper_desktop::{MainWindow, config::Config, ui};
 use slint::{ComponentHandle, Model};
 use std::time::{Duration, Instant};
@@ -82,7 +83,7 @@ fn lookup_window_covers_preview_confirmation_errors_existing_updates_and_key_pro
         }),
     );
     wait(&window);
-    window.invoke_request_navigation(5, "".into());
+    window.invoke_request_navigation(NavigationAction::ImportPaper, "".into());
     wait(&window);
     assert!(window.get_lookup_open());
     assert!(window.get_lookup_new());
@@ -110,7 +111,7 @@ fn lookup_window_covers_preview_confirmation_errors_existing_updates_and_key_pro
     wait(&window);
     assert!(window.get_lookup_has_result());
     assert_eq!(window.get_lookup_key(), "bad key");
-    window.invoke_request_navigation(0, "".into());
+    window.invoke_request_navigation(NavigationAction::CreatePaper, "".into());
     assert!(window.get_confirm_discard());
     window.set_confirm_discard(false);
     window.set_lookup_key("Smith2024".into());
@@ -129,7 +130,7 @@ fn lookup_window_covers_preview_confirmation_errors_existing_updates_and_key_pro
     assert_eq!(window.get_citation_key(), "Smith2024");
     window.invoke_save();
     wait(&window);
-    window.invoke_request_navigation(4, id.clone());
+    window.invoke_request_navigation(NavigationAction::MetadataReview, id.clone());
     wait(&window);
     window.invoke_begin_lookup();
     wait(&window);
@@ -157,9 +158,9 @@ fn lookup_window_covers_preview_confirmation_errors_existing_updates_and_key_pro
     );
     // Starting a new lookup clears the old editing session; cancel cannot turn
     // the previous paper into a new-paper save by accident.
-    window.invoke_request_navigation(1, id);
+    window.invoke_request_navigation(NavigationAction::OpenPaper, id);
     wait(&window);
-    window.invoke_request_navigation(5, "".into());
+    window.invoke_request_navigation(NavigationAction::ImportPaper, "".into());
     wait(&window);
     assert!(!window.get_saved_paper());
     window.set_lookup_identifier("10.1000/a".into());

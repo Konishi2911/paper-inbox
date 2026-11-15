@@ -1,3 +1,4 @@
+use paper_desktop::{AuthorAction, NavigationAction};
 use paper_desktop::{MainWindow, config::Config, ui};
 use slint::{ComponentHandle, Model};
 use std::time::{Duration, Instant};
@@ -43,7 +44,7 @@ fn real_window_callbacks_cover_registration_validation_edit_restart_and_trash() 
     window.set_citation_key("Window2026".into());
     window.set_paper_title("Window test".into());
     window.set_year("2026".into());
-    window.invoke_author_action(0, 0);
+    window.invoke_author_action(AuthorAction::Add, 0);
     window.invoke_author_edit(0, 0, "Lovelace".into());
     window.invoke_author_edit(0, 1, "Ada".into());
     window.invoke_save();
@@ -109,7 +110,7 @@ fn real_window_callbacks_cover_registration_validation_edit_restart_and_trash() 
     assert_eq!(window.get_paper_title(), "Edited from UI");
     assert_eq!(window.get_year(), "invalid");
     assert!(window.get_status().contains("出版年"));
-    window.invoke_request_navigation(0, "".into());
+    window.invoke_request_navigation(NavigationAction::CreatePaper, "".into());
     assert_eq!(window.get_editing_id(), id);
     assert!(window.get_dirty());
     // Cancel the pending discard and keep editing the same form.
@@ -137,7 +138,7 @@ fn real_window_callbacks_cover_registration_validation_edit_restart_and_trash() 
     );
     wait(&window);
     assert_eq!(window.get_total(), 1);
-    window.invoke_navigate(1, id.clone());
+    window.invoke_navigate(NavigationAction::OpenPaper, id.clone());
     wait(&window);
     assert_eq!(window.get_paper_title(), "Edited from UI");
     assert_eq!(window.get_year(), "2027");
@@ -161,7 +162,7 @@ fn real_window_callbacks_cover_registration_validation_edit_restart_and_trash() 
         let connection = rusqlite::Connection::open(&path).unwrap();
         connection.execute("UPDATE bibliographies SET doi='legacy invalid DOI' WHERE id=(SELECT bibliography_id FROM paper_snapshots WHERE id=(SELECT snapshot_id FROM papers WHERE id=?1))",[id.as_str()]).unwrap();
     }
-    window.invoke_navigate(1, id.clone());
+    window.invoke_navigate(NavigationAction::OpenPaper, id.clone());
     wait(&window);
     assert!(!window.get_identifier_warning().is_empty());
     assert_eq!(window.get_doi(), "legacy invalid DOI");
