@@ -308,7 +308,10 @@ impl Worker {
             },
             Request::New => {
                 self.editing = None;
+                self.review = None;
+                self.pending_lookup = None;
                 Reply {
+                    close_metadata: true,
                     editor: Some(EditorView {
                         form: PaperForm::default(),
                         id: None,
@@ -1100,6 +1103,23 @@ fn apply_reply(ui: &MainWindow, reply: Reply) {
     }
     if let Some(editor) = reply.editor {
         let f = editor.form;
+        // A complete, successfully loaded editor is the only point at which
+        // an existing paper returns to read mode. Error replies keep the draft.
+        ui.set_edit_mode(editor.id.is_none());
+        ui.set_paper_authors(
+            f.authors
+                .iter()
+                .map(|a| {
+                    if a.kind == 0 && !a.given.is_empty() {
+                        format!("{} {}", a.given, a.name)
+                    } else {
+                        a.name.clone()
+                    }
+                })
+                .collect::<Vec<_>>()
+                .join(", ")
+                .into(),
+        );
         ui.set_citation_key(f.citation_key.into());
         ui.set_paper_title(f.title.into());
         ui.set_container_title(f.container_title.into());
@@ -1242,4 +1262,100 @@ fn warning_messages(prepared: &PreparedExport) -> String {
         })
         .collect::<Vec<_>>()
         .join("\n")
+}
+
+#[cfg(test)]
+mod reply_contract {
+    use super::{EditorView, Reply, apply_reply};
+    use crate::{
+        MainWindow,
+        application::{AuthorInput, PaperForm},
+    };
+    use paper_core::model::PaperId;
+
+    #[test]
+    fn only_a_complete_reload_leaves_existing_edit_mode() {
+        i_slint_backend_testing::init_no_event_loop();
+        let w = MainWindow::new().unwrap();
+        w.set_edit_mode(true);
+        w.set_dirty(true);
+        w.set_paper_title("draft".into());
+        apply_reply(
+            &w,
+            Reply {
+                message: "validation or conflict failure".into(),
+                ..Default::default()
+            },
+        );
+        assert!(w.get_edit_mode());
+        assert!(w.get_dirty());
+        assert_eq!(w.get_paper_title(), "draft");
+        apply_reply(
+            &w,
+            Reply {
+                saved: true,
+                load_required: true,
+                message: "saved, reload failed".into(),
+                ..Default::default()
+            },
+        );
+        assert!(w.get_edit_mode());
+        assert!(!w.get_dirty());
+        assert!(w.get_load_required());
+        assert_eq!(w.get_paper_title(), "draft");
+        apply_reply(
+            &w,
+            Reply {
+                editor: Some(EditorView {
+                    id: Some(PaperId::new()),
+                    deleted: false,
+                    identifier_warning: String::new(),
+                    form: PaperForm {
+                        title: "loaded".into(),
+                        authors: vec![
+                            AuthorInput {
+                                kind: 0,
+                                given: "Ada".into(),
+                                name: "Smith".into(),
+                                orcid: String::new(),
+                            },
+                            AuthorInput {
+                                kind: 1,
+                                name: "Research Group".into(),
+                                ..Default::default()
+                            },
+                            AuthorInput {
+                                kind: 2,
+                                name: "Literal Author".into(),
+                                ..Default::default()
+                            },
+                        ],
+                        ..Default::default()
+                    },
+                }),
+                ..Default::default()
+            },
+        );
+        assert!(!w.get_edit_mode());
+        assert!(!w.get_load_required());
+        assert_eq!(w.get_paper_title(), "loaded");
+        assert_eq!(
+            w.get_paper_authors(),
+            "Ada Smith, Research Group, Literal Author"
+        );
+        apply_reply(
+            &w,
+            Reply {
+                editor: Some(EditorView {
+                    id: None,
+                    deleted: false,
+                    identifier_warning: String::new(),
+                    form: PaperForm::default(),
+                }),
+                ..Default::default()
+            },
+        );
+        assert!(w.get_edit_mode());
+        assert_eq!(w.get_paper_authors(), "");
+    }
 }

@@ -88,6 +88,7 @@ fn three_panes_support_direct_clicks_collapsing_export_and_protected_navigation(
         wait(&window);
     }
     let second_id = window.get_editing_id();
+    click(&window, "編集");
     window.set_paper_title("About dialog draft".into());
     window.set_dirty(true);
     click(&window, "このアプリについて");
@@ -140,6 +141,7 @@ fn three_panes_support_direct_clicks_collapsing_export_and_protected_navigation(
     click(&window, "メニューを展開");
     assert!(!window.get_sidebar_collapsed());
 
+    click(&window, "編集");
     window.set_paper_title("Unsaved draft".into());
     window.set_dirty(true);
     click(&window, "文献を開く: First paper");
@@ -162,6 +164,7 @@ fn three_panes_support_direct_clicks_collapsing_export_and_protected_navigation(
     window
         .window()
         .set_size(slint::LogicalSize::new(1080., 680.));
+    click(&window, "編集");
     let detail_action = element(&window, "候補・版を確認");
     assert!(
         detail_action.absolute_position().x
@@ -175,7 +178,7 @@ fn three_panes_support_direct_clicks_collapsing_export_and_protected_navigation(
     window
         .window()
         .set_size(slint::LogicalSize::new(1360., 900.));
-    click(&window, "BibTeX 出力 (0)");
+    click(&window, "BibTeX 出力");
     assert!(window.get_export_settings_open());
     assert!(
         element(&window, "出力内容を確認").absolute_position().x

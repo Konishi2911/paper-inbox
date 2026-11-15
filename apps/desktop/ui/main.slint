@@ -3,6 +3,7 @@ import { Theme } from "theme.slint";
 import { PaperCard } from "components/paper-card.slint";
 import { Sidebar } from "components/sidebar.slint";
 import { Splitter } from "components/splitter.slint";
+import { PaperDetail } from "components/paper-detail.slint";
 import { AuthorAction, NavigationAction } from "types.slint";
 
 export { AuthorAction, NavigationAction } from "types.slint";
@@ -33,12 +34,12 @@ component AboutDialog inherits FocusScope {
     }
 }
 export component MainWindow inherits Window {
-    title:"Paper Inbox"; 
-    preferred-width:1360px; 
-    preferred-height:900px; 
-    min-width:1080px; 
+    title:"Paper Inbox";
+    preferred-width:1360px;
+    preferred-height:900px;
+    min-width:1080px;
     min-height:680px;
-    background:Theme.background; 
+    background:Theme.background;
     default-font-size:14px;
     in-out property <bool> about-open:false;
     in-out property <bool> sidebar-collapsed:false;
@@ -56,6 +57,7 @@ export component MainWindow inherits Window {
     callback confirm-lookup();
     callback cancel-lookup();
     callback suggest-key();
+
     in-out property <bool> busy:true;
     in-out property <bool> ready:false;
     in-out property <string> status:"保存先を開いています…";
@@ -98,6 +100,9 @@ export component MainWindow inherits Window {
     in-out property <bool> saved-paper:false;
     in-out property <bool> load-required:false;
     in-out property <string> editing-id;
+
+    in-out property <bool> edit-mode: false;
+    in-out property <string> paper-authors;
 
     in-out property <bool> metadata-open:false;
     in-out property <bool> candidate-form-open:false;
@@ -145,11 +150,11 @@ export component MainWindow inherits Window {
     callback propose-canonical(string);
 
     property <bool> operable:
-        root.ready 
-        && !root.busy 
-        && !root.confirm-discard 
+        root.ready
+        && !root.busy
+        && !root.confirm-discard
         && !root.confirm-delete
-        && !root.about-open 
+        && !root.about-open
         && !root.export-confirm;
     property <bool> delete-confirm-operable:
         root.ready
@@ -163,10 +168,10 @@ export component MainWindow inherits Window {
         root.operable
         && !root.load-required;
     property <bool> editable:
-        root.operable 
-        && !root.editor-deleted 
+        root.operable
+        && !root.editor-deleted
         && !root.load-required;
-    
+
     in-out property <bool> confirm-discard:false;
     in-out property <bool> confirm-delete:false;
     property <NavigationAction> pending-action;
@@ -184,25 +189,25 @@ export component MainWindow inherits Window {
     callback author-action(AuthorAction,int);
     public function request-navigation(action:NavigationAction,id:string) {
         if (
-            root.dirty 
-            || root.candidate-dirty 
+            root.dirty
+            || root.candidate-dirty
             || root.lookup-dirty
-        ) { 
+        ) {
             root.pending-action=action;
             root.pending-id=id;
-            root.confirm-discard=true; 
+            root.confirm-discard=true;
         }
-        else { 
+        else {
             root.export-settings-open=false;
-            root.navigate(action,id); 
+            root.navigate(action,id);
         }
     }
     public function open-paper(id:string) {
         if (
-            root.operable 
+            root.operable
             && !(
-                root.editing-id==id 
-                && !root.metadata-open 
+                root.editing-id==id
+                && !root.metadata-open
                 && !root.lookup-open
                 && !root.export-settings-open
         )) {
@@ -462,7 +467,31 @@ export component MainWindow inherits Window {
                     }
                     if !root.export-confirm && !root.metadata-open && !root.lookup-open && !root.export-settings-open : VerticalBox {
                         if !root.editor-visible : Text { text:"中央の一覧から文献を選択してください。新しい文献は左の「新規登録」から追加できます。";wrap:word-wrap; }
-                        if root.editor-visible : VerticalBox {
+                        if root.editor-visible && root.saved-paper && !root.edit-mode && !root.editor-deleted: PaperDetail {
+                            vertical-stretch:1;
+
+                            title: root.paper-title;
+                            authors: root.paper-authors;
+                            container-title: root.container-title;
+                            year: root.year;
+                            doi: root.doi;
+                            arxiv-id: root.arxiv-id;
+                            citation-key: root.citation-key;
+                            notes: root.notes;
+                            favorite: root.favorite;
+
+                            operable: root.operable;
+                            editable: root.editable;
+                            identifier-warning: root.identifier-warning;
+
+                            edit-requested => {
+                                root.edit-mode=true;
+                            }
+                            metadata-requested => {
+                                root.request-navigation(NavigationAction.metadata-review, root.editing-id);
+                            }
+                        }
+                        if root.editor-visible && (root.edit-mode || !root.saved-paper || root.editor-deleted) : VerticalBox {
                             HorizontalBox {
                                 Text { text:root.editor-deleted ? "削除済み文献" : (root.saved-paper ? "文献の詳細" : "新規文献");font-size:20px; }
                                 Text { text:root.dirty ? "未保存" : ""; }
@@ -479,25 +508,25 @@ export component MainWindow inherits Window {
                                     }
                                     LineEdit { enabled:root.editable; text<=>root.citation-key;edited(text)=>{ root.dirty=true; } }
                                     Text { text:"タイトル"; }
-                                    LineEdit { enabled:root.editable; text<=>root.paper-title;edited(text)=>{ root.dirty=true; } }
+                                    LineEdit { accessible-label:"文献タイトル";enabled:root.editable; text<=>root.paper-title;edited(text)=>{ root.dirty=true; } }
                                     Text { text:"著者（上から順に保存）"; }
                                     for author[i] in root.author-rows : VerticalBox {
                                         HorizontalBox {
                                             ComboBox { enabled:root.editable; current-index:author.kind;model:["個人","団体","表記をそのまま使用"];selected(value)=>{ root.author-kind(i,self.current-index); } }
-                                            Button { 
+                                            Button {
                                                 text:"↑";
                                                 enabled:root.editable && (i>0);
-                                                clicked=>{ root.author-action(AuthorAction.move-up, 2); } 
+                                                clicked=>{ root.author-action(AuthorAction.move-up, i); }
                                             }
-                                            Button { 
+                                            Button {
                                                 text:"↓";
                                                 enabled:root.editable && (i+1 < root.author-rows.length);
-                                                clicked=>{ root.author-action(AuthorAction.move-down, 3); } 
+                                                clicked=>{ root.author-action(AuthorAction.move-down, i); }
                                             }
-                                            Button { 
-                                                enabled:root.editable; 
+                                            Button {
+                                                enabled:root.editable;
                                                 text:"削除";
-                                                clicked=>{ root.author-action(AuthorAction.remove, 1); } 
+                                                clicked=>{ root.author-action(AuthorAction.remove, i); }
                                             }
                                         }
                                         HorizontalBox {
@@ -506,10 +535,10 @@ export component MainWindow inherits Window {
                                         }
                                         LineEdit { enabled:root.editable; text:author.orcid;placeholder-text:"ORCID（任意）";edited(text)=>{ root.author-edit(i,2,text); } }
                                     }
-                                    Button { 
-                                        enabled:root.editable; 
+                                    Button {
+                                        enabled:root.editable;
                                         text:"著者を追加";
-                                        clicked=>{ root.author-action(AuthorAction.add, 0); } 
+                                        clicked=>{ root.author-action(AuthorAction.add, 0); }
                                     }
                                     Text { text:"出版種別"; }
                                     ComboBox { enabled:root.editable; model:["未指定","学術誌論文","会議論文","書籍","書籍の章","修士論文","博士論文","学位論文","技術報告","プレプリント","特許","その他"];current-index<=>root.publication-type;selected(index)=>{ root.dirty=true; } }
@@ -532,25 +561,55 @@ export component MainWindow inherits Window {
                                 }
                             }
                             HorizontalBox {
-                                Button { text:root.saved-paper ? "変更を保存" : "文献を登録";enabled:root.editable && (!root.saved-paper || root.dirty);clicked=>{ root.save(); } }
-                                if root.saved-paper && !root.editor-deleted : Button { text:"削除する…";enabled:root.operable && (root.saved-paper && !root.editor-deleted && !root.load-required);clicked=>{ root.confirm-delete=true; } }
-                                if root.editor-deleted : Button { text:"復元する";enabled:root.operable && (root.editor-deleted && !root.load-required);clicked=>{ root.delete-paper(false); } }
+                                Button {
+                                    text:root.saved-paper ? "変更を保存" : "文献を登録";
+                                    enabled:root.editable && (!root.saved-paper || root.dirty);
+                                    clicked=>{ root.save(); }
+                                }
+                                if root.saved-paper
+                                    && root.edit-mode
+                                    && !root.editor-deleted : Button {
+
+                                    text: "編集をキャンセル";
+                                    enabled: root.operable;
+
+                                    clicked => {
+                                        if (root.dirty || root.load-required) {
+                                            root.request-navigation(
+                                                NavigationAction.open-paper,
+                                                root.editing-id
+                                            );
+                                        } else {
+                                            root.edit-mode = false;
+                                        }
+                                    }
+                                }
+                                if root.saved-paper && !root.editor-deleted : Button {
+                                    text:"削除する…";
+                                    enabled:root.operable && (root.saved-paper && !root.editor-deleted && !root.load-required);
+                                    clicked=>{ root.confirm-delete=true; }
+                                }
+                                if root.editor-deleted : Button {
+                                    text:"復元する";
+                                    enabled:root.operable && (root.editor-deleted && !root.load-required);
+                                    clicked=>{ root.delete-paper(false); }
+                                }
                             }
                             if root.confirm-delete : VerticalBox {
                                 Text { text:"この文献を削除済みに移動しますか？ 後で復元できます。未保存の入力は破棄されます。";wrap:word-wrap; }
                                 HorizontalBox {
-                                    Button { 
-                                        enabled:root.delete-confirm-operable; 
+                                    Button {
+                                        enabled:root.delete-confirm-operable;
                                         text:"削除済みに移動";
-                                        clicked=>{ 
-                                            root.confirm-delete=false;root.delete-paper(true); 
-                                        } 
+                                        clicked=>{
+                                            root.confirm-delete=false;root.delete-paper(true);
+                                        }
                                     }
-                                    Button { 
-                                        enabled:root.delete-confirm-operable; 
+                                    Button {
+                                        enabled:root.delete-confirm-operable;
                                         text:"キャンセル";
-                                        clicked=>{ 
-                                            root.confirm-delete=false; 
+                                        clicked=>{
+                                            root.confirm-delete=false;
                                         }
                                     }
                                 }

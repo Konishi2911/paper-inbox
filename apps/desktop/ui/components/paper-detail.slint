@@ -1,0 +1,185 @@
+import {
+    VerticalBox,
+    HorizontalBox,
+    Button,
+    ScrollView
+} from "std-widgets.slint";
+
+import { Theme } from "../theme.slint";
+
+export component PaperDetail inherits Rectangle {
+    in property <string> title;
+    in property <string> authors;
+    in property <string> container-title;
+    in property <string> year;
+    in property <string> doi;
+    in property <string> arxiv-id;
+    in property <string> citation-key;
+    in property <string> notes;
+
+    in property <bool> operable: true;
+    in property <bool> favorite: false;
+    in property <bool> editable: true;
+    in property <string> identifier-warning;
+
+    callback edit-requested();
+    callback metadata-requested();
+
+    background: Theme.surface;
+
+    VerticalBox {
+        padding: 20px;
+        spacing: 16px;
+
+        // Toolbar
+        HorizontalBox {
+            padding: 0px;
+            spacing: 8px;
+
+            Text {
+                text: "文献詳細";
+                color: Theme.text-secondary;
+                vertical-alignment: center;
+            }
+
+            Rectangle {
+                horizontal-stretch: 1;
+            }
+
+            Button {
+                text: "書誌情報・版";
+                enabled: root.operable;
+
+                clicked => {
+                    root.metadata-requested();
+                }
+            }
+
+            Button {
+                text: "編集";
+                enabled: root.editable;
+
+                clicked => {
+                    root.edit-requested();
+                }
+            }
+        }
+
+        Rectangle {
+            height: 1px;
+            background: Theme.divider;
+        }
+
+        ScrollView {
+            VerticalBox {
+                padding: 0px;
+                spacing: 12px;
+
+                // Title
+                Text {
+                    text: root.title == ""
+                        ? "（タイトルなし）"
+                        : root.title;
+
+                    font-size: 24px;
+                    font-weight: 700;
+                    color: Theme.text-primary;
+                    wrap: word-wrap;
+                }
+
+                // Authors
+                if root.authors != "" : Text {
+                    text: root.authors;
+                    font-size: 15px;
+                    color: Theme.text-primary;
+                    wrap: word-wrap;
+                }
+
+                // Publication
+                if root.container-title != "" : Text {
+                    text: root.container-title;
+                    font-size: 14px;
+                    font-italic: true;
+                    color: Theme.text-secondary;
+                    wrap: word-wrap;
+                }
+
+                if root.year != "" : Text {
+                    text: root.year;
+                    color: Theme.text-secondary;
+                }
+
+                if root.favorite : Text {
+                    text: "★ お気に入り";
+                    color: Theme.text-muted;
+                }
+
+                if root.identifier-warning != "" : Text {
+                    text: root.identifier-warning;
+                    color: Theme.warning;
+                    wrap: word-wrap;
+                }
+
+                // Identifiers
+                if root.doi != "" : Text {
+                    text: "DOI: " + root.doi;
+                    color: Theme.text-secondary;
+                    wrap: word-wrap;
+                }
+
+                if root.arxiv-id != "" : Text {
+                    text: "arXiv: " + root.arxiv-id;
+                    color: Theme.text-secondary;
+                    wrap: word-wrap;
+                }
+
+                Rectangle {
+                    height: 1px;
+                    background: Theme.divider;
+                }
+
+                // Notes
+                Text {
+                    text: "メモ";
+                    font-size: 16px;
+                    font-weight: 600;
+                    color: Theme.text-primary;
+                }
+
+                Text {
+                    text: root.notes == ""
+                        ? "メモはありません。"
+                        : root.notes;
+
+                    color: root.notes == ""
+                        ? Theme.text-secondary
+                        : Theme.text-primary;
+
+                    wrap: word-wrap;
+                }
+
+                Rectangle {
+                    height: 1px;
+                    background: Theme.divider;
+                }
+
+                // Citation key
+                Text {
+                    text: "引用キー";
+                    font-size: 12px;
+                    color: Theme.text-secondary;
+                }
+
+                Text {
+                    text: root.citation-key;
+                    color: Theme.text-primary;
+                    wrap: word-wrap;
+                }
+
+                Rectangle {
+                    vertical-stretch: 1;
+                }
+            }
+        }
+    }
+}
