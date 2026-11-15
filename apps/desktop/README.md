@@ -31,3 +31,5 @@ cargo test -p paper-desktop --locked
 独自コード: [MIT](../../LICENSE-MIT) OR [Apache-2.0](../../LICENSE-APACHE)。Slint と他の依存関係は[第三者ライセンス](../../docs/licenses.md)を参照してください。
 
 UIの編集フォームは `components/paper-editor.slint`、閲覧は `components/paper-detail.slint` へ分離しています。編集データはMainWindowと双方向に共有し、保存・取消・削除復元の判断とRust接続はMainWindowに残します。`editor_window_contract` は入力、著者3形式の順序と行操作、保存失敗、取消、競合、削除復元、新規遷移を検証します。`pane_layout_contract` はSplitterの実入力と狭い幅での長文カードを検証します。
+
+Step 10〜13で著者・一覧・取得・候補・提案・出力とダイアログを分離しました。MainWindowの `detail-view` が右欄を一意に選択し、RustもSlint生成 `DetailView` を使います。旧表示フラグは読取専用の派生値です。出力設定とpreviewは戻り先を保持するため、編集中の候補や取得入力から一時的に出力へ移ってもdraftを保てます。`detail_view_window_contract` で実際の排他表示・入れ子の戻り先・失敗した移動での入力保持を確認しています。詳細は[UI設計](../../docs/ui-design.md)を参照してください。

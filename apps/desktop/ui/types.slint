@@ -21,3 +21,14 @@ export struct PaperRow { selected:bool, id:string, title:string, authors:string,
 export struct CandidateRow { id:string, label:string, details:string, held:bool }
 export struct ProposalRow { id:string, label:string, current:string, proposed:string, reason:string, source:string, stale:bool }
 export struct VersionRow { id:string, label:string, details:string, canonical:bool }
+
+export enum DetailView {
+    empty,
+    paper-detail,
+    paper-editor,
+    import,
+    metadata-review,
+    metadata-candidate-editor,
+    export-settings,
+    export-preview,
+}

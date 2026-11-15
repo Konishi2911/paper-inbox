@@ -194,7 +194,7 @@ fn read_edit_cancel_save_errors_author_indices_and_new_navigation_keep_their_con
     click(&w, "DOI / arXiv から登録");
     wait(&w);
     assert!(w.get_lookup_open());
-    assert!(w.get_edit_mode());
+    assert!(w.get_lookup_new());
     click(&w, "手動で登録");
     wait(&w);
     assert!(!w.get_lookup_open());

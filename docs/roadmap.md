@@ -1,6 +1,6 @@
 # 実装工程と現状監査
 
-更新日: 2026-11-15。初回監査HEAD: `8b64301`。以後のStep 6修復、Step 7/8検証、Step 9分離を反映した。機能が存在すること、コミット済みであること、工程の完了条件が検証済みであることは区別する。
+更新日: 2026-11-15。初回監査HEAD: `8b64301`。以後のStep 6修復、Step 7/8検証、Step 9〜13の分離と画面Enum化を反映した。機能が存在すること、コミット済みであること、工程の完了条件が検証済みであることは区別する。
 
 ## 実装・検証の更新
 
@@ -8,9 +8,13 @@
 - `26f69bb`: カードをpreferred-heightと暗黙サイズへ変更し、狭い幅の長文・出力チェックの見切れを修正。実ポインターのSplitter追従、最小/最大幅、縮小・開閉、操作不可条件を試験。
 - `ad32671`: 引き継いだStep 8を完成。正常reply時の著者表示/mode、保存失敗・取消・競合・新規遷移・削除復元、著者行番号を修正。既存未コミット2ファイルをこの工程で継承してコミット。
 - Step 9: PaperEditor分離。MainWindowのRust接続、親の判断、双方向編集値とdirty、生成AuthorRow/Enumを維持。
+- `1cdcbcb`: Step 10、AuthorEditorへ著者編集を分離。3形式と行番号・順序を維持。
+- `1e18e14`: Step 11、PaperListへ検索・一覧・pageを分離。検索語共有、pageリセット、親への通知を追加試験。
+- `c497d5b`: Step 12、取得・候補・提案・出力・各Dialogを分離。候補の二段の双方向bindと取得入力を実要素から試験。
+- Step 13: DetailViewを唯一の可変表示選択へ移行。旧boolは読取専用派生値。出力の戻り先と、読込失敗時のdraft保持を結合試験。
 - Workspaceはcore/storage/metadata/desktopの4クレート。schema 4のSQL契約は変更していない。
 
-検証: workspaceのcheck/test、全ターゲットclippy（警告をエラー扱い）、fmt、diffチェック。`editor_window_contract`、`layout_window_contract`、`pane_layout_contract` とreply単体試験で実操作/状態を確認。公開APIの通信テストは通常どおり明示実行専用としてignored。
+検証: workspaceのcheck/test、全ターゲットclippy（警告をエラー扱い）、fmt、diffチェック。`editor_window_contract`、`layout_window_contract`、`pane_layout_contract`、`paper_list_window_contract`、`detail_view_window_contract` とreply単体試験で実操作/状態を確認。公開APIの通信テストは通常どおり明示実行専用としてignored。
 
 WSLg/winit-softwareの実描画でもワーカーと単一イベントループによる登録→閲覧→編集→保存エラー→取消、著者表示、縮小・サイドバー、Splitterを確認し、Binding Loopがないことと日本語/長文の描画を確認した。環境由来のxdg desktop settings通知バス接続警告は残り、機能の不具合と区別する。
 
@@ -18,7 +22,7 @@ WSLg/winit-softwareの実描画でもワーカーと単一イベントループ�
 
 ## Step 1〜13: UI構造
 
-Step 1〜9を実装・検証済みとする。長期的なUI/a11y試験は引き続き各工程で行う。
+Step 1〜13を実装・検証済みとする。長期的なUI/a11y試験は引き続き各工程で行う。
 
 | Step | 工程 | 状態・根拠 | 依存と完了条件 |
 | --- | --- | --- | --- |
@@ -31,10 +35,10 @@ Step 1〜9を実装・検証済みとする。長期的なUI/a11y試験は引き
 | 7 | Splitter | 完了、操作試験 `26f69bb` | 6。ドラッグ追従、縮小/開閉、最小幅、Binding Loopなしを確認 |
 | 8 | 閲覧/編集分離 | 完了 `ad32671` | 6/7。著者表示、選択/新規/切替時のmode、保存成功・失敗・再読込失敗・取消の契約を試験 |
 | 9 | PaperEditor抽出 | 完了 | 8完了。親API/双方向bind/dirty/削除復元/確認を維持し外観変更を混ぜない |
-| 10 | AuthorEditor抽出 | 未着手 | 9。個人/団体/Literal、追加削除上下、実行行番号と順序を試験 |
-| 11 | PaperList抽出 | 未着手 | 2/7/10。検索/sort/page、幅、出力選択を維持 |
-| 12 | 機能画面抽出 | 部分的（AboutDialogは同一ファイル）、本抽出は未着手 | 9〜11。Import/Metadata/Proposal/Export/各Dialogを必要単位で順次分離 |
-| 13 | 排他画面Enum | 未着手 | 12。DetailView等を生成型で統一、独立boolと確認/処理中状態を維持 |
+| 10 | AuthorEditor抽出 | 完了 `1cdcbcb` | 9。個人/団体/Literal、追加削除上下、実行行番号と順序を試験 |
+| 11 | PaperList抽出 | 完了 `1e18e14` | 2/7/10。検索/sort/page、幅、出力選択を維持 |
+| 12 | 機能画面抽出 | 完了 `c497d5b` | 9〜11。Import/Metadata/Proposal/Export/各Dialogを必要単位で順次分離 |
+| 13 | 排他画面Enum | 完了 | 12。DetailView等を生成型で統一、独立boolと確認/処理中状態を維持 |
 
 ## Step 14〜23: 操作・機能
 
@@ -55,6 +59,6 @@ Step 1〜9を実装・検証済みとする。長期的なUI/a11y試験は引き
 
 ## 次の一工程
 
-**Step 10: AuthorEditorの分離**。Step 9で切り出したPaperEditorの著者部分だけを対象とし、個人/団体/Literal、ORCID、追加・削除・上下、行番号と順序を維持する。公開MainWindow/Rust接続と生成型は引き続き維持する。
+**Step 14: 一般の複数文献選択**。実装前に、Ctrl/Shiftのanchor、全選択の対象（表示pageか検索全件か）、page/検索/sort変更時の非表示選択の維持・解除を決定する。閲覧IDと選択集合を分け、保存済みBibTeX出力とdirty保護を維持する。
 
-Step 11以降の一覧分割、Step 13の排他画面Enum、Step 14の選択仕様、DB/同期設計を同時に混ぜない。
+Step 15以降のshortcut、仮想化、タグ・DB/同期設計を同時に混ぜない。

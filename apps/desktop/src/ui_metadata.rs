@@ -1,5 +1,5 @@
 use crate::{
-    CandidateRow, MainWindow, ProposalRow, VersionRow,
+    CandidateRow, DetailView, MainWindow, ProposalRow, VersionRow,
     metadata::{self, CandidateForm},
 };
 use paper_core::{
@@ -52,7 +52,7 @@ pub fn begin_form(ui: &MainWindow) {
     ui.set_candidate_use_publisher(false);
     ui.set_candidate_use_abstract(false);
     ui.set_candidate_dirty(false);
-    ui.set_candidate_form_open(true);
+    ui.set_detail_view(DetailView::MetadataCandidateEditor);
 }
 pub fn show_review(ui: &MainWindow, review: &MetadataReview) {
     ui.set_review_label(format!("{} — 更新候補と版", review.state.paper.citation_key()).into());
@@ -192,7 +192,6 @@ pub fn show_review(ui: &MainWindow, review: &MetadataReview) {
         })
         .collect::<Vec<_>>();
     ui.set_version_rows(ModelRc::new(VecModel::from(versions)));
-    ui.set_metadata_open(true);
     ui.set_load_required(false);
     ui.set_associate_confirm(false);
 }

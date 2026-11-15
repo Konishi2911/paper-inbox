@@ -1,6 +1,6 @@
 use crate::export::{self, PreparedExport};
 use crate::{
-    AuthorAction, AuthorRow, MainWindow, NavigationAction, PaperRow,
+    AuthorAction, AuthorRow, DetailView, MainWindow, NavigationAction, PaperRow,
     application::{Application, AuthorInput, PaperForm},
     config::Config,
 };
@@ -831,6 +831,7 @@ pub fn attach_with_lookup_provider(
                     return;
                 }
             };
+            ui.set_preview_return_view(ui.get_detail_view());
             let options = BibtexOptions {
                 include_abstract: ui.get_export_abstract(),
                 include_doi: ui.get_export_doi(),
@@ -1059,10 +1060,11 @@ fn query_from_ui(ui: &MainWindow) -> PaperQuery {
     }
 }
 fn apply_reply(ui: &MainWindow, reply: Reply) {
+    let mut next_view = None;
     if let Some(new) = reply.lookup_new {
         ui.set_lookup_new(new);
         if new {
-            ui.set_metadata_open(false);
+            ui.set_candidate_dirty(false);
         }
         ui.set_lookup_identifier("".into());
         ui.set_lookup_details("".into());
@@ -1070,12 +1072,9 @@ fn apply_reply(ui: &MainWindow, reply: Reply) {
         ui.set_lookup_has_result(false);
         ui.set_lookup_dirty(false);
     }
-    if let Some(open) = reply.lookup_open {
-        ui.set_lookup_open(open);
-        if !open {
-            ui.set_lookup_dirty(false);
-            ui.set_lookup_has_result(false);
-        }
+    if reply.lookup_open == Some(false) {
+        ui.set_lookup_dirty(false);
+        ui.set_lookup_has_result(false);
     }
     if let Some((details, key)) = reply.lookup_preview {
         ui.set_lookup_details(details.into());
@@ -1089,10 +1088,7 @@ fn apply_reply(ui: &MainWindow, reply: Reply) {
     }
 
     if reply.close_metadata {
-        ui.set_lookup_open(false);
         ui.set_lookup_dirty(false);
-        ui.set_metadata_open(false);
-        ui.set_candidate_form_open(false);
         ui.set_candidate_dirty(false);
     }
     if let Some(offset) = reply.offset {
@@ -1105,7 +1101,11 @@ fn apply_reply(ui: &MainWindow, reply: Reply) {
         let f = editor.form;
         // A complete, successfully loaded editor is the only point at which
         // an existing paper returns to read mode. Error replies keep the draft.
-        ui.set_edit_mode(editor.id.is_none());
+        next_view = Some(if editor.id.is_none() || editor.deleted {
+            DetailView::PaperEditor
+        } else {
+            DetailView::PaperDetail
+        });
         ui.set_paper_authors(
             f.authors
                 .iter()
@@ -1143,7 +1143,6 @@ fn apply_reply(ui: &MainWindow, reply: Reply) {
             })
             .collect();
         ui.set_author_rows(ModelRc::new(VecModel::from(rows)));
-        ui.set_editor_visible(true);
         ui.set_editor_deleted(editor.deleted);
         ui.set_saved_paper(editor.id.is_some());
         ui.set_editing_id(
@@ -1159,9 +1158,12 @@ fn apply_reply(ui: &MainWindow, reply: Reply) {
     }
     if let Some(review) = reply.metadata {
         crate::ui_metadata::show_review(ui, &review);
+        next_view = Some(DetailView::MetadataReview);
     }
     if reply.close_candidate {
-        ui.set_candidate_form_open(false);
+        if ui.get_detail_view() == DetailView::MetadataCandidateEditor {
+            next_view = Some(DetailView::MetadataReview);
+        }
         ui.set_candidate_dirty(false);
     }
     if reply.saved {
@@ -1207,10 +1209,25 @@ fn apply_reply(ui: &MainWindow, reply: Reply) {
         ui.set_export_summary(summary.into());
         ui.set_export_warnings(warnings.into());
         ui.set_export_replaces(replaces);
-        ui.set_export_confirm(true);
+        next_view = Some(DetailView::ExportPreview);
     }
-    if reply.clear_export {
-        ui.set_export_confirm(false);
+    if reply.clear_export && ui.get_detail_view() == DetailView::ExportPreview {
+        next_view = Some(ui.get_preview_return_view());
+    }
+    if reply.lookup_open == Some(true) {
+        next_view = Some(DetailView::Import);
+    } else if reply.lookup_open == Some(false)
+        && ui.get_detail_view() == DetailView::Import
+        && next_view.is_none()
+    {
+        next_view = Some(if ui.get_lookup_new() {
+            DetailView::PaperEditor
+        } else {
+            DetailView::MetadataReview
+        });
+    }
+    if let Some(view) = next_view {
+        ui.set_detail_view(view);
     }
     ui.set_status(reply.message.into());
     ui.set_busy(false);
@@ -1268,7 +1285,7 @@ fn warning_messages(prepared: &PreparedExport) -> String {
 mod reply_contract {
     use super::{EditorView, Reply, apply_reply};
     use crate::{
-        MainWindow,
+        DetailView, MainWindow,
         application::{AuthorInput, PaperForm},
     };
     use paper_core::model::PaperId;
@@ -1277,7 +1294,7 @@ mod reply_contract {
     fn only_a_complete_reload_leaves_existing_edit_mode() {
         i_slint_backend_testing::init_no_event_loop();
         let w = MainWindow::new().unwrap();
-        w.set_edit_mode(true);
+        w.set_detail_view(DetailView::PaperEditor);
         w.set_dirty(true);
         w.set_paper_title("draft".into());
         apply_reply(

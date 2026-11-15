@@ -11,9 +11,9 @@ import { Sidebar } from "components/sidebar.slint";
 import { Splitter } from "components/splitter.slint";
 import { PaperDetail } from "components/paper-detail.slint";
 import { PaperEditor } from "components/paper-editor.slint";
-import { AuthorAction, NavigationAction, AuthorRow, PaperRow, CandidateRow, ProposalRow, VersionRow } from "types.slint";
+import { DetailView, AuthorAction, NavigationAction, AuthorRow, PaperRow, CandidateRow, ProposalRow, VersionRow } from "types.slint";
 
-export { AuthorAction, NavigationAction, AuthorRow, PaperRow, CandidateRow, ProposalRow, VersionRow } from "types.slint";
+export { DetailView, AuthorAction, NavigationAction, AuthorRow, PaperRow, CandidateRow, ProposalRow, VersionRow } from "types.slint";
 
 export component MainWindow inherits Window {
     title:"Paper Inbox";
@@ -23,11 +23,15 @@ export component MainWindow inherits Window {
     min-height:680px;
     background:Theme.background;
     default-font-size:14px;
+    in-out property <DetailView> detail-view:DetailView.empty;
+    // Return targets retain navigation history; only detail-view selects a screen.
+    in-out property <DetailView> export-return-view:DetailView.empty;
+    in-out property <DetailView> preview-return-view:DetailView.empty;
     in-out property <bool> about-open:false;
     in-out property <bool> sidebar-collapsed:false;
-    in-out property <bool> export-settings-open:false;
+    out property <bool> export-settings-open: root.detail-view==DetailView.export-settings;
 
-    in-out property <bool> lookup-open:false;
+    out property <bool> lookup-open: root.detail-view==DetailView.import;
     in-out property <bool> lookup-new:false;
     in-out property <bool> lookup-dirty:false;
     in-out property <bool> lookup-has-result:false;
@@ -66,7 +70,7 @@ export component MainWindow inherits Window {
     in-out property <bool> export-doi:true;
     in-out property <bool> export-url:true;
     in-out property <bool> export-keywords:false;
-    in-out property <bool> export-confirm:false;
+    out property <bool> export-confirm: root.detail-view==DetailView.export-preview;
     in-out property <bool> export-replaces:false;
     in-out property <string> export-preview;
     in-out property <string> export-summary;
@@ -77,17 +81,17 @@ export component MainWindow inherits Window {
     in-out property <bool> favorite:false;
     in-out property <bool> archived:false;
     in-out property <bool> dirty:false;
-    in-out property <bool> editor-visible:false;
+    out property <bool> editor-visible: root.detail-view==DetailView.paper-detail || root.detail-view==DetailView.paper-editor;
     in-out property <bool> editor-deleted:false;
     in-out property <bool> saved-paper:false;
     in-out property <bool> load-required:false;
     in-out property <string> editing-id;
 
-    in-out property <bool> edit-mode: false;
+    out property <bool> edit-mode: root.detail-view==DetailView.paper-editor && !root.editor-deleted;
     in-out property <string> paper-authors;
 
-    in-out property <bool> metadata-open:false;
-    in-out property <bool> candidate-form-open:false;
+    out property <bool> metadata-open: root.detail-view==DetailView.metadata-review || root.detail-view==DetailView.metadata-candidate-editor;
+    out property <bool> candidate-form-open: root.detail-view==DetailView.metadata-candidate-editor;
     in-out property <bool> candidate-dirty:false;
     in-out property <string> review-label;
     in-out property <[CandidateRow]> candidate-rows;
@@ -180,8 +184,18 @@ export component MainWindow inherits Window {
             root.confirm-discard=true;
         }
         else {
-            root.export-settings-open=false;
             root.navigate(action,id);
+        }
+    }
+    public function close-export() {
+        root.detail-view=root.export-return-view;
+    }
+    public function toggle-export() {
+        if (root.detail-view==DetailView.export-settings) {
+            root.close-export();
+        } else {
+            root.export-return-view=root.detail-view;
+            root.detail-view=DetailView.export-settings;
         }
     }
     public function open-paper(id:string) {
@@ -236,7 +250,7 @@ export component MainWindow inherits Window {
                     root.search();
                 }
 
-                export-requested => { root.export-settings-open = !root.export-settings-open; }
+                export-requested => { root.toggle-export(); }
                 about-requested => { root.about-open = true; }
                 reconnect-requested => { root.request-navigation(NavigationAction.reconnect,""); }
             }
@@ -245,7 +259,7 @@ export component MainWindow inherits Window {
                 min-width: root.paper-list-min-width;
                 horizontal-stretch: 0;
                 editing-id : root.editing-id;
-                export-settings-open : root.export-settings-open;
+                export-settings-open : root.export-settings-open || (root.detail-view==DetailView.export-preview && root.preview-return-view==DetailView.export-settings);
                 include-archived <=> root.include-archived;
                 offset <=> root.offset;
                 opened(arg0)=>{root.open-paper(arg0);}
@@ -281,10 +295,10 @@ export component MainWindow inherits Window {
                         message:"未保存の入力があります。破棄して移動しますか？";
                         accept-label:"破棄して移動";cancel-label:"編集を続ける";warning:true;
                         operable:!root.busy && !root.about-open;
-                        accepted=>{root.confirm-discard=false;root.dirty=false;root.candidate-dirty=false;root.lookup-dirty=false;root.export-settings-open=false;root.navigate(root.pending-action,root.pending-id);}
+                        accepted=>{root.confirm-discard=false;root.navigate(root.pending-action,root.pending-id);}
                         cancelled=>{root.confirm-discard=false;}
                     }
-                    if root.export-settings-open && !root.export-confirm : ExportView {
+                    if root.detail-view==DetailView.export-settings : ExportView {
                         export-abstract <=> root.export-abstract;
                         export-doi <=> root.export-doi;
                         export-keywords <=> root.export-keywords;
@@ -292,10 +306,10 @@ export component MainWindow inherits Window {
                         export-url <=> root.export-url;
                         operable : root.operable;
                         prepare-export()=>{root.prepare-export();}
-                        return-requested()=>{root.export-settings-open=false;}
+                        return-requested()=>{root.close-export();}
                         selected-count : root.selected-count;
                     }
-                    if root.lookup-open && !root.export-confirm && !root.export-settings-open : ImportView {
+                    if root.detail-view==DetailView.import : ImportView {
                         about-open : root.about-open;
                         busy : root.busy;
                         cancel-lookup()=>{root.cancel-lookup();}
@@ -311,7 +325,7 @@ export component MainWindow inherits Window {
                         lookup-new : root.lookup-new;
                         ready : root.ready;
                     }
-                    if root.export-confirm : ExportDialog {
+                    if root.detail-view==DetailView.export-preview : ExportDialog {
                         about-open : root.about-open;
                         busy : root.busy;
                         cancel-export()=>{root.cancel-export();}
@@ -322,7 +336,7 @@ export component MainWindow inherits Window {
                         export-warnings : root.export-warnings;
                     }
 
-                    if root.metadata-open && !root.export-confirm && !root.lookup-open && !root.export-settings-open : MetadataView {
+                    if root.detail-view==DetailView.metadata-review || root.detail-view==DetailView.metadata-candidate-editor : MetadataView {
                         about-open : root.about-open;
                         associate-candidate(arg0)=>{root.associate-candidate(arg0);}
                         associate-confirm : root.associate-confirm;
@@ -331,7 +345,7 @@ export component MainWindow inherits Window {
                         begin-lookup()=>{root.begin-lookup();}
                         busy : root.busy;
                         cancel-association()=>{root.associate-confirm=false;}
-                        cancel-candidate()=>{root.candidate-dirty=false;root.candidate-form-open=false;}
+                        cancel-candidate()=>{root.candidate-dirty=false;root.detail-view=DetailView.metadata-review;}
                         candidate-abstract <=> root.candidate-abstract;
                         candidate-arxiv <=> root.candidate-arxiv;
                         candidate-container <=> root.candidate-container;
@@ -364,9 +378,9 @@ export component MainWindow inherits Window {
                         submit-candidate()=>{root.submit-candidate();}
                         version-rows : root.version-rows;
                     }
-                    if !root.export-confirm && !root.metadata-open && !root.lookup-open && !root.export-settings-open : VerticalBox {
-                        if !root.editor-visible : Text { text:"中央の一覧から文献を選択してください。新しい文献は左の「新規登録」から追加できます。";wrap:word-wrap; }
-                        if root.editor-visible && root.saved-paper && !root.edit-mode && !root.editor-deleted: PaperDetail {
+                    if root.detail-view==DetailView.empty || root.detail-view==DetailView.paper-detail || root.detail-view==DetailView.paper-editor : VerticalBox {
+                        if root.detail-view==DetailView.empty : Text { text:"中央の一覧から文献を選択してください。新しい文献は左の「新規登録」から追加できます。";wrap:word-wrap; }
+                        if root.detail-view==DetailView.paper-detail : PaperDetail {
                             vertical-stretch:1;
 
                             title: root.paper-title;
@@ -384,13 +398,13 @@ export component MainWindow inherits Window {
                             identifier-warning: root.identifier-warning;
 
                             edit-requested => {
-                                root.edit-mode=true;
+                                root.detail-view=DetailView.paper-editor;
                             }
                             metadata-requested => {
                                 root.request-navigation(NavigationAction.metadata-review, root.editing-id);
                             }
                         }
-                        if root.editor-visible && (root.edit-mode || !root.saved-paper || root.editor-deleted) : PaperEditor {
+                        if root.detail-view==DetailView.paper-editor : PaperEditor {
                             citation-key <=> root.citation-key;
                             paper-title <=> root.paper-title;
                             container-title <=> root.container-title;
@@ -421,7 +435,7 @@ export component MainWindow inherits Window {
                                 if (root.dirty || root.load-required) {
                                     root.request-navigation(NavigationAction.open-paper,root.editing-id);
                                 } else {
-                                    root.edit-mode=false;
+                                    root.detail-view=DetailView.paper-detail;
                                 }
                             }
                             delete-requested => {root.confirm-delete=true;}

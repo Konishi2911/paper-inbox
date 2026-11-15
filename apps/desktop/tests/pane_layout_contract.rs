@@ -1,5 +1,5 @@
 use i_slint_backend_testing::ElementHandle;
-use paper_desktop::{MainWindow, PaperRow};
+use paper_desktop::{DetailView, MainWindow, PaperRow};
 use slint::{
     ComponentHandle, ModelRc, VecModel,
     platform::{PointerEventButton, WindowEvent},
@@ -75,7 +75,11 @@ fn splitter_tracks_window_pointer_and_cards_fit_at_narrow_widths() {
         selected: false,
     }])));
     for export in [false, true] {
-        w.set_export_settings_open(export);
+        w.set_detail_view(if export {
+            DetailView::ExportSettings
+        } else {
+            DetailView::PaperDetail
+        });
         let _ = splitter(&w).absolute_position();
         let card = ElementHandle::find_by_accessible_label(&w, &format!("文献を開く: {title}"))
             .next()
@@ -98,7 +102,7 @@ fn splitter_tracks_window_pointer_and_cards_fit_at_narrow_widths() {
             );
         }
     }
-    w.set_export_settings_open(false);
+    w.set_detail_view(DetailView::PaperDetail);
     w.set_busy(true);
     let width = w.get_paper_list_width();
     drag(&w, 80.);
