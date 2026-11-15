@@ -23,6 +23,8 @@ export struct AuthorRow { kind:int, given:string, name:string, orcid:string }
 
 export struct PaperRow { selected:bool, id:string, title:string, authors:string, year:string, citation-key:string }
 
+export struct LookupField { label:string, value:string }
+
 export struct CandidateRow { id:string, label:string, details:string, held:bool }
 export struct ProposalRow { id:string, label:string, current:string, proposed:string, reason:string, source:string, stale:bool, change-label:string, conflict:bool, current-source:string, current-details:string, proposed-details:string, text-diff:string, structured-diff:string, decision:DiffResolution, custom-text:string, custom-doi:string, custom-arxiv:string, custom-kind:int, bulk-safe:bool, long-text:bool, current-preview:string, proposed-preview:string }
 export struct VersionRow { id:string, label:string, details:string, canonical:bool }

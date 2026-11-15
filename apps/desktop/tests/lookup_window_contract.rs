@@ -103,7 +103,13 @@ fn lookup_window_covers_preview_confirmation_errors_existing_updates_and_key_pro
     wait(&window);
     assert!(window.get_lookup_has_result());
     assert_eq!(window.get_lookup_key(), "Smith2024");
-    assert!(window.get_lookup_details().contains("Ada"));
+    assert!(
+        window
+            .get_lookup_fields()
+            .iter()
+            .any(|f| f.value.contains("Ada"))
+    );
+    assert!(window.get_lookup_source().contains("Crossref"));
     assert_eq!(window.get_total(), 0);
     window.set_lookup_identifier("10.1000/changed".into());
     window.invoke_confirm_lookup();
@@ -120,11 +126,21 @@ fn lookup_window_covers_preview_confirmation_errors_existing_updates_and_key_pro
     assert!(window.get_confirm_discard());
     window.set_confirm_discard(false);
     window.set_lookup_key("Smith2024".into());
+    window.set_lookup_notes("from lookup".into());
+    window.set_lookup_reading_status(2);
+    window.set_lookup_favorite(true);
     window.invoke_confirm_lookup();
     wait(&window);
     assert!(!window.get_lookup_open(), "{}", window.get_status());
     assert_eq!(window.get_total(), 1);
     assert_eq!(window.get_citation_key(), "Smith2024");
+    assert_eq!(
+        window.get_detail_view(),
+        paper_desktop::DetailView::PaperDetail
+    );
+    assert_eq!(window.get_notes(), "from lookup");
+    assert_eq!(window.get_reading_status(), 2);
+    assert!(window.get_favorite());
     let id = window.get_editing_id();
     window.set_paper_title("My title".into());
     window.set_dirty(true);

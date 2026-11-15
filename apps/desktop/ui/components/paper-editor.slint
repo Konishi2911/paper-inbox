@@ -30,6 +30,7 @@ export component PaperEditor inherits VerticalBox {
     callback save();
     callback suggest-key();
     callback reload-requested();
+    callback lookup-requested();
     callback metadata-requested();
     callback cancel-requested();
     callback delete-requested();
@@ -40,11 +41,13 @@ export component PaperEditor inherits VerticalBox {
     callback author-kind(int,int);
     callback author-action(AuthorAction,int);
     HorizontalBox {
-        Text { text:root.editor-deleted ? "削除済み文献" : (root.saved-paper ? "文献の詳細" : "新規文献");font-size:20px; }
+        Text { text:root.editor-deleted ? "削除済み文献" : (root.saved-paper ? "文献を編集" : "文献を追加（手動入力）");font-size:20px; }
         Text { text:root.dirty ? "未保存" : ""; }
-        Button { text:"再読込";enabled:root.operable && (root.saved-paper);clicked=>{ root.reload-requested(); } }
+        if root.saved-paper : Button { text:"再読込";enabled:root.operable;clicked=>{ root.reload-requested(); } }
     }
-    Button { text:"候補・版を確認";enabled:root.editable && root.saved-paper;clicked=>{root.metadata-requested();} }
+    if root.saved-paper : Button { text:"候補・版を確認";enabled:root.editable;clicked=>{root.metadata-requested();} }
+    // New papers can switch to identifier lookup; unsaved input is confirmed by the parent.
+    if !root.saved-paper : Button { text:"DOI / arXiv から取得に切り替え";enabled:root.operable;clicked=>{root.lookup-requested();} }
     ScrollView {
         vertical-stretch:1;
         VerticalBox {
@@ -76,7 +79,8 @@ export component PaperEditor inherits VerticalBox {
             LineEdit {enabled:root.editable;text<=>root.arxiv-id;edited(text)=>{root.dirty=true;}}
             Text { text:"メモ"; }
             TextEdit { enabled:root.editable; text<=>root.notes;min-height:100px;edited=>{ root.dirty=true; } }
-            ComboBox { enabled:root.editable; model:["未読","読書中","既読"];current-index<=>root.reading-status;selected(index)=>{ root.dirty=true; } }
+            Text { text:"読書状態"; }
+            ComboBox { accessible-label:"読書状態";enabled:root.editable; model:["未読","読書中","既読"];current-index<=>root.reading-status;selected(index)=>{ root.dirty=true; } }
             HorizontalBox {
                 CheckBox { enabled:root.editable; text:"お気に入り";checked<=>root.favorite;toggled=>{ root.dirty=true; } }
                 CheckBox { enabled:root.editable; text:"アーカイブ";checked<=>root.archived;toggled=>{ root.dirty=true; } }

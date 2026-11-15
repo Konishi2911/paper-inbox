@@ -16,8 +16,9 @@ export component Sidebar inherits Rectangle {
     in property <string> database-path;
 
     // Callbacks
-    callback import-requested();
-    callback create-requested();
+    // A single entry point: the add screen offers identifier lookup first
+    // and manual entry as a fallback.
+    callback add-requested();
     callback library-requested(bool);
     callback export-requested();
     callback about-requested();
@@ -30,38 +31,18 @@ export component Sidebar inherits Rectangle {
         padding: 12px;
         spacing: 12px;
 
-        // Import section
-        Text {
-            text: root.collapsed ? "＋" : "新規登録";
-            color: Theme.text-muted;
-            font-weight: 600;
-        }
-
         Button {
-            accessible-label: "DOI / arXiv から登録";
-
-            text: root.collapsed
-                ? "ID"
-                : "DOI / arXiv から登録";
-
-            enabled: root.operable;
-
-            clicked => {
-                root.import-requested();
-            }
-        }
-
-        Button {
-            accessible-label: "手動で登録";
+            accessible-label: "文献を追加";
 
             text: root.collapsed
                 ? "＋"
-                : "手動で登録";
+                : "＋ 文献を追加";
 
+            primary: true;
             enabled: root.operable;
 
             clicked => {
-                root.create-requested();
+                root.add-requested();
             }
         }
 

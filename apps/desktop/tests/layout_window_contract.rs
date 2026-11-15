@@ -218,7 +218,7 @@ fn three_panes_support_direct_clicks_collapsing_export_and_protected_navigation(
     wait(&window);
     assert!(!window.get_metadata_open());
     assert_eq!(window.get_editing_id(), second_id);
-    click(&window, "DOI / arXiv から登録");
+    click(&window, "文献を追加");
     wait(&window);
     assert!(window.get_lookup_open());
     assert_eq!(window.get_papers().row_count(), 2);

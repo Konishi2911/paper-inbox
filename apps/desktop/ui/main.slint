@@ -11,9 +11,9 @@ import { Sidebar } from "components/sidebar.slint";
 import { Splitter } from "components/splitter.slint";
 import { PaperDetail } from "components/paper-detail.slint";
 import { PaperEditor } from "components/paper-editor.slint";
-import { DiffInputField, DiffResolution, DiffFilter, DiffBulkAction, DetailView, AuthorAction, NavigationAction, AuthorRow, PaperRow, CandidateRow, ProposalRow, VersionRow } from "types.slint";
+import { DiffInputField, DiffResolution, DiffFilter, DiffBulkAction, DetailView, AuthorAction, NavigationAction, AuthorRow, PaperRow, LookupField, CandidateRow, ProposalRow, VersionRow } from "types.slint";
 
-export { DiffInputField, DiffResolution, DiffFilter, DiffBulkAction, DetailView, AuthorAction, NavigationAction, AuthorRow, PaperRow, CandidateRow, ProposalRow, VersionRow } from "types.slint";
+export { DiffInputField, DiffResolution, DiffFilter, DiffBulkAction, DetailView, AuthorAction, NavigationAction, AuthorRow, PaperRow, LookupField, CandidateRow, ProposalRow, VersionRow } from "types.slint";
 
 export component MainWindow inherits Window {
     title:"Paper Inbox";
@@ -37,7 +37,12 @@ export component MainWindow inherits Window {
     in-out property <bool> lookup-has-result:false;
     in-out property <string> lookup-identifier;
     in-out property <string> lookup-key;
-    in-out property <string> lookup-details;
+    // Fetched values are read-only; personal values are registered with them.
+    in-out property <string> lookup-source;
+    in-out property <[LookupField]> lookup-fields;
+    in-out property <string> lookup-notes;
+    in-out property <int> lookup-reading-status:0;
+    in-out property <bool> lookup-favorite:false;
     callback begin-lookup();
     callback fetch-lookup();
     callback confirm-lookup();
@@ -251,8 +256,7 @@ export component MainWindow inherits Window {
                     && !root.confirm-delete
                     && !root.export-confirm;
 
-                import-requested => {root.request-navigation(NavigationAction.import-paper,"");}
-                create-requested => {root.request-navigation(NavigationAction.create-paper,"");}
+                add-requested => {root.request-navigation(NavigationAction.import-paper,"");}
 
                 library-requested(deleted) => {
                     root.show-deleted = deleted;
@@ -328,13 +332,18 @@ export component MainWindow inherits Window {
                         confirm-lookup()=>{root.confirm-lookup();}
                         fetch-lookup()=>{root.fetch-lookup();}
                         load-required : root.load-required;
-                        lookup-details : root.lookup-details;
+                        lookup-source : root.lookup-source;
+                        lookup-fields : root.lookup-fields;
                         lookup-dirty <=> root.lookup-dirty;
                         lookup-has-result <=> root.lookup-has-result;
                         lookup-identifier <=> root.lookup-identifier;
                         lookup-key <=> root.lookup-key;
+                        lookup-notes <=> root.lookup-notes;
+                        lookup-reading-status <=> root.lookup-reading-status;
+                        lookup-favorite <=> root.lookup-favorite;
                         lookup-new : root.lookup-new;
                         ready : root.ready;
+                        manual-requested => {root.request-navigation(NavigationAction.create-paper,"");}
                     }
                     if root.detail-view==DetailView.export-preview : ExportDialog {
                         about-open : root.about-open;
@@ -397,7 +406,7 @@ export component MainWindow inherits Window {
                         version-rows : root.version-rows;
                     }
                     if root.detail-view==DetailView.empty || root.detail-view==DetailView.paper-detail || root.detail-view==DetailView.paper-editor : VerticalBox {
-                        if root.detail-view==DetailView.empty : Text { text:"中央の一覧から文献を選択してください。新しい文献は左の「新規登録」から追加できます。";wrap:word-wrap; }
+                        if root.detail-view==DetailView.empty : Text { text:"中央の一覧から文献を選択してください。新しい文献は左の「文献を追加」から登録できます。";wrap:word-wrap;color:Theme.text-secondary; }
                         if root.detail-view==DetailView.paper-detail : PaperDetail {
                             vertical-stretch:1;
 
@@ -447,6 +456,7 @@ export component MainWindow inherits Window {
                             delete-confirm-operable: root.delete-confirm-operable;
                             save => {root.save();}
                             suggest-key => {root.suggest-key();}
+                            lookup-requested => {root.request-navigation(NavigationAction.import-paper,"");}
                             reload-requested => {root.request-navigation(NavigationAction.open-paper,root.editing-id);}
                             metadata-requested => {root.request-navigation(NavigationAction.metadata-review,root.editing-id);}
                             cancel-requested => {

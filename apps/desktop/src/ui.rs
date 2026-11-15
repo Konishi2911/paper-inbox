@@ -1,8 +1,9 @@
 use crate::export::{self, PreparedExport};
 use crate::{
-    AuthorAction, AuthorRow, DetailView, MainWindow, NavigationAction, PaperRow,
+    AuthorAction, AuthorRow, DetailView, LookupField, MainWindow, NavigationAction, PaperRow,
     application::{Application, AuthorInput, PaperForm},
     config::Config,
+    lookup::{LookupPreview, LookupUserInput},
 };
 use paper_core::service::{BibtexOptions, BibtexWarning};
 use paper_core::{command::PaperEditState, model::*, query::*};
@@ -17,7 +18,7 @@ use std::{
 enum Request {
     BeginLookup(bool),
     FetchLookup(String),
-    ConfirmLookup(String, String),
+    ConfirmLookup(String, String, LookupUserInput),
     CancelLookup,
     SuggestKey(PaperForm),
     Initialize,
@@ -63,7 +64,7 @@ struct Reply {
     close_candidate: bool,
     lookup_open: Option<bool>,
     lookup_new: Option<bool>,
-    lookup_preview: Option<(String, String)>,
+    lookup_preview: Option<(LookupPreview, String)>,
     key_suggestion: Option<String>,
 }
 pub type LookupProvider = Box<
@@ -208,7 +209,7 @@ impl Worker {
                     },
                 }
             }
-            Request::ConfirmLookup(input, key) => {
+            Request::ConfirmLookup(input, key, user_input) => {
                 let Some(pending) = &self.pending_lookup else {
                     return Reply {
                         message: "書誌情報を再取得してください。".into(),
@@ -222,7 +223,12 @@ impl Worker {
                     };
                 }
                 if self.lookup_new {
-                    match app.register_lookup(pending.paper_id, &pending.candidate, &key) {
+                    match app.register_lookup(
+                        pending.paper_id,
+                        &pending.candidate,
+                        &key,
+                        &user_input,
+                    ) {
                         Ok(id) => {
                             self.pending_lookup = None;
                             let mut reply = self.after_save(id, "取得した書誌情報を登録しました。");
@@ -776,6 +782,15 @@ pub fn attach_with_lookup_provider(
                 Request::ConfirmLookup(
                     ui.get_lookup_identifier().into(),
                     ui.get_lookup_key().into(),
+                    LookupUserInput {
+                        notes: ui.get_lookup_notes().into(),
+                        reading_status: match ui.get_lookup_reading_status() {
+                            1 => ReadingStatus::Reading,
+                            2 => ReadingStatus::Read,
+                            _ => ReadingStatus::Unread,
+                        },
+                        favorite: ui.get_lookup_favorite(),
+                    },
                 ),
             );
         }
@@ -1097,8 +1112,12 @@ fn apply_reply(ui: &MainWindow, reply: Reply) {
             ui.set_candidate_dirty(false);
         }
         ui.set_lookup_identifier("".into());
-        ui.set_lookup_details("".into());
+        ui.set_lookup_source("".into());
+        ui.set_lookup_fields(ModelRc::default());
         ui.set_lookup_key("".into());
+        ui.set_lookup_notes("".into());
+        ui.set_lookup_reading_status(0);
+        ui.set_lookup_favorite(false);
         ui.set_lookup_has_result(false);
         ui.set_lookup_dirty(false);
     }
@@ -1106,8 +1125,17 @@ fn apply_reply(ui: &MainWindow, reply: Reply) {
         ui.set_lookup_dirty(false);
         ui.set_lookup_has_result(false);
     }
-    if let Some((details, key)) = reply.lookup_preview {
-        ui.set_lookup_details(details.into());
+    if let Some((preview, key)) = reply.lookup_preview {
+        let fields: Vec<_> = preview
+            .fields
+            .into_iter()
+            .map(|(label, value)| LookupField {
+                label: label.into(),
+                value: value.into(),
+            })
+            .collect();
+        ui.set_lookup_source(preview.source.into());
+        ui.set_lookup_fields(ModelRc::new(VecModel::from(fields)));
         ui.set_lookup_key(key.into());
         ui.set_lookup_has_result(true);
         ui.set_lookup_dirty(true);
@@ -1251,8 +1279,10 @@ fn apply_reply(ui: &MainWindow, reply: Reply) {
         && ui.get_detail_view() == DetailView::Import
         && next_view.is_none()
     {
+        // Closing the unified add screen returns to the neutral view; manual
+        // entry is an explicit navigation of its own.
         next_view = Some(if ui.get_lookup_new() {
-            DetailView::PaperEditor
+            DetailView::Empty
         } else {
             DetailView::MetadataReview
         });

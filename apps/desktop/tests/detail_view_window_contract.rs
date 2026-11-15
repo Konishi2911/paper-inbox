@@ -134,7 +134,7 @@ fn enum_transitions_restore_nested_drafts_and_do_not_leave_the_source_on_failed_
     click(&w, "BibTeX 出力");
     screen(&w, DetailView::ExportSettings);
     assert!(w.get_dirty());
-    click(&w, "DOI / arXiv から登録");
+    click(&w, "文献を追加");
     assert!(w.get_confirm_discard());
     screen(&w, DetailView::ExportSettings);
     click(&w, "編集を続ける");
