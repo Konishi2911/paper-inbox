@@ -82,6 +82,11 @@ cargo test -p paper-metadata --test live_contract --locked -- --ignored
 
 設計資料:
 
+- [全体設計](docs/design.md)
+- [UI設計](docs/ui-design.md)
+- [実装工程・現在の監査結果](docs/roadmap.md)
+- [設計判断](docs/decisions.md)
+
 - [識別子と BibTeX 出力](docs/identifiers-and-export.md)
 - [文献の同一性判定](docs/identity-assessment.md)
 - [更新候補と版の承認](docs/metadata-candidates.md)
