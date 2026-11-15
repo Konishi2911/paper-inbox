@@ -11,13 +11,13 @@ MainWindowは状態、画面遷移、Rust接続、コンポーネント間の配
 - `theme.slint`: 色トークン。OSテーマ/ダークモードの切替は未実装。
 - `types.slint`: `NavigationAction`、`AuthorAction`、`DetailView`、共有行モデル（著者・文献・候補・提案・版）。MainWindowから再エクスポートし、Rustは生成Enumを利用する。
 - `components/paper-card.slint`: タイトル・著者・年・キー、選択、hover、出力チェック。通常72px、出力108pxはpreferred-heightの目安。内容が長ければ暗黙のレイアウト最小サイズを優先して高さを伸ばし、見切れを防ぐ。
-- `components/sidebar.slint`: 操作通知と表示。遷移・検索は親へ残す。
+- `components/sidebar.slint`: 操作通知と表示。登録の入口は「文献を追加」1つ。遷移・検索は親へ残す。
 - `components/splitter.slint`: ドラッグ開始時の幅とウィンドウ上のポインター位置から幅要求を返す。
 - `components/paper-detail.slint`: 保存済みの読取専用詳細。著者・識別子警告を含め、正常読込のreplyで表示値を更新する。
 - `components/author-editor.slint`: 個人/団体/Literal、ORCID、追加・削除・上下の表示と通知。モデルの変更は親のRust処理に委ねる。
 - `components/paper-editor.slint`: 編集フォーム、AuthorEditorとの接続、保存・取消・削除復元の通知。
 - `components/paper-list.slint`: 検索、sort、archiveフィルタ、カード、page。条件とoffsetはMainWindowと共有し、選択・検索を通知する。
-- `views/import-view.slint`: 取得入力・確認。`candidate-editor.slint`: 候補の提示項目と入力。
+- `views/import-view.slint`: 統合登録画面（lookup-new）と既存文献の識別子取得。取得値は読取専用の項目別表示、登録時の個人入力（引用キー・読書状態・お気に入り・メモ）、手動入力への切替を通知する。`candidate-editor.slint`: 候補の提示項目と入力。
 - `views/metadata-view.slint` / `proposal-view.slint`: 出典・版と現在/提案値、承認通知。承認判定はcore/storageに残す。
 - `views/export-view.slint`: 出力設定。`dialogs/export-dialog.slint`: 書込み前のpreview・警告・上書き確認。
 - `dialogs/about-dialog.slint` / `confirm-dialog.slint`: 謝辞と共通確認表示。実際の状態変更はMainWindowへ通知する。
@@ -113,3 +113,13 @@ metadata_diff_window_contractで型・接続・左右/上下・出典/長文展�
 WSLgでは比較表示、出典展開、画面縮小を実描画して確認する。
 
 Step 19.5以降の判断モデル・有効性・構造化比較・Three-way準備の詳細は[書誌情報の差分比較と判断](metadata-diff.md)を参照。
+
+## U1: 統合登録画面
+
+登録の入口をサイドバーの「＋ 文献を追加」1つにした。画面を開くと識別子欄へ`init`でフォーカスし、Enterで取得する。取得結果が届くと引用キー欄が生成され、その`init`でフォーカスを移すため、続けてEnterで登録できる。Slintでは条件付き要素（`if`）の内部要素を外から参照できないため、要素自身の`init`で生成時にフォーカスする方式を採用した。
+
+取得した書誌項目は読取専用の`[LookupField]`で表示し、手動値に変換しない。手動値にすると出典が失われ、以後の外部更新がすべて承認待ちになるためである。読書状態・お気に入り・メモは書誌情報ではないので、`RegisterMetadataCandidate`と同じ一括トランザクションで`SetReadingStatus`等を適用する。引用キー不正などで失敗した場合は何も保存しない。
+
+識別子のない文献は同じ画面の「手動で入力」から既存の手動フォーム（見出し「文献を追加（手動入力）」）へ移り、フォームからも「DOI / arXiv から取得に切り替え」で戻れる。未保存入力がある場合は既存の破棄確認を経る。閉じるボタンは確認なしで破棄するため、入力がある場合は「破棄して閉じる」と表示する。閉じた後は案内表示（Empty）に戻る。
+
+検証: `unified_add_window_contract` で入口の一本化、初期フォーカスとキー入力、Enterのみの取得→登録、閉じる・手動入力への切替を、`lookup_window_contract` と `lookup_application_contract` で項目別表示・個人入力の一括保存・失敗時に何も残らないこと・出典維持を確認する。
