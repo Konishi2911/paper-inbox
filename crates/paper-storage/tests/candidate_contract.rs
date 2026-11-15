@@ -827,3 +827,58 @@ fn review_keeps_current_and_candidate_revision_sources_separate() {
     assert_eq!(source.source_updated_at, Some(time(2)));
     assert_ne!(source.observed_at, current.provenance.observed_at);
 }
+
+#[test]
+fn identity_change_marks_otherwise_unchanged_field_proposal_unavailable() {
+    let f = Fixture::new();
+    let s = f.open();
+    let p = create(&s);
+    submit(&s, &p, candidate());
+    let proposal = field_proposal(&s, &p, BibliographyField::Title);
+    let state = s.load_edit_state(p.id()).unwrap();
+    let heads = state
+        .heads
+        .iter()
+        .find(|(field, _)| *field == BibliographyField::Identifiers)
+        .unwrap()
+        .1
+        .clone();
+    s.commit_at(
+        LibraryCommand::EditBibliography {
+            paper_id: p.id(),
+            version_id: None,
+            value: BibliographyValue::Identifiers(Identifiers {
+                doi: Some(Doi::parse("10.1000/other").unwrap()),
+                ..Default::default()
+            }),
+            expected_heads: heads,
+        },
+        time(4),
+    )
+    .unwrap();
+    let review = s.metadata_review(p.id()).unwrap();
+    let detail = review
+        .proposals
+        .iter()
+        .find(|d| d.proposal.id == proposal.id)
+        .unwrap();
+    assert!(
+        detail
+            .unavailable_reason
+            .as_ref()
+            .unwrap()
+            .contains("同一性")
+    );
+    let before = f.counts();
+    assert!(
+        s.commit_at(
+            LibraryCommand::ResolveProposal {
+                proposal_id: proposal.id,
+                resolution: ProposalResolution::Accept
+            },
+            time(5)
+        )
+        .is_err()
+    );
+    assert_eq!(f.counts(), before);
+}

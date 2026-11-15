@@ -123,6 +123,8 @@ pub enum DeletionFilter {
 #[derive(Clone, Debug)]
 pub struct MetadataProposalDetail {
     pub proposal: crate::model::UpdateProposal,
+    /// Read in the same transaction as current values; saving rechecks this.
+    pub unavailable_reason: Option<String>,
     /// All current heads: never invent a single source for divergent revisions.
     pub current_revisions: Vec<crate::model::FieldRevision>,
     pub expected_value: Option<crate::model::BibliographyValue>,
