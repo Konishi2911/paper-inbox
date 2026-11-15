@@ -27,3 +27,14 @@ pub use citation_keys::suggest_citation_key;
 
 mod field_diff;
 pub use field_diff::{FieldChangeKind, FieldDiffError, compare_field_values};
+
+mod structured_diff;
+pub use structured_diff::{
+    AttachmentDiff, ContributorDiff, SetDiff, compare_attachment, compare_contributors,
+    compare_sets,
+};
+
+mod revision_comparison;
+pub use revision_comparison::{
+    RevisionComparisonError, ThreeWayFieldComparison, compare_three_way_revisions,
+};
