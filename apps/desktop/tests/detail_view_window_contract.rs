@@ -11,6 +11,7 @@ fn wait(window: &MainWindow) {
     let weak = window.as_weak();
     let start = Instant::now();
     let timer = slint::Timer::default();
+    let completed = std::rc::Rc::new(std::cell::Cell::new(false));
     timer.start(
         slint::TimerMode::Repeated,
         Duration::from_millis(5),
@@ -22,7 +23,7 @@ fn wait(window: &MainWindow) {
                 window.get_detail_view(),
                 window.get_status()
             );
-            if !window.get_busy() {
+            if !window.get_busy() && !completed.replace(true) {
                 slint::quit_event_loop().unwrap();
             }
         },
@@ -60,6 +61,7 @@ fn click_element(window: &MainWindow, element: &ElementHandle) {
         });
 }
 
+#[track_caller]
 fn screen(w: &MainWindow, expected: DetailView) {
     assert_eq!(w.get_detail_view(), expected);
     let names = [
