@@ -15,3 +15,9 @@ pub use merge::{MergeResult, three_way_merge};
 pub use bibtex::{
     BibtexError, BibtexOptions, BibtexOutput, BibtexWarning, export_bibtex, render_entry,
 };
+
+mod candidates;
+pub use candidates::{
+    CandidateError, CandidateHoldReason, CandidateMode, MetadataUpdatePlan, PlannedMetadataField,
+    plan_metadata_update,
+};

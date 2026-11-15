@@ -119,3 +119,19 @@ pub enum DeletionFilter {
     Deleted,
     All,
 }
+
+#[derive(Clone, Debug)]
+pub struct MetadataProposalDetail {
+    pub proposal: crate::model::UpdateProposal,
+    pub expected_value: Option<crate::model::BibliographyValue>,
+    pub current_value: Option<crate::model::BibliographyValue>,
+    pub proposed_value: Option<crate::model::BibliographyValue>,
+    pub provenance: Option<crate::model::Provenance>,
+}
+#[derive(Clone, Debug)]
+pub struct MetadataReview {
+    pub state: crate::command::PaperEditState,
+    pub candidates: Vec<crate::model::StoredMetadataCandidate>,
+    pub proposals: Vec<MetadataProposalDetail>,
+    pub versions: Vec<crate::model::PaperVersion>,
+}

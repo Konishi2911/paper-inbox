@@ -224,3 +224,48 @@ impl Bibliography {
 #[cfg(test)]
 #[path = "paper_tests.rs"]
 mod tests;
+
+impl Paper {
+    pub fn touch(&mut self, now: DateTime<Utc>) -> Result<(), PaperError> {
+        self.check_edit(now)?;
+        self.updated_at = now;
+        Ok(())
+    }
+    pub fn set_canonical_version(
+        &mut self,
+        version: Option<VersionId>,
+        now: DateTime<Utc>,
+    ) -> Result<(), PaperError> {
+        self.check_edit(now)?;
+        self.canonical_version = version;
+        self.updated_at = now;
+        Ok(())
+    }
+}
+impl PaperVersion {
+    pub fn validate(&self) -> Result<(), PaperError> {
+        self.bibliography.validate()?;
+        if self.updated_at < self.created_at {
+            return Err(PaperError::InvalidTimestamp);
+        }
+        Ok(())
+    }
+    pub fn edit_bibliography(
+        &mut self,
+        value: &BibliographyValue,
+        now: DateTime<Utc>,
+    ) -> Result<(), PaperError> {
+        if now < self.updated_at {
+            return Err(PaperError::InvalidTimestamp);
+        }
+        if let BibliographyValue::Identifiers(ids) = value {
+            ids.validate_input()?;
+        }
+        let mut bibliography = self.bibliography.clone();
+        bibliography.apply(value);
+        bibliography.validate()?;
+        self.bibliography = bibliography;
+        self.updated_at = now;
+        Ok(())
+    }
+}

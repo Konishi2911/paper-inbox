@@ -38,6 +38,7 @@ macro_rules! define_id {
     };
 }
 
+define_id!(CandidateId);
 define_id!(PaperId);
 define_id!(VersionId);
 define_id!(AttachmentId);
@@ -65,6 +66,7 @@ mod tests {
             })+};
         }
         check!(
+            CandidateId,
             PaperId,
             VersionId,
             AttachmentId,

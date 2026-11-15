@@ -23,6 +23,17 @@ pub struct SyncEvent {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum SyncOperation {
+    ProposalSuperseded {
+        proposal_id: ProposalId,
+    },
+    MetadataCandidateSubmitted {
+        paper_id: PaperId,
+        candidate: super::MetadataCandidate,
+    },
+    MetadataCandidateAssociated {
+        candidate_id: super::CandidateId,
+        version_id: VersionId,
+    },
     PaperCreated(Paper),
 
     PaperVersionAdded(PaperVersion),

@@ -143,6 +143,52 @@ impl BibliographyValue {
     }
 }
 
+impl BibliographyField {
+    pub const ALL: [Self; 15] = [
+        Self::Title,
+        Self::Authors,
+        Self::Editors,
+        Self::PublicationType,
+        Self::ContainerTitle,
+        Self::Publisher,
+        Self::Year,
+        Self::Month,
+        Self::Volume,
+        Self::Issue,
+        Self::Pages,
+        Self::ArticleNumber,
+        Self::Identifiers,
+        Self::Abstract,
+        Self::Keywords,
+    ];
+}
+impl super::Bibliography {
+    pub fn value(&self, field: BibliographyField) -> BibliographyValue {
+        use BibliographyField as F;
+        match field {
+            F::Title => BibliographyValue::Title(self.title.clone()),
+            F::Authors => BibliographyValue::Authors(self.authors.clone()),
+            F::Editors => BibliographyValue::Editors(self.editors.clone()),
+            F::PublicationType => BibliographyValue::PublicationType(self.publication.kind),
+            F::ContainerTitle => {
+                BibliographyValue::ContainerTitle(self.publication.container_title.clone())
+            }
+            F::Publisher => BibliographyValue::Publisher(self.publication.publisher.clone()),
+            F::Year => BibliographyValue::Year(self.publication.year),
+            F::Month => BibliographyValue::Month(self.publication.month),
+            F::Volume => BibliographyValue::Volume(self.publication.volume.clone()),
+            F::Issue => BibliographyValue::Issue(self.publication.issue.clone()),
+            F::Pages => BibliographyValue::Pages(self.publication.pages.clone()),
+            F::ArticleNumber => {
+                BibliographyValue::ArticleNumber(self.publication.article_number.clone())
+            }
+            F::Identifiers => BibliographyValue::Identifiers(self.identifiers.clone()),
+            F::Abstract => BibliographyValue::Abstract(self.abstract_text.clone()),
+            F::Keywords => BibliographyValue::Keywords(self.keywords.clone()),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

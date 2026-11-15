@@ -36,6 +36,14 @@ pub enum LibraryCommand {
         candidate: MetadataCandidate,
     },
 
+    AssociateMetadataCandidate {
+        candidate_id: crate::model::CandidateId,
+        expected: PaperEditState,
+    },
+    ProposeCanonicalVersion {
+        paper_id: crate::model::PaperId,
+        version_id: crate::model::VersionId,
+    },
     ResolveProposal {
         proposal_id: ProposalId,
         resolution: ProposalResolution,

@@ -13,8 +13,8 @@ mod revision;
 mod user_metadata;
 
 pub use ids::{
-    AttachmentId, CollectionId, DeviceId, EventId, ImportId, PaperId, ProposalId, RevisionId,
-    TagId, VersionId,
+    AttachmentId, CandidateId, CollectionId, DeviceId, EventId, ImportId, PaperId, ProposalId,
+    RevisionId, TagId, VersionId,
 };
 
 pub use identifier::{ArxivId, CitationKey, ContentHash, Doi, IdentifierError, PaperIdentifier};
@@ -23,7 +23,9 @@ pub use contributor::{Contributor, ContributorName};
 
 pub use publication::{Publication, PublicationType, VersionKind};
 
-pub use bibliography::{Bibliography, Identifiers, MetadataCandidate};
+pub use bibliography::{
+    Bibliography, CandidateStatus, Identifiers, MetadataCandidate, StoredMetadataCandidate,
+};
 
 pub use user_metadata::{Collection, ReadingStatus, Tag, UserMetadata};
 

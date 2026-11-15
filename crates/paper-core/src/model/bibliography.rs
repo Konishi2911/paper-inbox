@@ -33,6 +33,8 @@ pub struct Bibliography {
 /// Bibliographic information obtained from an external source.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct MetadataCandidate {
+    pub id: super::CandidateId,
+    pub present_fields: Vec<super::BibliographyField>,
     pub bibliography: Bibliography,
     pub provenance: Provenance,
     pub version_kind: VersionKind,
@@ -86,4 +88,20 @@ impl Identifiers {
             }
         }
     }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CandidateStatus {
+    Held,
+    Processed,
+    Associated,
+}
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct StoredMetadataCandidate {
+    pub paper_id: super::PaperId,
+    pub candidate: MetadataCandidate,
+    pub status: CandidateStatus,
+    pub received_at: chrono::DateTime<chrono::Utc>,
+    pub associated_at: Option<chrono::DateTime<chrono::Utc>>,
+    pub version_id: Option<super::VersionId>,
 }

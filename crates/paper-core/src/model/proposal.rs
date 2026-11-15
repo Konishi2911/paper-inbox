@@ -11,6 +11,9 @@ pub enum ProposalReason {
     ConcurrentModification,
     PublisherVersionDiscovered,
     DuplicatePaper,
+    ExternalDeletion,
+    ManualAssociation,
+    CanonicalVersionSelection,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
