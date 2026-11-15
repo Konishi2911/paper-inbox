@@ -92,12 +92,12 @@ pub fn show_review(ui: &MainWindow, review: &MetadataReview) {
                     let current = detail
                         .current_value
                         .as_ref()
-                        .map(metadata::value_label)
+                        .map(review_value_label)
                         .unwrap_or_default();
                     let proposed = detail
                         .proposed_value
                         .as_ref()
-                        .map(metadata::value_label)
+                        .map(review_value_label)
                         .unwrap_or_default();
                     let heads = review
                         .state
@@ -210,18 +210,33 @@ pub fn show_review(ui: &MainWindow, review: &MetadataReview) {
                     detail.proposal.created_at.to_rfc3339()
                 ),
             };
+            let stale = stale || detail.unavailable_reason.is_some();
+            let requires_review=matches!(detail.proposal.reason,ProposalReason::OverwriteManualValue | ProposalReason::ConflictingSources | ProposalReason::UnknownFreshness | ProposalReason::ConcurrentModification | ProposalReason::ManualAssociation | ProposalReason::ExternalDeletion)
+                || detail.current_revisions.iter().any(|r|r.provenance.source==MetadataSource::Manual)
+                || detail.current_revisions.len()>1
+                || matches!(detail.proposal.kind,ProposalKind::FieldUpdate {target,..} if target.field==BibliographyField::Identifiers);
+
+            let custom_kind=detail.current_value.as_ref().map(crate::metadata_resolution::custom_kind).unwrap_or(0);
+            let custom_text=detail.current_value.as_ref().map(crate::metadata_resolution::custom_text).unwrap_or_default();
+            let (custom_doi,custom_arxiv)=match &detail.current_value {
+                Some(BibliographyValue::Identifiers(ids))=>(ids.doi_text().unwrap_or_default(),ids.arxiv_text().unwrap_or_default()),
+                _=>("",""),
+            };
             ProposalRow {
+                custom_kind,custom_text:custom_text.into(),custom_doi:custom_doi.into(),custom_arxiv:custom_arxiv.into(),
+                bulk_safe: !stale && !requires_review && matches!(detail.proposal.kind,ProposalKind::FieldUpdate {..}),
+                decision:crate::DiffResolution::Unresolved,
+                text_diff: match (&detail.current_value,&detail.proposed_value) {
+                    (Some(BibliographyValue::Title(_)|BibliographyValue::Abstract(_)),Some(_))=>crate::metadata_diff::inline_text(&current,&proposed).into(),
+                    _=>"".into(),
+                },
+                structured_diff:match (&detail.current_value,&detail.proposed_value) {
+                    (Some(a),Some(b))=>crate::metadata_diff::structured_text(a,b).into(),_=>"".into(),
+                },
                 current_preview: preview_text(&current).into(),
                 proposed_preview: preview_text(&proposed).into(),
                 change_label: change_label.into(),
-                conflict: matches!(
-                    detail.proposal.reason,
-                    ProposalReason::OverwriteManualValue
-                        | ProposalReason::ConflictingSources
-                        | ProposalReason::UnknownFreshness
-                        | ProposalReason::ConcurrentModification
-                        | ProposalReason::ManualAssociation
-                ),
+                conflict: requires_review,
                 current_source: current_source.into(),
                 current_details: current_details.into(),
                 proposed_details: proposed_details.into(),
@@ -230,7 +245,11 @@ pub fn show_review(ui: &MainWindow, review: &MetadataReview) {
                 label: label.into(),
                 current: current.into(),
                 proposed: proposed.into(),
-                reason: metadata::reason_label(detail.proposal.reason).into(),
+                reason: detail
+                    .unavailable_reason
+                    .as_deref()
+                    .unwrap_or_else(|| metadata::reason_label(detail.proposal.reason))
+                    .into(),
                 source: source.into(),
                 stale,
             }
@@ -269,6 +288,8 @@ pub fn show_review(ui: &MainWindow, review: &MetadataReview) {
         })
         .collect::<Vec<_>>();
     ui.set_version_rows(ModelRc::new(VecModel::from(versions)));
+    ui.set_review_dirty(false);
+    update_summary(ui);
     ui.set_load_required(false);
     ui.set_associate_confirm(false);
 }
@@ -292,6 +313,181 @@ fn preview_text(value: &str) -> String {
         preview.push_str("…（全文を表示できます）");
     }
     preview
+}
+
+pub fn read_decisions(
+    ui: &MainWindow,
+) -> Result<Vec<crate::metadata_resolution::ResolutionInput>, crate::application::AppError> {
+    use slint::Model;
+    ui.get_proposal_rows()
+        .iter()
+        .filter(|r| r.decision != crate::DiffResolution::Unresolved)
+        .map(|r| {
+            Ok(crate::metadata_resolution::ResolutionInput {
+                id: ProposalId::from_uuid(uuid::Uuid::parse_str(&r.id).map_err(|_| {
+                    crate::application::AppError::Input("提案IDが不正です。".into())
+                })?),
+                decision: r.decision,
+                text: r.custom_text.into(),
+                doi: r.custom_doi.into(),
+                arxiv: r.custom_arxiv.into(),
+            })
+        })
+        .collect()
+}
+fn update_summary(ui: &MainWindow) {
+    use slint::Model;
+    let rows = ui.get_proposal_rows();
+    let rows = rows.iter().collect::<Vec<_>>();
+    let count = |label: &str| rows.iter().filter(|r| r.change_label == label).count();
+    let decided = rows
+        .iter()
+        .filter(|r| r.decision != crate::DiffResolution::Unresolved)
+        .count();
+    ui.set_review_dirty(decided > 0);
+    refresh_visible(ui);
+    ui.set_diff_summary(
+        format!(
+            "追加 {} / 変更 {} / 削除 {} / 要確認 {}（差分と重複）\n未判断 {} / 判断済み {}",
+            count("追加"),
+            count("変更"),
+            count("削除"),
+            rows.iter().filter(|r| r.conflict || r.stale).count(),
+            rows.len() - decided,
+            decided
+        )
+        .into(),
+    );
+}
+fn mutate_rows(ui: &MainWindow, mut change: impl FnMut(&mut crate::ProposalRow)) {
+    use slint::Model;
+    let rows = ui.get_proposal_rows();
+    for index in 0..rows.row_count() {
+        if let Some(mut row) = rows.row_data(index) {
+            change(&mut row);
+            rows.set_row_data(index, row);
+        }
+    }
+    update_summary(ui);
+}
+pub fn attach_decisions(ui: &MainWindow) {
+    let weak = slint::ComponentHandle::as_weak(ui);
+    ui.on_refilter_metadata(move || {
+        if let Some(ui) = weak.upgrade() {
+            refresh_visible(&ui);
+        }
+    });
+    let weak = slint::ComponentHandle::as_weak(ui);
+    ui.on_choose_metadata(move |id, decision| {
+        if let Some(ui) = weak.upgrade() {
+            mutate_rows(&ui, |r| {
+                if r.id == id
+                    && (!r.stale
+                        || matches!(
+                            decision,
+                            crate::DiffResolution::Unresolved | crate::DiffResolution::KeepCurrent
+                        ))
+                    && (decision != crate::DiffResolution::Custom || r.custom_kind > 0)
+                {
+                    r.decision = decision;
+                }
+            });
+        }
+    });
+    let weak = slint::ComponentHandle::as_weak(ui);
+    ui.on_edit_metadata(move |id, field, value| {
+        if let Some(ui) = weak.upgrade() {
+            mutate_rows(&ui, |r| {
+                if r.id == id && r.decision == crate::DiffResolution::Custom {
+                    match field {
+                        crate::DiffInputField::Value => r.custom_text = value.clone(),
+                        crate::DiffInputField::Doi => r.custom_doi = value.clone(),
+                        crate::DiffInputField::Arxiv => r.custom_arxiv = value.clone(),
+                    }
+                }
+            });
+        }
+    });
+    let weak = slint::ComponentHandle::as_weak(ui);
+    ui.on_bulk_metadata(move |action| {
+        if let Some(ui) = weak.upgrade() {
+            use slint::Model;
+            let safe=ui.get_proposal_rows().iter().filter(|r|r.bulk_safe && !r.stale && r.decision==crate::DiffResolution::Unresolved).count();
+            mutate_rows(&ui, |r| match action {
+                crate::DiffBulkAction::Reset => r.decision = crate::DiffResolution::Unresolved,
+                crate::DiffBulkAction::KeepAll => r.decision = crate::DiffResolution::KeepCurrent,
+                crate::DiffBulkAction::AcceptSafe
+                    if r.bulk_safe
+                        && !r.stale
+                        && r.decision == crate::DiffResolution::Unresolved =>
+                {
+                    r.decision = crate::DiffResolution::AcceptProposed
+                }
+                _ => {}
+            });
+            if action==crate::DiffBulkAction::AcceptSafe {ui.set_status(format!("一括採用の判断を {} 件選択しました。要確認の項目は個別に判断してください。",safe).into());}
+        }
+    });
+}
+
+fn review_value_label(value: &BibliographyValue) -> String {
+    match value {
+        BibliographyValue::Authors(authors) | BibliographyValue::Editors(authors)
+            if !authors.is_empty() =>
+        {
+            authors
+                .iter()
+                .enumerate()
+                .map(|(index, author)| {
+                    let name = match &author.name {
+                        ContributorName::Person { given, family } => {
+                            format!("{} {}", given.as_deref().unwrap_or(""), family)
+                        }
+                        ContributorName::Organization(n) | ContributorName::Literal(n) => n.clone(),
+                    };
+                    format!(
+                        "{}. {} / ORCID: {}",
+                        index + 1,
+                        name.trim(),
+                        author.orcid.as_deref().unwrap_or("（未設定）")
+                    )
+                })
+                .collect::<Vec<_>>()
+                .join("\n")
+        }
+        _ => metadata::value_label(value),
+    }
+}
+
+fn refresh_visible(ui: &MainWindow) {
+    use slint::Model;
+    let filter = ui.get_diff_filter();
+    let selected = ui
+        .get_proposal_rows()
+        .iter()
+        .filter(|r| match filter {
+            crate::DiffFilter::All => true,
+            crate::DiffFilter::Changed => r.change_label != "変更なし",
+            crate::DiffFilter::Conflict => r.conflict || r.stale,
+            crate::DiffFilter::Unresolved => r.decision == crate::DiffResolution::Unresolved,
+            crate::DiffFilter::Decided => r.decision != crate::DiffResolution::Unresolved,
+        })
+        .collect::<Vec<_>>();
+    let visible = ui.get_filtered_proposal_rows();
+    if visible.row_count() == selected.len()
+        && selected
+            .iter()
+            .enumerate()
+            .all(|(i, r)| visible.row_data(i).is_some_and(|old| old.id == r.id))
+    {
+        for (i, row) in selected.into_iter().enumerate() {
+            if visible.row_data(i).as_ref() != Some(&row) {
+                visible.set_row_data(i, row);
+            }
+        }
+    } else {
+        ui.set_filtered_proposal_rows(ModelRc::new(VecModel::from(selected)));
+    }
 }
 
 #[cfg(test)]

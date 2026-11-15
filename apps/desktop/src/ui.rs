@@ -30,6 +30,7 @@ enum Request {
     SubmitCandidate(crate::metadata::CandidateForm),
     AssociateCandidate(CandidateId),
     ResolveMetadata(ProposalId, bool),
+    ResolveMetadataBatch(Vec<crate::metadata_resolution::ResolutionInput>),
     ProposeCanonical(VersionId),
     PrepareExport {
         ids: Vec<PaperId>,
@@ -415,6 +416,24 @@ impl Worker {
                         "候補を同じ文献の版として登録しました。差分は提案を確認してください。",
                         false,
                     ),
+                    Err(e) => Reply {
+                        message: e.to_string(),
+                        ..Default::default()
+                    },
+                }
+            }
+            Request::ResolveMetadataBatch(inputs) => {
+                let Some(review) = &self.review else {
+                    return Reply {
+                        message: "候補画面を開き直してください。".into(),
+                        ..Default::default()
+                    };
+                };
+                let id = review.state.paper.id();
+                match app.resolve_metadata_batch(review, &inputs) {
+                    Ok(()) => {
+                        self.after_metadata(id, "判断済みの項目をまとめて保存しました。", false)
+                    }
                     Err(e) => Reply {
                         message: e.to_string(),
                         ..Default::default()
@@ -896,6 +915,17 @@ pub fn attach_with_lookup_provider(
     });
     let tx = sender.clone();
     let weak = ui.as_weak();
+    ui.on_apply_metadata(move || {
+        if let Some(ui) = weak.upgrade() {
+            match crate::ui_metadata::read_decisions(&ui) {
+                Ok(inputs) => dispatch(&ui, &tx, Request::ResolveMetadataBatch(inputs)),
+                Err(e) => ui.set_status(e.to_string().into()),
+            }
+        }
+    });
+    crate::ui_metadata::attach_decisions(ui);
+    let tx = sender.clone();
+    let weak = ui.as_weak();
     ui.on_resolve_metadata(move |id, accept| {
         if let Some(ui) = weak.upgrade() {
             match uuid::Uuid::parse_str(&id) {
@@ -1143,6 +1173,7 @@ fn apply_reply(ui: &MainWindow, reply: Reply) {
             })
             .collect();
         ui.set_author_rows(ModelRc::new(VecModel::from(rows)));
+        ui.set_review_dirty(false);
         ui.set_editor_deleted(editor.deleted);
         ui.set_saved_paper(editor.id.is_some());
         ui.set_editing_id(

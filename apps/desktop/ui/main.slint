@@ -11,9 +11,9 @@ import { Sidebar } from "components/sidebar.slint";
 import { Splitter } from "components/splitter.slint";
 import { PaperDetail } from "components/paper-detail.slint";
 import { PaperEditor } from "components/paper-editor.slint";
-import { DetailView, AuthorAction, NavigationAction, AuthorRow, PaperRow, CandidateRow, ProposalRow, VersionRow } from "types.slint";
+import { DiffInputField, DiffResolution, DiffFilter, DiffBulkAction, DetailView, AuthorAction, NavigationAction, AuthorRow, PaperRow, CandidateRow, ProposalRow, VersionRow } from "types.slint";
 
-export { DetailView, AuthorAction, NavigationAction, AuthorRow, PaperRow, CandidateRow, ProposalRow, VersionRow } from "types.slint";
+export { DiffInputField, DiffResolution, DiffFilter, DiffBulkAction, DetailView, AuthorAction, NavigationAction, AuthorRow, PaperRow, CandidateRow, ProposalRow, VersionRow } from "types.slint";
 
 export component MainWindow inherits Window {
     title:"Paper Inbox";
@@ -92,6 +92,16 @@ export component MainWindow inherits Window {
 
     out property <bool> metadata-open: root.detail-view==DetailView.metadata-review || root.detail-view==DetailView.metadata-candidate-editor;
     out property <bool> candidate-form-open: root.detail-view==DetailView.metadata-candidate-editor;
+    in-out property <bool> review-dirty:false;
+    in-out property <DiffFilter> diff-filter:DiffFilter.changed;
+    in-out property <[ProposalRow]> filtered-proposal-rows:root.proposal-rows;
+    callback refilter-metadata();
+    changed diff-filter => {root.refilter-metadata();}
+    in-out property <string> diff-summary;
+    callback choose-metadata(string,DiffResolution);
+    callback edit-metadata(string,DiffInputField,string);
+    callback bulk-metadata(DiffBulkAction);
+    callback apply-metadata();
     in-out property <bool> candidate-dirty:false;
     in-out property <string> review-label;
     in-out property <[CandidateRow]> candidate-rows;
@@ -176,6 +186,7 @@ export component MainWindow inherits Window {
     public function request-navigation(action:NavigationAction,id:string) {
         if (
             root.dirty
+            || root.review-dirty
             || root.candidate-dirty
             || root.lookup-dirty
         ) {
@@ -368,8 +379,15 @@ export component MainWindow inherits Window {
                         candidate-year <=> root.candidate-year;
                         confirm-discard : root.confirm-discard;
                         metadata-operable : root.metadata-operable;
-                        proposal-rows : root.proposal-rows;
+                        proposal-rows : root.filtered-proposal-rows;
                         propose-canonical(arg0)=>{root.propose-canonical(arg0);}
+                        review-dirty:root.review-dirty;
+                        diff-filter <=> root.diff-filter;
+                        diff-summary:root.diff-summary;
+                        choose-metadata(id,decision)=>{root.choose-metadata(id,decision);}
+                        edit-metadata(id,field,value)=>{root.edit-metadata(id,field,value);}
+                        bulk-metadata(action)=>{root.bulk-metadata(action);}
+                        apply-metadata()=>{root.apply-metadata();}
                         refresh-review()=>{root.request-navigation(NavigationAction.metadata-review,root.editing-id);}
                         request-association(arg0)=>{root.associate-id=arg0;root.associate-confirm=true;}
                         resolve-metadata(arg0,arg1)=>{root.resolve-metadata(arg0,arg1);}

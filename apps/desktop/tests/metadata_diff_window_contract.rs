@@ -1,5 +1,5 @@
 use i_slint_backend_testing::ElementHandle;
-use paper_desktop::{DetailView, MainWindow, ProposalRow};
+use paper_desktop::{DetailView, DiffResolution, MainWindow, ProposalRow};
 use slint::{ComponentHandle, ModelRc, VecModel};
 use std::{cell::RefCell, rc::Rc};
 
@@ -40,7 +40,11 @@ fn comparison_reflows_expands_provenance_and_preserves_resolution_contract() {
     w.set_proposal_rows(ModelRc::new(VecModel::from(vec![row.clone()])));
     let resolutions = Rc::new(RefCell::new(Vec::new()));
     let output = resolutions.clone();
-    w.on_resolve_metadata(move |id, accept| output.borrow_mut().push((id.to_string(), accept)));
+    w.on_choose_metadata(move |id, decision| {
+        output
+            .borrow_mut()
+            .push((id.to_string(), decision == DiffResolution::AcceptProposed))
+    });
     w.show().unwrap();
     w.window().set_size(slint::LogicalSize::new(1600., 1100.));
     let columns = values(&w);

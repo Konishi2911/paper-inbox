@@ -1,5 +1,5 @@
-import { VerticalBox, HorizontalBox, Button } from "std-widgets.slint";
-import { ProposalRow } from "../types.slint";
+import { VerticalBox, HorizontalBox, Button, LineEdit, TextEdit } from "std-widgets.slint";
+import { ProposalRow, DiffResolution, DiffInputField } from "../types.slint";
 import { Theme } from "../theme.slint";
 
 component ComparedValue inherits Rectangle {
@@ -21,9 +21,11 @@ export component MetadataDiffCard inherits Rectangle {
     in property <ProposalRow> proposal;
     in property <bool> operable;
     in property <bool> wide;
-    callback resolve(string,bool);
+    callback choose(string,DiffResolution);
+    callback edit(string,DiffInputField,string);
     private property <bool> details-open:false;
     private property <bool> full-open:false;
+    private property <bool> diff-open:false;
     background: root.proposal.conflict || root.proposal.stale ? Theme.diff-conflict : Theme.diff-current;
     border-width:1px;border-color:Theme.border;border-radius:6px;
     min-width:0px;
@@ -44,6 +46,9 @@ export component MetadataDiffCard inherits Rectangle {
             ComparedValue {heading:"現在値";value:root.full-open ? root.proposal.current : root.proposal.current-preview;source:root.proposal.current-source;}
             ComparedValue {heading:"提案値";value:root.full-open ? root.proposal.proposed : root.proposal.proposed-preview;source:root.proposal.source;background:Theme.diff-proposed;}
         }
+        if root.proposal.structured-diff!="" : Text {text:root.proposal.structured-diff;wrap:word-wrap;min-width:0px;color:Theme.text-secondary;}
+        if root.proposal.text-diff!="" : Button {text:root.diff-open ? "単語差分を閉じる" : "単語差分を表示";clicked=>{root.diff-open=!root.diff-open;}}
+        if root.diff-open : Text {text:"【＋追加】【−削除】は表示用の注記です。\n"+root.proposal.text-diff;wrap:word-wrap;min-width:0px;color:Theme.text-primary;}
         Button {text:root.details-open ? "出典・改訂の詳細を閉じる" : "出典・改訂の詳細";clicked=>{root.details-open=!root.details-open;}}
         if root.details-open : VerticalBox {
             padding:0px;spacing:8px;
@@ -51,10 +56,29 @@ export component MetadataDiffCard inherits Rectangle {
             Text {text:"提案値の出典\n"+root.proposal.proposed-details;wrap:word-wrap;min-width:0px;color:Theme.text-secondary;}
         }
         if root.proposal.stale : Text {text:"作成後に値が変わっています。表示を更新して確認してください。";wrap:word-wrap;color:Theme.warning;min-width:0px;}
+        Text {text:"判断: "+(root.proposal.decision==DiffResolution.unresolved ? "未判断・保留" : root.proposal.decision==DiffResolution.keep-current ? "現在値を維持" : root.proposal.decision==DiffResolution.accept-proposed ? "提案値を採用" : "カスタム値");wrap:word-wrap;min-width:0px;}
         HorizontalBox {
             padding:0px;
-            Button {text:"提案値を採用";enabled:root.operable && !root.proposal.stale;clicked=>{root.resolve(root.proposal.id,true);}}
-            Button {text:"現在値を維持";enabled:root.operable;clicked=>{root.resolve(root.proposal.id,false);}}
+            Button {text:"提案値を採用";enabled:root.operable && !root.proposal.stale;clicked=>{root.choose(root.proposal.id,DiffResolution.accept-proposed);}}
+            Button {text:"現在値を維持";enabled:root.operable;clicked=>{root.choose(root.proposal.id,DiffResolution.keep-current);}}
+        }
+        HorizontalBox {
+            padding:0px;
+            if root.proposal.custom-kind>0 : Button {text:"カスタム値";enabled:root.operable && !root.proposal.stale;clicked=>{root.choose(root.proposal.id,DiffResolution.custom);}}
+            Button {text:"判断を保留";enabled:root.operable;clicked=>{root.choose(root.proposal.id,DiffResolution.unresolved);}}
+        }
+        if root.proposal.decision==DiffResolution.custom : VerticalBox {
+            padding:0px;
+            Text {text:"空入力は明示的な削除として保存します。";wrap:word-wrap;min-width:0px;}
+            if root.proposal.custom-kind==1 : TextEdit {
+                accessible-label:"カスタム値の入力";text:root.proposal.custom-text;enabled:root.operable;
+                preferred-height:100px;edited=>{root.edit(root.proposal.id,DiffInputField.value,self.text);}
+            }
+            if root.proposal.custom-kind==2 : VerticalBox {
+                padding:0px;
+                LineEdit {accessible-label:"カスタムDOI";text:root.proposal.custom-doi;enabled:root.operable;edited=>{root.edit(root.proposal.id,DiffInputField.doi,self.text);}}
+                LineEdit {accessible-label:"カスタムarXiv ID";text:root.proposal.custom-arxiv;enabled:root.operable;edited=>{root.edit(root.proposal.id,DiffInputField.arxiv,self.text);}}
+            }
         }
     }
 }
