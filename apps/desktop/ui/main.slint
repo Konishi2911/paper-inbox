@@ -1,5 +1,6 @@
 import { VerticalBox, HorizontalBox, Button, LineEdit, TextEdit, ComboBox, CheckBox, ScrollView, AboutSlint } from "std-widgets.slint";
 import { Theme } from "theme.slint";
+import { PaperCard } from "components/paper-card.slint";
 
 export struct PaperRow { selected:bool, id:string, title:string, authors:string, year:string, citation-key:string }
 export struct AuthorRow { kind:int, given:string, name:string, orcid:string }
@@ -198,36 +199,19 @@ export component MainWindow inherits Window {
                         vertical-stretch:1;
                         VerticalBox {
                             spacing:8px;alignment:start;
-                            for row in root.papers : Rectangle {
-                                border-radius:8px;
-                                border-width:1px;
-                                border-color:root.editing-id==row.id ? Theme.selection-border : Theme.border;
-                                background:root.editing-id==row.id ? Theme.selection : Theme.surface;
-                                min-height:root.export-settings-open ? 164px : 116px;
-                                VerticalBox {
-                                    padding:0px;spacing:0px;
-                                    Rectangle {
-                                        min-height:114px;
-                                        VerticalBox {
-                                            padding:12px;spacing:5px;
-                                            Text {text:row.title=="" ? "（タイトルなし）" : row.title;wrap:word-wrap;font-weight:600;color:Theme.text-primary;}
-                                            Text {text:row.authors;overflow:elide;color:Theme.text-secondary;}
-                                            Text {text:row.year+"  ·  "+row.citation-key;overflow:elide;font-size:12px;color:Theme.text-secondary;}
-                                        }
-                                        card-touch := TouchArea {
-                                            enabled:root.operable;mouse-cursor:pointer;
-                                            clicked=>{root.open-paper(row.id);}
-                                        }
-                                    }
-                                    if root.export-settings-open : HorizontalBox {
-                                        padding-left:12px;padding-right:12px;padding-bottom:8px;
-                                        CheckBox {enabled:root.operable;text:"BibTeX 出力に含める";checked:row.selected;toggled=>{root.select-paper(row.id,self.checked);}}
-                                    }
-                                }
-                                accessible-role:button;
-                                accessible-label:"文献を開く: "+(row.title=="" ? row.citation-key : row.title);
-                                accessible-enabled:root.operable;
-                                accessible-action-default=>{root.open-paper(row.id);}
+                            for row in root.papers : PaperCard {
+                                title: row.title;
+                                authors: row.authors;
+                                year: row.year;
+                                citation-key: row.citation-key;
+
+                                active: root.editing-id == row.id;
+                                selected: row.selected;
+                                operable: root.operable;
+                                export-mode: root.export-settings-open;
+
+                                opened => {root.open-paper(row.id);}
+                                selection-changed(checked) => {root.select-paper(row.id, checked);}
                             }
                             if root.papers.length==0 : Text {text:root.search-text!="" ? "一致する文献がありません。検索語を変えてください。" : (root.show-deleted ? "削除済みの文献はありません。" : "文献がまだありません。左のメニューから登録しましょう。");wrap:word-wrap;color:Theme.text-secondary;}
                         }

@@ -1,0 +1,118 @@
+import {
+    VerticalBox,
+    HorizontalBox,
+    CheckBox
+} from "std-widgets.slint";
+
+import { Theme } from "../theme.slint";
+
+export component PaperCard inherits Rectangle {
+    // Input properties
+    in property <string> title;
+    in property <string> authors;
+    in property <string> year;
+    in property <string> citation-key;
+
+    in property <bool> active: false;
+    in property <bool> selected: false;
+    in property <bool> operable: true;
+    in property <bool> export-mode: false;
+
+    // Callbacks
+    callback opened();
+    callback selection-changed(bool);
+
+    // Appearance
+    border-radius: 8px;
+    border-width: 1px;
+
+    border-color: root.active
+        ? Theme.selection-border
+        : Theme.border;
+
+    background: root.active
+        ? Theme.selection
+        : Theme.surface;
+
+    min-height: root.export-mode ? 164px : 116px;
+
+    // Content
+    VerticalBox {
+        padding: 0px;
+        spacing: 0px;
+
+        Rectangle {
+            min-height: 114px;
+
+            VerticalBox {
+                padding: 12px;
+                spacing: 5px;
+
+                Text {
+                    text: root.title == ""
+                        ? "（タイトルなし）"
+                        : root.title;
+
+                    wrap: word-wrap;
+                    font-weight: 600;
+                    color: Theme.text-primary;
+                }
+
+                Text {
+                    text: root.authors;
+                    overflow: elide;
+                    color: Theme.text-secondary;
+                }
+
+                Text {
+                    text: root.year
+                        + "  ·  "
+                        + root.citation-key;
+
+                    overflow: elide;
+                    font-size: 12px;
+                    color: Theme.text-secondary;
+                }
+            }
+
+            card-touch := TouchArea {
+                enabled: root.operable;
+                mouse-cursor: pointer;
+
+                clicked => {
+                    root.opened();
+                }
+            }
+        }
+
+        if root.export-mode : HorizontalBox {
+            padding-left: 12px;
+            padding-right: 12px;
+            padding-bottom: 8px;
+
+            CheckBox {
+                enabled: root.operable;
+                text: "BibTeX 出力に含める";
+                checked: root.selected;
+
+                toggled => {
+                    root.selection-changed(self.checked);
+                }
+            }
+        }
+    }
+
+    // Accessibility
+    accessible-role: button;
+
+    accessible-label: "文献を開く: "
+        + (root.title == ""
+            ? root.citation-key
+            : root.title);
+
+    accessible-enabled: root.operable;
+
+    accessible-action-default => {
+        root.opened();
+    }
+}
