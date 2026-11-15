@@ -1,4 +1,6 @@
 import { VerticalBox, HorizontalBox, Button, LineEdit, TextEdit, ComboBox, CheckBox, ScrollView, AboutSlint } from "std-widgets.slint";
+import { Theme } from "theme.slint";
+
 export struct PaperRow { selected:bool, id:string, title:string, authors:string, year:string, citation-key:string }
 export struct AuthorRow { kind:int, given:string, name:string, orcid:string }
 export struct CandidateRow { id:string, label:string, details:string, held:bool }
@@ -13,10 +15,10 @@ component AboutDialog inherits FocusScope {
         return reject;
     }
     Rectangle {
-        background:#ffffff;border-radius:12px;
+        background:Theme.surface;border-radius:12px;
         VerticalBox {
             padding:24px;spacing:12px;
-            Text {text:"Paper Inbox";font-size:24px;font-weight:700;color:#20314f;}
+            Text {text:"Paper Inbox";font-size:24px;font-weight:700;color:Theme.text-primary;}
             Text {text:"ローカルで管理する文献ライブラリ";wrap:word-wrap;}
             Text {text:"独自コード: MIT OR Apache-2.0\nCopyright © 2026 Paper Inbox contributors";wrap:word-wrap;font-size:13px;}
             AboutSlint {height:110px;}
@@ -25,8 +27,13 @@ component AboutDialog inherits FocusScope {
     }
 }
 export component MainWindow inherits Window {
-    title:"Paper Inbox"; preferred-width:1360px; preferred-height:900px; min-width:1080px; min-height:680px;
-    background:#f4f6fa; default-font-size:14px;
+    title:"Paper Inbox"; 
+    preferred-width:1360px; 
+    preferred-height:900px; 
+    min-width:1080px; 
+    min-height:680px;
+    background:Theme.background; 
+    default-font-size:14px;
     in-out property <bool> about-open:false;
     in-out property <bool> sidebar-collapsed:false;
     in-out property <bool> export-settings-open:false;
@@ -152,35 +159,35 @@ export component MainWindow inherits Window {
         HorizontalBox {
             padding:14px;spacing:12px;
             Button {enabled:!root.about-open;accessible-label:root.sidebar-collapsed ? "メニューを展開" : "メニューを折りたたむ";text:root.sidebar-collapsed ? "☰" : "‹";width:38px;clicked=>{root.sidebar-collapsed=!root.sidebar-collapsed;}}
-            Text {text:"Paper Inbox";font-size:22px;font-weight:700;color:#20314f;}
-            Text {text:root.busy ? "処理中…" : "文献ライブラリ";horizontal-alignment:right;color:#66758b;}
+            Text {text:"Paper Inbox";font-size:22px;font-weight:700;color:Theme.text-primary;}
+            Text {text:root.busy ? "処理中…" : "文献ライブラリ";horizontal-alignment:right;color:Theme.text-secondary;}
         }
         HorizontalBox {
             spacing:0px;vertical-stretch:1;
             Rectangle {
-                width:root.sidebar-collapsed ? 64px : 208px;background:#eaf0f8;
+                width:root.sidebar-collapsed ? 64px : 208px;background:Theme.sidebar;
                 VerticalBox {
                     padding:12px;spacing:12px;
-                    Text {text:root.sidebar-collapsed ? "＋" : "新規登録";color:#536783;font-weight:600;}
+                    Text {text:root.sidebar-collapsed ? "＋" : "新規登録";color:Theme.text-muted;font-weight:600;}
                     Button {accessible-label:"DOI / arXiv から登録";text:root.sidebar-collapsed ? "ID" : "DOI / arXiv から登録";enabled:root.operable;clicked=>{root.request-navigation(5,"");}}
                     Button {accessible-label:"手動で登録";text:root.sidebar-collapsed ? "＋" : "手動で登録";enabled:root.operable;clicked=>{root.request-navigation(0,"");}}
-                    Rectangle {height:1px;background:#d6dfed;}
-                    Text {text:root.sidebar-collapsed ? "本" : "ライブラリ";color:#536783;font-weight:600;}
+                    Rectangle {height:1px;background:Theme.divider;}
+                    Text {text:root.sidebar-collapsed ? "本" : "ライブラリ";color:Theme.text-muted;font-weight:600;}
                     Button {accessible-label:"すべての文献";text:root.sidebar-collapsed ? "全" : "すべての文献";enabled:root.operable;clicked=>{root.show-deleted=false;root.search-text="";root.offset=0;root.search();}}
                     Button {accessible-label:"削除済み";text:root.sidebar-collapsed ? "削" : "削除済み";enabled:root.operable;clicked=>{root.show-deleted=true;root.search-text="";root.offset=0;root.search();}}
-                    Rectangle {height:1px;background:#d6dfed;}
+                    Rectangle {height:1px;background:Theme.divider;}
                     Button {text:root.sidebar-collapsed ? "出" : "BibTeX 出力 ("+root.selected-count+")";enabled:root.operable;clicked=>{root.export-settings-open=!root.export-settings-open;}}
                     Rectangle {vertical-stretch:1;background:transparent;}
-                    if !root.sidebar-collapsed : Text {text:root.database-path;wrap:word-wrap;font-size:11px;color:#66758b;}
+                    if !root.sidebar-collapsed : Text {text:root.database-path;wrap:word-wrap;font-size:11px;color:Theme.text-secondary;}
                     Button {accessible-label:"このアプリについて";text:root.sidebar-collapsed ? "i" : "このアプリについて";enabled:!root.about-open && !root.confirm-discard && !root.confirm-delete && !root.export-confirm;clicked=>{root.about-open=true;}}
                     Button {text:root.sidebar-collapsed ? "↻" : "保存先に再接続";enabled:!root.busy && !root.about-open && !root.export-confirm;clicked=>{root.request-navigation(2,"");}}
                 }
             }
             Rectangle {
-                width:root.sidebar-collapsed ? 420px : 380px;background:#f8faff;
+                width:root.sidebar-collapsed ? 420px : 380px;background:Theme.list-background;
                 VerticalBox {
                     padding:16px;spacing:10px;
-                    Text {text:root.show-deleted ? "削除済み" : "すべての文献";font-size:20px;font-weight:700;color:#20314f;}
+                    Text {text:root.show-deleted ? "削除済み" : "すべての文献";font-size:20px;font-weight:700;color:Theme.text-primary;}
                     HorizontalBox {
                         LineEdit {enabled:root.operable;text<=>root.search-text;placeholder-text:"タイトル・著者・引用キーを検索";accepted=>{root.offset=0;root.search();}}
                         Button {enabled:root.operable;text:"検索";clicked=>{root.offset=0;root.search();}}
@@ -194,8 +201,8 @@ export component MainWindow inherits Window {
                             for row in root.papers : Rectangle {
                                 border-radius:8px;
                                 border-width:1px;
-                                border-color:root.editing-id==row.id ? #6e95da : #e1e7ef;
-                                background:root.editing-id==row.id ? #e6efff : #ffffff;
+                                border-color:root.editing-id==row.id ? Theme.selection-border : Theme.border;
+                                background:root.editing-id==row.id ? Theme.selection : Theme.surface;
                                 min-height:root.export-settings-open ? 164px : 116px;
                                 VerticalBox {
                                     padding:0px;spacing:0px;
@@ -203,9 +210,9 @@ export component MainWindow inherits Window {
                                         min-height:114px;
                                         VerticalBox {
                                             padding:12px;spacing:5px;
-                                            Text {text:row.title=="" ? "（タイトルなし）" : row.title;wrap:word-wrap;font-weight:600;color:#20314f;}
-                                            Text {text:row.authors;overflow:elide;color:#66758b;}
-                                            Text {text:row.year+"  ·  "+row.citation-key;overflow:elide;font-size:12px;color:#66758b;}
+                                            Text {text:row.title=="" ? "（タイトルなし）" : row.title;wrap:word-wrap;font-weight:600;color:Theme.text-primary;}
+                                            Text {text:row.authors;overflow:elide;color:Theme.text-secondary;}
+                                            Text {text:row.year+"  ·  "+row.citation-key;overflow:elide;font-size:12px;color:Theme.text-secondary;}
                                         }
                                         card-touch := TouchArea {
                                             enabled:root.operable;mouse-cursor:pointer;
@@ -222,7 +229,7 @@ export component MainWindow inherits Window {
                                 accessible-enabled:root.operable;
                                 accessible-action-default=>{root.open-paper(row.id);}
                             }
-                            if root.papers.length==0 : Text {text:root.search-text!="" ? "一致する文献がありません。検索語を変えてください。" : (root.show-deleted ? "削除済みの文献はありません。" : "文献がまだありません。左のメニューから登録しましょう。");wrap:word-wrap;color:#66758b;}
+                            if root.papers.length==0 : Text {text:root.search-text!="" ? "一致する文献がありません。検索語を変えてください。" : (root.show-deleted ? "削除済みの文献はありません。" : "文献がまだありません。左のメニューから登録しましょう。");wrap:word-wrap;color:Theme.text-secondary;}
                         }
                     }
                     HorizontalBox {
@@ -232,13 +239,13 @@ export component MainWindow inherits Window {
                     }
                 }
             }
-            Rectangle {width:1px;background:#e1e7ef;}
+            Rectangle {width:1px;background:Theme.border;}
             Rectangle {
-                horizontal-stretch:1;background:#ffffff;
+                horizontal-stretch:1;background:Theme.surface;
                 VerticalBox {
                     padding:20px;spacing:12px;
                     if root.confirm-discard : VerticalBox {
-                        Text {text:"未保存の入力があります。破棄して移動しますか？";wrap:word-wrap;color:#945616;}
+                        Text {text:"未保存の入力があります。破棄して移動しますか？";wrap:word-wrap;color:Theme.warning;}
                         HorizontalBox {
                             Button {text:"破棄して移動";clicked=>{root.confirm-discard=false;root.dirty=false;root.candidate-dirty=false;root.lookup-dirty=false;root.export-settings-open=false;root.navigate(root.pending-action,root.pending-id);}}
                             Button {text:"編集を続ける";clicked=>{root.confirm-discard=false;}}
@@ -455,14 +462,14 @@ export component MainWindow inherits Window {
                 }
             }
         }
-        Rectangle {height:1px;background:#e1e7ef;}
+        Rectangle {height:1px;background:Theme.border;}
         HorizontalBox {
             padding:10px;
-            Text {text:root.status;wrap:word-wrap;color:#536783;}
+            Text {text:root.status;wrap:word-wrap;color:Theme.text-muted;}
         }
     }
     if root.about-open : Rectangle {
-        x:0px;y:0px;width:parent.width;height:parent.height;background:#00000066;
+        x:0px;y:0px;width:parent.width;height:parent.height;background:Theme.overlay;
         TouchArea {}
         AboutDialog {
             x:(parent.width - self.width) / 2;
