@@ -1,0 +1,18 @@
+import { VerticalBox, HorizontalBox, Button } from "std-widgets.slint";
+import { Theme } from "../theme.slint";
+
+export component ConfirmDialog inherits VerticalBox {
+    in property <string> message;
+    in property <string> accept-label;
+    in property <string> cancel-label:"キャンセル";
+    in property <bool> operable:true;
+    in property <bool> cancel-operable:root.operable;
+    in property <bool> warning:false;
+    callback accepted();
+    callback cancelled();
+    Text {text:root.message;wrap:word-wrap;color:root.warning ? Theme.warning : Theme.text-primary;}
+    HorizontalBox {
+        Button {text:root.accept-label;enabled:root.operable;clicked=>{root.accepted();}}
+        Button {text:root.cancel-label;enabled:root.cancel-operable;clicked=>{root.cancelled();}}
+    }
+}

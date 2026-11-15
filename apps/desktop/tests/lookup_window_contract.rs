@@ -88,7 +88,12 @@ fn lookup_window_covers_preview_confirmation_errors_existing_updates_and_key_pro
     assert!(window.get_lookup_open());
     assert!(window.get_lookup_new());
     assert!(!window.get_saved_paper());
-    window.set_lookup_identifier("invalid".into());
+    i_slint_backend_testing::ElementHandle::find_by_accessible_label(&window, "取得する識別子")
+        .next()
+        .unwrap()
+        .set_accessible_value("invalid");
+    assert_eq!(window.get_lookup_identifier(), "invalid");
+    assert!(window.get_lookup_dirty());
     window.invoke_fetch_lookup();
     wait(&window);
     assert_eq!(calls.load(std::sync::atomic::Ordering::SeqCst), 0);

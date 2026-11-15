@@ -1,37 +1,20 @@
-import { VerticalBox, HorizontalBox, Button, LineEdit, TextEdit, ComboBox, CheckBox, ScrollView, AboutSlint } from "std-widgets.slint";
+import { ConfirmDialog } from "dialogs/confirm-dialog.slint";
+import { MetadataView } from "views/metadata-view.slint";
+import { ExportDialog } from "dialogs/export-dialog.slint";
+import { ImportView } from "views/import-view.slint";
+import { ExportView } from "views/export-view.slint";
+import { AboutDialog } from "dialogs/about-dialog.slint";
+import { VerticalBox, HorizontalBox, Button } from "std-widgets.slint";
 import { Theme } from "theme.slint";
 import { PaperList } from "components/paper-list.slint";
 import { Sidebar } from "components/sidebar.slint";
 import { Splitter } from "components/splitter.slint";
 import { PaperDetail } from "components/paper-detail.slint";
 import { PaperEditor } from "components/paper-editor.slint";
-import { AuthorAction, NavigationAction, AuthorRow, PaperRow } from "types.slint";
+import { AuthorAction, NavigationAction, AuthorRow, PaperRow, CandidateRow, ProposalRow, VersionRow } from "types.slint";
 
-export { AuthorAction, NavigationAction, AuthorRow, PaperRow } from "types.slint";
+export { AuthorAction, NavigationAction, AuthorRow, PaperRow, CandidateRow, ProposalRow, VersionRow } from "types.slint";
 
-export struct CandidateRow { id:string, label:string, details:string, held:bool }
-export struct ProposalRow { id:string, label:string, current:string, proposed:string, reason:string, source:string, stale:bool }
-export struct VersionRow { id:string, label:string, details:string, canonical:bool }
-component AboutDialog inherits FocusScope {
-    callback close();
-    width:520px;height:360px;
-    init=>{self.focus();}
-    key-pressed(event)=>{
-        if (event.text==Key.Escape) {root.close();return accept;}
-        return reject;
-    }
-    Rectangle {
-        background:Theme.surface;border-radius:12px;
-        VerticalBox {
-            padding:24px;spacing:12px;
-            Text {text:"Paper Inbox";font-size:24px;font-weight:700;color:Theme.text-primary;}
-            Text {text:"ローカルで管理する文献ライブラリ";wrap:word-wrap;}
-            Text {text:"独自コード: MIT OR Apache-2.0\nCopyright © 2026 Paper Inbox contributors";wrap:word-wrap;font-size:13px;}
-            AboutSlint {height:110px;}
-            Button {text:"閉じる";clicked=>{root.close();}}
-        }
-    }
-}
 export component MainWindow inherits Window {
     title:"Paper Inbox";
     preferred-width:1360px;
@@ -294,150 +277,92 @@ export component MainWindow inherits Window {
                 background:Theme.surface;
                 VerticalBox {
                     padding:20px;spacing:12px;
-                    if root.confirm-discard : VerticalBox {
-                        Text {text:"未保存の入力があります。破棄して移動しますか？";wrap:word-wrap;color:Theme.warning;}
-                        HorizontalBox {
-                            Button {text:"破棄して移動";clicked=>{root.confirm-discard=false;root.dirty=false;root.candidate-dirty=false;root.lookup-dirty=false;root.export-settings-open=false;root.navigate(root.pending-action,root.pending-id);}}
-                            Button {text:"編集を続ける";clicked=>{root.confirm-discard=false;}}
-                        }
+                    if root.confirm-discard : ConfirmDialog {
+                        message:"未保存の入力があります。破棄して移動しますか？";
+                        accept-label:"破棄して移動";cancel-label:"編集を続ける";warning:true;
+                        operable:!root.busy && !root.about-open;
+                        accepted=>{root.confirm-discard=false;root.dirty=false;root.candidate-dirty=false;root.lookup-dirty=false;root.export-settings-open=false;root.navigate(root.pending-action,root.pending-id);}
+                        cancelled=>{root.confirm-discard=false;}
                     }
-                    if root.export-settings-open && !root.export-confirm : VerticalBox {
-                        spacing:12px;
-                        Text {text:"BibTeX 出力";font-size:20px;font-weight:600;}
-                        Text {text:"中央の一覧で出力する文献にチェックを入れてください。保存済みの内容を出力します。";wrap:word-wrap;}
-                        Text {text:"選択中: "+root.selected-count+"件";}
-                        Text {text:"保存先 (.bib)";}
-                        LineEdit {enabled:root.operable;text<=>root.export-path;placeholder-text:"出力先 /home/…/references.bib";}
-                        HorizontalBox {
-                            CheckBox {enabled:root.operable;text:"DOI";checked<=>root.export-doi;}
-                            CheckBox {enabled:root.operable;text:"URL";checked<=>root.export-url;}
-                        }
-                        HorizontalBox {
-                            CheckBox {enabled:root.operable;text:"概要";checked<=>root.export-abstract;}
-                            CheckBox {enabled:root.operable;text:"キーワード";checked<=>root.export-keywords;}
-                        }
-                        Button {enabled:root.operable && root.selected-count>0;text:"出力内容を確認";clicked=>{root.prepare-export();}}
-                        Button {text:"詳細・入力へ戻る";enabled:root.operable;clicked=>{root.export-settings-open=false;}}
-                        Rectangle {background:transparent;vertical-stretch:1;}
+                    if root.export-settings-open && !root.export-confirm : ExportView {
+                        export-abstract <=> root.export-abstract;
+                        export-doi <=> root.export-doi;
+                        export-keywords <=> root.export-keywords;
+                        export-path <=> root.export-path;
+                        export-url <=> root.export-url;
+                        operable : root.operable;
+                        prepare-export()=>{root.prepare-export();}
+                        return-requested()=>{root.export-settings-open=false;}
+                        selected-count : root.selected-count;
                     }
-                    if root.lookup-open && !root.export-confirm && !root.export-settings-open : VerticalBox {
-                        Text {text:root.lookup-new ? "識別子から文献を登録" : "識別子から更新候補を取得";font-size:20px;}
-                        Text {text:"DOI は Crossref、arXiv ID は arXiv へ送信します。取得結果を確認するまで保存しません。";wrap:word-wrap;}
-                        LineEdit {enabled:root.ready && !root.busy && !root.confirm-discard && !root.about-open;text<=>root.lookup-identifier;placeholder-text:"DOI / arXiv ID または公式URL";edited(v)=>{root.lookup-dirty=true;root.lookup-has-result=false;}}
-                        Button {text:"書誌情報を取得";enabled:root.ready && !root.busy && !root.confirm-discard && !root.about-open && !root.load-required;clicked=>{root.fetch-lookup();}}
-                        if root.lookup-new && root.lookup-has-result : VerticalBox {
-                            Text {text:"引用キー（第一著者＋出版年。使用済みならタイトル代表語を追加）";wrap:word-wrap;}
-                            LineEdit {enabled:!root.busy && !root.about-open && !root.confirm-discard;text<=>root.lookup-key;edited(v)=>{root.lookup-dirty=true;}}
-                        }
-                        TextEdit {text:root.lookup-details;read-only:true;vertical-stretch:1;}
-                        if !root.lookup-new : Text {text:"保存すると既存の候補・承認処理へ渡します。手動値は承認するまで保持します。";wrap:word-wrap;}
-                        HorizontalBox {
-                            Button {text:root.lookup-new ? "この内容で登録" : "更新候補として保存";enabled:root.ready && !root.busy && !root.confirm-discard && !root.about-open && !root.load-required && root.lookup-has-result;clicked=>{root.confirm-lookup();}}
-                            Button {text:"入力と取得結果を破棄して戻る";enabled:!root.busy && !root.about-open && !root.confirm-discard;clicked=>{root.cancel-lookup();}}
-                        }
+                    if root.lookup-open && !root.export-confirm && !root.export-settings-open : ImportView {
+                        about-open : root.about-open;
+                        busy : root.busy;
+                        cancel-lookup()=>{root.cancel-lookup();}
+                        confirm-discard : root.confirm-discard;
+                        confirm-lookup()=>{root.confirm-lookup();}
+                        fetch-lookup()=>{root.fetch-lookup();}
+                        load-required : root.load-required;
+                        lookup-details : root.lookup-details;
+                        lookup-dirty <=> root.lookup-dirty;
+                        lookup-has-result <=> root.lookup-has-result;
+                        lookup-identifier <=> root.lookup-identifier;
+                        lookup-key <=> root.lookup-key;
+                        lookup-new : root.lookup-new;
+                        ready : root.ready;
                     }
-                    if root.export-confirm : VerticalBox {
-                        Text { text:"BibTeX 出力の確認";font-size:20px; }
-                        Text { text:root.export-summary;wrap:word-wrap; }
-                        if root.export-replaces : Text { text:"この保存先には既存ファイルがあります。出力すると置き換えます。";wrap:word-wrap; }
-                        Text { text:"保存済みの文献を出力します。未保存の編集内容は含まれません。";wrap:word-wrap; }
-                        TextEdit { text:root.export-warnings=="" ? "警告はありません。" : root.export-warnings;read-only:true;height:100px; }
-                        TextEdit { text:root.export-preview;read-only:true;vertical-stretch:1; }
-                        HorizontalBox {
-                            Button {text:root.export-replaces ? "既存ファイルを置き換える" : "ファイルへ出力";enabled:!root.busy && !root.about-open;clicked=>{root.confirm-export();}}
-                            Button {text:"キャンセル";enabled:!root.busy && !root.about-open;clicked=>{root.cancel-export();}}
-                        }
+                    if root.export-confirm : ExportDialog {
+                        about-open : root.about-open;
+                        busy : root.busy;
+                        cancel-export()=>{root.cancel-export();}
+                        confirm-export()=>{root.confirm-export();}
+                        export-preview : root.export-preview;
+                        export-replaces : root.export-replaces;
+                        export-summary : root.export-summary;
+                        export-warnings : root.export-warnings;
                     }
 
-                    if root.metadata-open && !root.export-confirm && !root.lookup-open && !root.export-settings-open : VerticalBox {
-                        Button {text:"DOI / arXiv から候補を取得";enabled:root.metadata-operable && !root.candidate-form-open && !root.associate-confirm;clicked=>{root.begin-lookup();}}
-                        Text {text:root.review-label;font-size:20px;wrap:word-wrap;}
-                        HorizontalBox {
-                            Button {text:"文献へ戻る";enabled:!root.busy && !root.about-open && !root.confirm-discard;clicked=>{root.request-navigation(NavigationAction.open-paper,root.editing-id);}}
-                            Button {text:"表示を更新";enabled:!root.busy && !root.about-open && !root.confirm-discard;clicked=>{root.request-navigation(NavigationAction.metadata-review,root.editing-id);}}
-                            Button {text:"候補を入力";enabled:root.metadata-operable && !root.candidate-form-open && !root.associate-confirm;clicked=>{root.begin-candidate();}}
-                        }
-                        if root.candidate-form-open : VerticalBox {
-                            Text {text:"情報源から得た候補を入力（通信は行いません）";font-weight:600;}
-                            Text {text:"識別子は今回得た情報を入力してください。更新する項目にチェックを入れます。選択した空欄は削除提案、選択しない項目は変更なしになります。";wrap:word-wrap;}
-                            ScrollView {
-                                vertical-stretch:1;
-                                VerticalBox {
-                                    spacing:8px;
-                                    Text {text:"情報源 / 版の種類";}
-                                    HorizontalBox {
-                                        ComboBox {enabled:root.metadata-operable;model:["Crossref","出版社","OpenAlex","arXiv","PDF","その他"];current-index<=>root.candidate-source;selected(v)=>{root.candidate-dirty=true;}}
-                                        ComboBox {enabled:root.metadata-operable;model:["不明","出版社版","著者最終稿","投稿稿","プレプリント"];current-index<=>root.candidate-kind;selected(v)=>{root.candidate-dirty=true;}}
-                                    }
-                                    LineEdit {enabled:root.metadata-operable;text<=>root.candidate-source-name;placeholder-text:"その他の場合の情報源名";edited(v)=>{root.candidate-dirty=true;}}
-                                    LineEdit {enabled:root.metadata-operable;text<=>root.candidate-record;placeholder-text:"情報源の記録ID（任意）";edited(v)=>{root.candidate-dirty=true;}}
-                                    LineEdit {enabled:root.metadata-operable;text<=>root.candidate-updated;placeholder-text:"情報源の更新日時（任意、例: 2026-11-14T10:00:00+09:00）";edited(v)=>{root.candidate-dirty=true;}}
-                                    Text {text:"同一性を確認する識別子（書誌項目への上書きは行いません）";wrap:word-wrap;}
-                                    LineEdit {enabled:root.metadata-operable;text<=>root.candidate-doi;placeholder-text:"候補のDOI";edited(v)=>{root.candidate-dirty=true;}}
-                                    LineEdit {enabled:root.metadata-operable;text<=>root.candidate-arxiv;placeholder-text:"候補のarXiv ID";edited(v)=>{root.candidate-dirty=true;}}
-                                    CheckBox {enabled:root.metadata-operable;text:"タイトルを提示する";checked<=>root.candidate-use-title;toggled=>{root.candidate-dirty=true;}}
-                                    LineEdit {enabled:root.metadata-operable && root.candidate-use-title;text<=>root.candidate-title;edited(v)=>{root.candidate-dirty=true;}}
-                                    CheckBox {enabled:root.metadata-operable;text:"出版年を提示する";checked<=>root.candidate-use-year;toggled=>{root.candidate-dirty=true;}}
-                                    LineEdit {enabled:root.metadata-operable && root.candidate-use-year;text<=>root.candidate-year;edited(v)=>{root.candidate-dirty=true;}}
-                                    CheckBox {enabled:root.metadata-operable;text:"掲載先を提示する";checked<=>root.candidate-use-container;toggled=>{root.candidate-dirty=true;}}
-                                    LineEdit {enabled:root.metadata-operable && root.candidate-use-container;text<=>root.candidate-container;edited(v)=>{root.candidate-dirty=true;}}
-                                    CheckBox {enabled:root.metadata-operable;text:"出版社を提示する";checked<=>root.candidate-use-publisher;toggled=>{root.candidate-dirty=true;}}
-                                    LineEdit {enabled:root.metadata-operable && root.candidate-use-publisher;text<=>root.candidate-publisher;edited(v)=>{root.candidate-dirty=true;}}
-                                    CheckBox {enabled:root.metadata-operable;text:"概要を提示する";checked<=>root.candidate-use-abstract;toggled=>{root.candidate-dirty=true;}}
-                                    TextEdit {enabled:root.metadata-operable && root.candidate-use-abstract;text<=>root.candidate-abstract;min-height:100px;edited=>{root.candidate-dirty=true;}}
-                                }
-                            }
-                            HorizontalBox {
-                                Button {text:"候補を登録";enabled:root.metadata-operable;clicked=>{root.submit-candidate();}}
-                                Button {text:"入力を破棄して戻る";enabled:!root.busy && !root.about-open && !root.confirm-discard;clicked=>{root.candidate-dirty=false;root.candidate-form-open=false;}}
-                            }
-                        }
-                        if !root.candidate-form-open : VerticalBox {
-                            if root.associate-confirm : VerticalBox {
-                                Text {text:"この候補を選択中の文献の独立した版として登録しますか？ 同一性は未確定です。書誌項目の変更はすべて項目別の承認待ちになります。";wrap:word-wrap;}
-                                HorizontalBox {
-                                    Button {text:"関連付けて版を登録";enabled:root.metadata-operable;clicked=>{root.associate-candidate(root.associate-id);}}
-                                    Button {text:"キャンセル";enabled:!root.busy && !root.about-open;clicked=>{root.associate-confirm=false;}}
-                                }
-                            }
-                            ScrollView {
-                                vertical-stretch:1;
-                                VerticalBox {
-                                    spacing:12px;alignment:start;
-                                    Text {text:"承認待ちの更新";font-size:18px;font-weight:600;}
-                                    Text {text:"正規版の切替と書誌項目の採用は別々に承認します。手動で編集した値は、項目を採用するまで保持します。";wrap:word-wrap;}
-                                    if root.proposal-rows.length==0 : Text {text:"承認待ちの更新はありません。";}
-                                    for row in root.proposal-rows : VerticalBox {
-                                        spacing:5px;padding:8px;
-                                        Text {text:row.label;font-weight:600;wrap:word-wrap;}
-                                        Text {text:"現在: "+row.current;wrap:word-wrap;}
-                                        Text {text:"候補: "+row.proposed;wrap:word-wrap;}
-                                        Text {text:row.reason+" / "+row.source;wrap:word-wrap;}
-                                        if row.stale : Text {text:"作成後に値が変わっています。表示を更新して確認してください。";wrap:word-wrap;}
-                                        HorizontalBox {
-                                            Button {text:"採用";enabled:root.metadata-operable && !root.associate-confirm && !row.stale;clicked=>{root.resolve-metadata(row.id,true);}}
-                                            Button {text:"拒否";enabled:root.metadata-operable && !root.associate-confirm;clicked=>{root.resolve-metadata(row.id,false);}}
-                                        }
-                                    }
-                                    Text {text:"取得した候補";font-size:18px;font-weight:600;}
-                                    if root.candidate-rows.length==0 : Text {text:"候補はまだ登録されていません。";}
-                                    for row in root.candidate-rows : VerticalBox {
-                                        spacing:5px;padding:8px;
-                                        Text {text:row.label;font-weight:600;wrap:word-wrap;}
-                                        Text {text:row.details;wrap:word-wrap;}
-                                        if row.held : Button {text:"この文献へ関連付ける…";enabled:root.metadata-operable && !root.associate-confirm;clicked=>{root.associate-id=row.id;root.associate-confirm=true;}}
-                                    }
-                                    Text {text:"登録済みの版";font-size:18px;font-weight:600;}
-                                    if root.version-rows.length==0 : Text {text:"版はまだ登録されていません。";}
-                                    for row in root.version-rows : VerticalBox {
-                                        spacing:5px;padding:8px;
-                                        Text {text:(row.canonical ? "正規版: " : "")+row.label;font-weight:600;wrap:word-wrap;}
-                                        Text {text:row.details;wrap:word-wrap;}
-                                        if !row.canonical : Button {text:"正規版切替を提案";enabled:root.metadata-operable && !root.associate-confirm;clicked=>{root.propose-canonical(row.id);}}
-                                    }
-                                }
-                            }
-                        }
+                    if root.metadata-open && !root.export-confirm && !root.lookup-open && !root.export-settings-open : MetadataView {
+                        about-open : root.about-open;
+                        associate-candidate(arg0)=>{root.associate-candidate(arg0);}
+                        associate-confirm : root.associate-confirm;
+                        associate-id : root.associate-id;
+                        begin-candidate()=>{root.begin-candidate();}
+                        begin-lookup()=>{root.begin-lookup();}
+                        busy : root.busy;
+                        cancel-association()=>{root.associate-confirm=false;}
+                        cancel-candidate()=>{root.candidate-dirty=false;root.candidate-form-open=false;}
+                        candidate-abstract <=> root.candidate-abstract;
+                        candidate-arxiv <=> root.candidate-arxiv;
+                        candidate-container <=> root.candidate-container;
+                        candidate-dirty <=> root.candidate-dirty;
+                        candidate-doi <=> root.candidate-doi;
+                        candidate-form-open : root.candidate-form-open;
+                        candidate-kind <=> root.candidate-kind;
+                        candidate-publisher <=> root.candidate-publisher;
+                        candidate-record <=> root.candidate-record;
+                        candidate-rows : root.candidate-rows;
+                        candidate-source <=> root.candidate-source;
+                        candidate-source-name <=> root.candidate-source-name;
+                        candidate-title <=> root.candidate-title;
+                        candidate-updated <=> root.candidate-updated;
+                        candidate-use-abstract <=> root.candidate-use-abstract;
+                        candidate-use-container <=> root.candidate-use-container;
+                        candidate-use-publisher <=> root.candidate-use-publisher;
+                        candidate-use-title <=> root.candidate-use-title;
+                        candidate-use-year <=> root.candidate-use-year;
+                        candidate-year <=> root.candidate-year;
+                        confirm-discard : root.confirm-discard;
+                        metadata-operable : root.metadata-operable;
+                        proposal-rows : root.proposal-rows;
+                        propose-canonical(arg0)=>{root.propose-canonical(arg0);}
+                        refresh-review()=>{root.request-navigation(NavigationAction.metadata-review,root.editing-id);}
+                        request-association(arg0)=>{root.associate-id=arg0;root.associate-confirm=true;}
+                        resolve-metadata(arg0,arg1)=>{root.resolve-metadata(arg0,arg1);}
+                        return-to-paper()=>{root.request-navigation(NavigationAction.open-paper,root.editing-id);}
+                        review-label : root.review-label;
+                        submit-candidate()=>{root.submit-candidate();}
+                        version-rows : root.version-rows;
                     }
                     if !root.export-confirm && !root.metadata-open && !root.lookup-open && !root.export-settings-open : VerticalBox {
                         if !root.editor-visible : Text { text:"中央の一覧から文献を選択してください。新しい文献は左の「新規登録」から追加できます。";wrap:word-wrap; }

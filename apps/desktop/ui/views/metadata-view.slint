@@ -1,0 +1,119 @@
+import { ConfirmDialog } from "../dialogs/confirm-dialog.slint";
+import { CandidateEditor } from "candidate-editor.slint";
+import { ProposalView } from "proposal-view.slint";
+import { VerticalBox, HorizontalBox, Button, ScrollView } from "std-widgets.slint";
+
+import { CandidateRow, ProposalRow, VersionRow } from "../types.slint";
+
+export component MetadataView inherits VerticalBox {
+    in property <bool> about-open;
+    callback associate-candidate(string);
+    in property <bool> associate-confirm;
+    in property <string> associate-id;
+    callback begin-candidate();
+    callback begin-lookup();
+    in property <bool> busy;
+    callback cancel-association();
+    callback cancel-candidate();
+    in-out property <string> candidate-abstract;
+    in-out property <string> candidate-arxiv;
+    in-out property <string> candidate-container;
+    in-out property <bool> candidate-dirty;
+    in-out property <string> candidate-doi;
+    in property <bool> candidate-form-open;
+    in-out property <int> candidate-kind;
+    in-out property <string> candidate-publisher;
+    in-out property <string> candidate-record;
+    in property <[CandidateRow]> candidate-rows;
+    in-out property <int> candidate-source;
+    in-out property <string> candidate-source-name;
+    in-out property <string> candidate-title;
+    in-out property <string> candidate-updated;
+    in-out property <bool> candidate-use-abstract;
+    in-out property <bool> candidate-use-container;
+    in-out property <bool> candidate-use-publisher;
+    in-out property <bool> candidate-use-title;
+    in-out property <bool> candidate-use-year;
+    in-out property <string> candidate-year;
+    in property <bool> confirm-discard;
+    in property <bool> metadata-operable;
+    in property <[ProposalRow]> proposal-rows;
+    callback propose-canonical(string);
+    callback refresh-review();
+    callback request-association(string);
+    callback resolve-metadata(string,bool);
+    callback return-to-paper();
+    in property <string> review-label;
+    callback submit-candidate();
+    in property <[VersionRow]> version-rows;
+    Button {text:"DOI / arXiv から候補を取得";enabled:root.metadata-operable && !root.candidate-form-open && !root.associate-confirm;clicked=>{root.begin-lookup();}}
+    Text {text:root.review-label;font-size:20px;wrap:word-wrap;}
+    HorizontalBox {
+        Button {text:"文献へ戻る";enabled:!root.busy && !root.about-open && !root.confirm-discard;clicked=>{root.return-to-paper();}}
+        Button {text:"表示を更新";enabled:!root.busy && !root.about-open && !root.confirm-discard;clicked=>{root.refresh-review();}}
+        Button {text:"候補を入力";enabled:root.metadata-operable && !root.candidate-form-open && !root.associate-confirm;clicked=>{root.begin-candidate();}}
+    }
+    if root.candidate-form-open : CandidateEditor {
+        about-open : root.about-open;
+        busy : root.busy;
+        cancel-candidate()=>{root.cancel-candidate();}
+        candidate-abstract <=> root.candidate-abstract;
+        candidate-arxiv <=> root.candidate-arxiv;
+        candidate-container <=> root.candidate-container;
+        candidate-dirty <=> root.candidate-dirty;
+        candidate-doi <=> root.candidate-doi;
+        candidate-kind <=> root.candidate-kind;
+        candidate-publisher <=> root.candidate-publisher;
+        candidate-record <=> root.candidate-record;
+        candidate-source <=> root.candidate-source;
+        candidate-source-name <=> root.candidate-source-name;
+        candidate-title <=> root.candidate-title;
+        candidate-updated <=> root.candidate-updated;
+        candidate-use-abstract <=> root.candidate-use-abstract;
+        candidate-use-container <=> root.candidate-use-container;
+        candidate-use-publisher <=> root.candidate-use-publisher;
+        candidate-use-title <=> root.candidate-use-title;
+        candidate-use-year <=> root.candidate-use-year;
+        candidate-year <=> root.candidate-year;
+        confirm-discard : root.confirm-discard;
+        metadata-operable : root.metadata-operable;
+        submit-candidate()=>{root.submit-candidate();}
+    }
+    if !root.candidate-form-open : VerticalBox {
+        if root.associate-confirm : ConfirmDialog {
+            message:"この候補を選択中の文献の独立した版として登録しますか？ 同一性は未確定です。書誌項目の変更はすべて項目別の承認待ちになります。";
+            accept-label:"関連付けて版を登録";
+            operable:root.metadata-operable;
+            cancel-operable:!root.busy && !root.about-open;
+            accepted=>{root.associate-candidate(root.associate-id);}
+            cancelled=>{root.cancel-association();}
+        }
+        ScrollView {
+            vertical-stretch:1;
+            VerticalBox {
+                spacing:12px;alignment:start;
+                ProposalView {
+                    proposal-rows:root.proposal-rows;
+                    operable:root.metadata-operable && !root.associate-confirm;
+                    resolve-metadata(id,accept)=>{root.resolve-metadata(id,accept);}
+                }
+                Text {text:"取得した候補";font-size:18px;font-weight:600;}
+                if root.candidate-rows.length==0 : Text {text:"候補はまだ登録されていません。";}
+                for row in root.candidate-rows : VerticalBox {
+                    spacing:5px;padding:8px;
+                    Text {text:row.label;font-weight:600;wrap:word-wrap;}
+                    Text {text:row.details;wrap:word-wrap;}
+                    if row.held : Button {text:"この文献へ関連付ける…";enabled:root.metadata-operable && !root.associate-confirm;clicked=>{root.request-association(row.id);}}
+                }
+                Text {text:"登録済みの版";font-size:18px;font-weight:600;}
+                if root.version-rows.length==0 : Text {text:"版はまだ登録されていません。";}
+                for row in root.version-rows : VerticalBox {
+                    spacing:5px;padding:8px;
+                    Text {text:(row.canonical ? "正規版: " : "")+row.label;font-weight:600;wrap:word-wrap;}
+                    Text {text:row.details;wrap:word-wrap;}
+                    if !row.canonical : Button {text:"正規版切替を提案";enabled:root.metadata-operable && !root.associate-confirm;clicked=>{root.propose-canonical(row.id);}}
+                }
+            }
+        }
+    }
+}

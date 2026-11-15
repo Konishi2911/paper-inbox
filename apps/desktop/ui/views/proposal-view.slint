@@ -1,0 +1,24 @@
+import { VerticalBox, HorizontalBox, Button } from "std-widgets.slint";
+import { ProposalRow } from "../types.slint";
+
+export component ProposalView inherits VerticalBox {
+    in property <[ProposalRow]> proposal-rows;
+    in property <bool> operable;
+    callback resolve-metadata(string,bool);
+    padding:0px;spacing:12px;
+    Text {text:"承認待ちの更新";font-size:18px;font-weight:600;}
+    Text {text:"正規版の切替と書誌項目の採用は別々に承認します。手動で編集した値は、項目を採用するまで保持します。";wrap:word-wrap;}
+    if root.proposal-rows.length==0 : Text {text:"承認待ちの更新はありません。";}
+    for row in root.proposal-rows : VerticalBox {
+        spacing:5px;padding:8px;
+        Text {text:row.label;font-weight:600;wrap:word-wrap;}
+        Text {text:"現在: "+row.current;wrap:word-wrap;}
+        Text {text:"候補: "+row.proposed;wrap:word-wrap;}
+        Text {text:row.reason+" / "+row.source;wrap:word-wrap;}
+        if row.stale : Text {text:"作成後に値が変わっています。表示を更新して確認してください。";wrap:word-wrap;}
+        HorizontalBox {
+            Button {text:"採用";enabled:root.operable && !row.stale;clicked=>{root.resolve-metadata(row.id,true);}}
+            Button {text:"拒否";enabled:root.operable;clicked=>{root.resolve-metadata(row.id,false);}}
+        }
+    }
+}

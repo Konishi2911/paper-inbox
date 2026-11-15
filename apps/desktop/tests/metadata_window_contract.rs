@@ -39,6 +39,10 @@ fn candidate_window_protects_input_manual_values_and_separate_canonical_approval
         paper_core::model::PaperId::new()
     ));
     let window = MainWindow::new().unwrap();
+    window.show().unwrap();
+    window
+        .window()
+        .set_size(slint::LogicalSize::new(1360., 1100.));
     let controller = ui::attach(
         &window,
         Config {
@@ -58,8 +62,16 @@ fn candidate_window_protects_input_manual_values_and_separate_canonical_approval
     assert!(window.get_metadata_open());
     window.invoke_begin_candidate();
     let candidate_id = window.get_candidate_id();
-    window.set_candidate_doi("invalid".into());
-    window.set_candidate_dirty(true);
+    let doi_input =
+        i_slint_backend_testing::ElementHandle::find_by_element_type_name(&window, "LineEdit")
+            .find(|e| e.accessible_placeholder_text().as_deref() == Some("候補のDOI"))
+            .unwrap();
+    doi_input.set_accessible_value("invalid");
+    assert_eq!(window.get_candidate_doi(), "invalid");
+    assert!(
+        window.get_candidate_dirty(),
+        "candidate form propagates dirty through MetadataView"
+    );
     window.invoke_submit_candidate();
     wait(&window);
     assert!(window.get_candidate_form_open());
@@ -72,8 +84,16 @@ fn candidate_window_protects_input_manual_values_and_separate_canonical_approval
     window.set_confirm_discard(false);
     window.set_candidate_doi("https://doi.org/10.1000/A".into());
     window.set_candidate_kind(1);
-    window.set_candidate_use_title(true);
-    window.set_candidate_title("Publisher title".into());
+    i_slint_backend_testing::ElementHandle::find_by_accessible_label(&window, "タイトルを提示する")
+        .next()
+        .unwrap()
+        .invoke_accessible_default_action();
+    i_slint_backend_testing::ElementHandle::find_by_accessible_label(&window, "候補タイトル")
+        .next()
+        .unwrap()
+        .set_accessible_value("Publisher title");
+    assert!(window.get_candidate_use_title());
+    assert_eq!(window.get_candidate_title(), "Publisher title");
     window.set_candidate_use_year(true);
     window.set_candidate_year("2026".into());
     window.set_candidate_updated("2026-01-01T00:00:00Z".into());

@@ -1,0 +1,62 @@
+import { VerticalBox, HorizontalBox, Button, LineEdit, TextEdit, ComboBox, CheckBox, ScrollView } from "std-widgets.slint";
+
+
+export component CandidateEditor inherits VerticalBox {
+    in property <bool> about-open;
+    in property <bool> busy;
+    callback cancel-candidate();
+    in-out property <string> candidate-abstract;
+    in-out property <string> candidate-arxiv;
+    in-out property <string> candidate-container;
+    in-out property <bool> candidate-dirty;
+    in-out property <string> candidate-doi;
+    in-out property <int> candidate-kind;
+    in-out property <string> candidate-publisher;
+    in-out property <string> candidate-record;
+    in-out property <int> candidate-source;
+    in-out property <string> candidate-source-name;
+    in-out property <string> candidate-title;
+    in-out property <string> candidate-updated;
+    in-out property <bool> candidate-use-abstract;
+    in-out property <bool> candidate-use-container;
+    in-out property <bool> candidate-use-publisher;
+    in-out property <bool> candidate-use-title;
+    in-out property <bool> candidate-use-year;
+    in-out property <string> candidate-year;
+    in property <bool> confirm-discard;
+    in property <bool> metadata-operable;
+    callback submit-candidate();
+    Text {text:"情報源から得た候補を入力（通信は行いません）";font-weight:600;}
+    Text {text:"識別子は今回得た情報を入力してください。更新する項目にチェックを入れます。選択した空欄は削除提案、選択しない項目は変更なしになります。";wrap:word-wrap;}
+    ScrollView {
+        vertical-stretch:1;
+        VerticalBox {
+            spacing:8px;
+            Text {text:"情報源 / 版の種類";}
+            HorizontalBox {
+                ComboBox {enabled:root.metadata-operable;model:["Crossref","出版社","OpenAlex","arXiv","PDF","その他"];current-index<=>root.candidate-source;selected(v)=>{root.candidate-dirty=true;}}
+                ComboBox {enabled:root.metadata-operable;model:["不明","出版社版","著者最終稿","投稿稿","プレプリント"];current-index<=>root.candidate-kind;selected(v)=>{root.candidate-dirty=true;}}
+            }
+            LineEdit {enabled:root.metadata-operable;text<=>root.candidate-source-name;placeholder-text:"その他の場合の情報源名";edited(v)=>{root.candidate-dirty=true;}}
+            LineEdit {enabled:root.metadata-operable;text<=>root.candidate-record;placeholder-text:"情報源の記録ID（任意）";edited(v)=>{root.candidate-dirty=true;}}
+            LineEdit {enabled:root.metadata-operable;text<=>root.candidate-updated;placeholder-text:"情報源の更新日時（任意、例: 2026-11-14T10:00:00+09:00）";edited(v)=>{root.candidate-dirty=true;}}
+            Text {text:"同一性を確認する識別子（書誌項目への上書きは行いません）";wrap:word-wrap;}
+            LineEdit {enabled:root.metadata-operable;text<=>root.candidate-doi;placeholder-text:"候補のDOI";edited(v)=>{root.candidate-dirty=true;}}
+            LineEdit {enabled:root.metadata-operable;text<=>root.candidate-arxiv;placeholder-text:"候補のarXiv ID";edited(v)=>{root.candidate-dirty=true;}}
+            CheckBox {enabled:root.metadata-operable;text:"タイトルを提示する";checked<=>root.candidate-use-title;toggled=>{root.candidate-dirty=true;}}
+            LineEdit {accessible-label:"候補タイトル";enabled:root.metadata-operable && root.candidate-use-title;text<=>root.candidate-title;edited(v)=>{root.candidate-dirty=true;}}
+            CheckBox {enabled:root.metadata-operable;text:"出版年を提示する";checked<=>root.candidate-use-year;toggled=>{root.candidate-dirty=true;}}
+            LineEdit {enabled:root.metadata-operable && root.candidate-use-year;text<=>root.candidate-year;edited(v)=>{root.candidate-dirty=true;}}
+            CheckBox {enabled:root.metadata-operable;text:"掲載先を提示する";checked<=>root.candidate-use-container;toggled=>{root.candidate-dirty=true;}}
+            LineEdit {enabled:root.metadata-operable && root.candidate-use-container;text<=>root.candidate-container;edited(v)=>{root.candidate-dirty=true;}}
+            CheckBox {enabled:root.metadata-operable;text:"出版社を提示する";checked<=>root.candidate-use-publisher;toggled=>{root.candidate-dirty=true;}}
+            LineEdit {enabled:root.metadata-operable && root.candidate-use-publisher;text<=>root.candidate-publisher;edited(v)=>{root.candidate-dirty=true;}}
+            CheckBox {enabled:root.metadata-operable;text:"概要を提示する";checked<=>root.candidate-use-abstract;toggled=>{root.candidate-dirty=true;}}
+            TextEdit {enabled:root.metadata-operable && root.candidate-use-abstract;text<=>root.candidate-abstract;min-height:100px;edited=>{root.candidate-dirty=true;}}
+        }
+    }
+    HorizontalBox {
+        Button {text:"候補を登録";enabled:root.metadata-operable;clicked=>{root.submit-candidate();}}
+        Button {text:"入力を破棄して戻る";enabled:!root.busy && !root.about-open && !root.confirm-discard;clicked=>{root.cancel-candidate();}}
+    }
+}
