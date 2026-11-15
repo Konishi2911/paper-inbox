@@ -5,6 +5,7 @@ edition.workspace = true
 build = "build.rs"
 
 [dependencies]
+paper-metadata = { path = "../../crates/paper-metadata" }
 paper-core = { path = "../../crates/paper-core" }
 paper-storage = { path = "../../crates/paper-storage" }
 slint.workspace = true

@@ -3,6 +3,7 @@ resolver = "3"
 members = [
     "crates/paper-core",
     "crates/paper-storage",
+    "crates/paper-metadata",
     "apps/desktop",
 ]
 

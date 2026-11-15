@@ -1,0 +1,13 @@
+[package]
+name = "paper-metadata"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+paper-core = { path = "../paper-core" }
+chrono.workspace = true
+thiserror.workspace = true
+reqwest = { version = "0.12", default-features = false, features = ["blocking", "rustls-tls"] }
+serde_json = "1"
+roxmltree = "0.21"
+futures-channel = "0.3"
