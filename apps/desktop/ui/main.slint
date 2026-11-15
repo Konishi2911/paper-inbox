@@ -104,7 +104,7 @@ export component MainWindow inherits Window {
     in-out property <[VersionRow]> version-rows;
     in-out property <bool> associate-confirm:false;
     in-out property <string> associate-id;
-    property <bool> metadata-operable:root.ready && !root.busy && !root.confirm-discard && !root.about-open && !root.load-required;
+
     in-out property <string> candidate-id;
     in-out property <string> candidate-observed;
     in-out property <int> candidate-source:0;
@@ -129,8 +129,30 @@ export component MainWindow inherits Window {
     callback associate-candidate(string);
     callback resolve-metadata(string,bool);
     callback propose-canonical(string);
-    property <bool> operable:root.ready && !root.busy && !root.confirm-discard && !root.about-open && !root.export-confirm;
-    property <bool> editable:root.operable && !root.editor-deleted && !root.load-required;
+
+    property <bool> operable:
+        root.ready 
+        && !root.busy 
+        && !root.confirm-discard 
+        && !root.confirm-delete
+        && !root.about-open 
+        && !root.export-confirm;
+    property <bool> delete-confirm-operable:
+        root.ready
+        && !root.busy
+        && root.confirm-delete
+        && !root.confirm-discard
+        && !root.about-open
+        && !root.export-confirm
+        && !root.load-required;
+    property <bool> metadata-operable:
+        root.operable
+        && !root.load-required;
+    property <bool> editable:
+        root.operable 
+        && !root.editor-deleted 
+        && !root.load-required;
+    
     in-out property <bool> confirm-discard:false;
     in-out property <bool> confirm-delete:false;
     property <int> pending-action;
@@ -147,12 +169,29 @@ export component MainWindow inherits Window {
     callback author-kind(int,int);
     callback author-action(int,int);
     public function request-navigation(action:int,id:string) {
-        if (root.dirty || root.candidate-dirty || root.lookup-dirty) { root.pending-action=action;root.pending-id=id;root.confirm-discard=true; }
-        else { root.export-settings-open=false;root.navigate(action,id); }
+        if (
+            root.dirty 
+            || root.candidate-dirty 
+            || root.lookup-dirty
+        ) { 
+            root.pending-action=action;
+            root.pending-id=id;
+            root.confirm-discard=true; 
+        }
+        else { 
+            root.export-settings-open=false;
+            root.navigate(action,id); 
+        }
     }
     public function open-paper(id:string) {
-        if (root.operable) {root.export-settings-open=false;}
-        if (root.operable && !(root.editing-id==id && !root.metadata-open && !root.lookup-open)) {
+        if (
+            root.operable 
+            && !(
+                root.editing-id==id 
+                && !root.metadata-open 
+                && !root.lookup-open
+                && !root.export-settings-open
+        )) {
             root.request-navigation(1,id);
         }
     }
@@ -453,8 +492,20 @@ export component MainWindow inherits Window {
                             if root.confirm-delete : VerticalBox {
                                 Text { text:"この文献を削除済みに移動しますか？ 後で復元できます。未保存の入力は破棄されます。";wrap:word-wrap; }
                                 HorizontalBox {
-                                    Button { enabled:root.operable; text:"削除済みに移動";clicked=>{ root.confirm-delete=false;root.delete-paper(true); } }
-                                    Button { enabled:root.operable; text:"キャンセル";clicked=>{ root.confirm-delete=false; } }
+                                    Button { 
+                                        enabled:root.delete-confirm-operable; 
+                                        text:"削除済みに移動";
+                                        clicked=>{ 
+                                            root.confirm-delete=false;root.delete-paper(true); 
+                                        } 
+                                    }
+                                    Button { 
+                                        enabled:root.delete-confirm-operable; 
+                                        text:"キャンセル";
+                                        clicked=>{ 
+                                            root.confirm-delete=false; 
+                                        }
+                                    }
                                 }
                             }
                         }
