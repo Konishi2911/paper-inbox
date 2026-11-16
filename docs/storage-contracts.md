@@ -10,9 +10,9 @@ Each commit uses BEGIN IMMEDIATE to serialize writers and atomically update the 
 
 Search supports title, citation key and author substring matching; publication type, reading status, year, favorite and archive filters; deterministic sorting with an ID tie-breaker; and offset pagination. Text matching is literal (SQL parameters, no LIKE wildcard interpretation). SQLite lower() currently provides ASCII case folding, not full Unicode case folding. Count and page are read in one transaction. Relevance ranking and tag/collection filters explicitly return Unsupported.
 
-Attachments, tags, collections, duplicate merges and remote event application remain unsupported. Repository lists and existence filters for these unsupported entities return no entities. Versions, metadata candidates and field/canonical proposals are persisted; pending-proposal search filters use actual pending rows. Pending events and upload acknowledgements persist locally, but this is not a working synchronization transport. Event sequence and parent chains are currently per device; cross-device causal dependencies must be designed before remote application is enabled.
+Tags, collections, duplicate merges and remote event application remain unsupported; their repository lists and existence filters return no entities. Attachments are persisted (see below). Versions, metadata candidates and field/canonical proposals are persisted; pending-proposal search filters use actual pending rows. Pending events and upload acknowledgements persist locally, but this is not a working synchronization transport. Event sequence and parent chains are currently per device; cross-device causal dependencies must be designed before remote application is enabled.
 
-Schema version 4 is installed transactionally. Existing version-1/2 databases gain normalized version snapshots, candidates, present-field lists, proposals and proposal heads without rewriting existing history. Version 1 also adds local_settings, which retains the desktop local device ID across restarts. Existing paper, revision and event data is preserved. Newer versions are rejected without modifying their schema version.
+Schema version 5 is installed transactionally. Version 5 adds the attachments table and an events.attachment_id column; nothing existing is rewritten. Existing version-1/2 databases gain normalized version snapshots, candidates, present-field lists, proposals and proposal heads without rewriting existing history. Version 1 also adds local_settings, which retains the desktop local device ID across restarts. Existing paper, revision and event data is preserved. Newer versions are rejected without modifying their schema version.
 
 Verification: `cargo test -p paper-core -p paper-storage`. Integration tests use isolated real SQLite files, reopen them, and inject an SQL trigger failure after state changes to verify rollback. They also cover independent/concurrent connections, history, event immutability, upload acknowledgements, every bibliography field and unsupported operations.
 
@@ -23,3 +23,14 @@ DOI/arXiv legacy strings use compatibility restoration: invalid strings are reta
 See [metadata-candidates.md](metadata-candidates.md) for candidate identity, explicit deletions, approval, version selection and retry contracts.
 
 RegisterMetadataCandidate atomically records a confirmed new-paper acquisition, source-backed field adoption and a separate pending canonical proposal. citation_keys reads all current keys, including deleted papers, with an optional edited-paper exclusion. See [metadata-lookup-and-keys.md](metadata-lookup-and-keys.md).
+
+## Attachments (schema 5)
+
+`attachments` rows hold paper, optional version, SHA-256 (64 lowercase hex digits), file name, media type, size, kind, creation time and `removed_at`. The files are kept by `FileBlobStore` under `library-files/` (see [design](design.md)); this crate never deletes a file when a row is removed.
+
+- `AddAttachment` fails with `InvalidOperation` for an empty, overlong, control-character or path-separator file name, an invalid media type, a deleted paper, or the same hash already attached (and not removed) to that paper. An unknown paper is `NotFound` and a version of another paper is `VersionNotFound`. The same hash may belong to several papers.
+- `RemoveAttachment` sets `removed_at`; removing twice is `InvalidOperation`. The same file can be attached again later.
+- Both commands append an `AttachmentAdded` / `AttachmentRemoved` event in the same transaction, so a batch containing a failing command stores nothing.
+- `attachments(paper)` lists rows that were not removed. `referenced_attachment_hashes()` returns the hashes of such rows; files outside that set are unused and may be deleted by an explicit cleanup.
+- Search `has_attachment` filters and `PaperSummary.has_attachment` use the non-removed rows.
+- Callers must store the file first and add the row afterwards. The store checks neither the file nor the media type; the application layer validates the PDF signature.

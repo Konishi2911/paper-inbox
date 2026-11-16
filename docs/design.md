@@ -29,7 +29,7 @@
 
 書誌情報は正規化SQLのみ。`bibliographies`、`contributors`、`keywords`、`paper_snapshots`、`papers`、`revisions`、`revision_parents`、`field_heads`、`events`、`event_parents`、版・候補・提案の各テーブルを使用する。想定案の `field_revisions` / `active_field_revisions` / 独立 `outbox` を名前だけ合わせて導入しない。未送信状態は現在のeventsの列で管理する。
 
-SQLite schema version 4。文献と改訂の不変スナップショットを保持し、一括保存では文献全体と全headをトランザクション内で照合する。書誌変更、履歴、現在head、イベントは一緒にコミットし、失敗時は全体を戻す。論理削除後も引用キーの一意性を維持する。
+SQLite schema version 5。文献と改訂の不変スナップショットを保持し、一括保存では文献全体と全headをトランザクション内で照合する。書誌変更、履歴、現在head、イベントは一緒にコミットし、失敗時は全体を戻す。論理削除後も引用キーの一意性を維持する。
 
 検索はタイトル・著者・引用キーの部分一致、フィルタ、安定ソート、20件ページング。現在はFTS5も全文索引もなく、日本語トークナイズは未確定。詳細は[保存契約](storage-contracts.md)。
 
