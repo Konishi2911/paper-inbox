@@ -31,17 +31,13 @@ export component AttachmentList inherits VerticalBox {
             horizontal-stretch: 1;
         }
         Button {
-            text: root.rows.length == 0 ? "PDFを添付…" : "追加…";
+            text: "追加…";
             enabled: root.operable;
             clicked => {
                 root.confirming = "";
                 root.attach-requested();
             }
         }
-    }
-    if root.rows.length == 0 : Text {
-        text: "PDFは添付されていません。";
-        color: Theme.text-secondary;
     }
     for row in root.rows : Rectangle {
         background: Theme.background;

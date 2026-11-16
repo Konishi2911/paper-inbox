@@ -167,11 +167,21 @@ fn detail_quick_actions_copy_notes_and_form_shortcuts_keep_their_contracts() {
     assert!(w.get_paper_bibtex().contains("Smith2024"));
     // A long unbreakable abstract must not push right-aligned actions out of view.
     element(&w, "DOIを開く");
-    let doi_copy = element(&w, "DOIをコピー");
-    assert!(doi_copy.absolute_position().x + doi_copy.size().width <= 1360.);
-    // At the minimum window size the toolbar and identifier actions still fit.
+    let key_copy = element(&w, "引用キーをコピー");
+    assert!(key_copy.absolute_position().x + key_copy.size().width <= 1360.);
+    // The identifiers are also on one selectable line, so their values stay visible.
+    assert_eq!(w.get_identifiers_line(), "DOI 10.1000/a");
+    element(&w, "識別子");
+    // At the minimum window size the toolbar and action row still fit (two rows when narrow).
     w.window().set_size(slint::LogicalSize::new(1080., 680.));
-    for label in ["編集", "DOIをコピー", "お気に入りに追加"] {
+    for label in [
+        "編集",
+        "引用キーをコピー",
+        "BibTeX をコピー",
+        "DOIを開く",
+        "その他の操作",
+        "お気に入りに追加",
+    ] {
         let control = element(&w, label);
         assert!(
             control.absolute_position().x + control.size().width <= 1080.,
@@ -187,6 +197,16 @@ fn detail_quick_actions_copy_notes_and_form_shortcuts_keep_their_contracts() {
     click(&w, "文献を検索");
     control_chord(&w, "v");
     assert_eq!(w.get_search_text(), "Smith2024");
+    w.set_search_text("".into());
+    assert_eq!(w.get_status(), "引用キーをコピーしました。");
+
+    // Less used copies are in the menu; they say what was copied and use the same clipboard.
+    activate(&w, "その他の操作");
+    activate(&w, "DOIをコピー");
+    assert_eq!(w.get_status(), "DOIをコピーしました。");
+    click(&w, "文献を検索");
+    control_chord(&w, "v");
+    assert_eq!(w.get_search_text(), "10.1000/a");
     w.set_search_text("".into());
 
     // Quick actions save one value and reload the detail.

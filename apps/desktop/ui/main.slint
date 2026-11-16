@@ -34,6 +34,8 @@ export component MainWindow inherits Window {
     out property <bool> cleanup-open: root.detail-view==DetailView.attachment-cleanup;
     // PDFs of the paper on screen and the unused-file summary, both set by Rust.
     in-out property <[AttachmentRow]> attachment-rows;
+    in-out property <string> primary-attachment;
+    in-out property <string> identifiers-line;
     in-out property <int> cleanup-count:0;
     in-out property <string> cleanup-size;
     callback attach-pdf();
@@ -506,6 +508,9 @@ export component MainWindow inherits Window {
                             }
                             link-requested(target) => { root.open-link(target); }
                             attachment-rows: root.attachment-rows;
+                            primary-attachment: root.primary-attachment;
+                            identifiers-line: root.identifiers-line;
+                            copied(what) => { root.status = what + "をコピーしました。"; }
                             attach-requested => { root.attach-pdf(); }
                             attachment-open-requested(id) => { root.open-attachment(id); }
                             attachment-detach-requested(id) => { root.detach-attachment(id); }

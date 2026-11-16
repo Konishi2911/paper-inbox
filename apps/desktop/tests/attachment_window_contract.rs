@@ -120,7 +120,10 @@ fn pdfs_are_attached_listed_protected_removed_and_reclaimed_from_the_window() {
     wait(&w);
     assert_eq!(w.get_detail_view(), DetailView::PaperDetail);
     assert_eq!(w.get_attachment_rows().row_count(), 0);
-    element(&w, "PDFは添付されていません。");
+    // Without a PDF the main button attaches one; the file list appears with the first file.
+    assert_eq!(element(&w, "PDFを添付…").accessible_enabled(), Some(true));
+    assert!(absent(&w, "PDFを開く"));
+    assert!(absent(&w, "追加…"));
 
     // Cancelling the chooser changes nothing and starts no work.
     choices.borrow_mut().push(None);
@@ -160,6 +163,9 @@ fn pdfs_are_attached_listed_protected_removed_and_reclaimed_from_the_window() {
         element(&w, "results.pdfを開く").accessible_enabled(),
         Some(true)
     );
+    // The main button now opens the PDF instead of attaching one.
+    assert_eq!(element(&w, "PDFを開く").accessible_enabled(), Some(true));
+    assert!(absent(&w, "PDFを添付…"));
 
     // At the minimum window size the row's actions still fit.
     w.window().set_size(slint::LogicalSize::new(1080., 680.));
@@ -187,6 +193,7 @@ fn pdfs_are_attached_listed_protected_removed_and_reclaimed_from_the_window() {
         element(&w, "results.pdfを開く").accessible_enabled(),
         Some(false)
     );
+    assert_eq!(element(&w, "PDFを開く").accessible_enabled(), Some(false));
     std::fs::write(&blob_path, kept).unwrap();
     w.invoke_request_navigation(NavigationAction::OpenPaper, id.to_string().into());
     wait(&w);

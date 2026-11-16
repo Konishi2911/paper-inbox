@@ -1,0 +1,349 @@
+import { Button } from "std-widgets.slint";
+import { Theme } from "../theme.slint";
+import { LinkTarget } from "../types.slint";
+
+// One line of the "more" menu: what it does, and the value it acts on.
+component MenuItem inherits Rectangle {
+    in property <string> label;
+    in property <string> value;
+    callback activated();
+
+    accessible-role: button;
+    accessible-label: root.label;
+    accessible-action-default => {
+        root.activated();
+    }
+    height: 36px;
+    background: touch.has-hover ? Theme.hover : transparent;
+    border-radius: 4px;
+
+    touch := TouchArea {
+        clicked => {
+            root.activated();
+        }
+    }
+    HorizontalLayout {
+        padding-left: 12px;
+        padding-right: 12px;
+        spacing: 12px;
+        // The row itself carries the accessible name.
+        Text {
+            accessible-role: none;
+            text: root.label;
+            vertical-alignment: center;
+            color: Theme.text-primary;
+        }
+        Text {
+            accessible-role: none;
+            text: root.value;
+            vertical-alignment: center;
+            horizontal-alignment: right;
+            horizontal-stretch: 1;
+            min-width: 0px;
+            overflow: elide;
+            font-size: 12px;
+            color: Theme.text-secondary;
+        }
+    }
+}
+
+// PDF and identifier links: the PDF first, then the one link a single click opens, then the rest
+// in a menu.
+component LinkActions inherits HorizontalLayout {
+    in property <string> doi;
+    in property <string> arxiv-id;
+    in property <string> url;
+    in property <bool> has-pdf;
+    in property <bool> pdf-openable;
+    in property <bool> open-operable;
+    in property <bool> attach-operable;
+    callback open-pdf();
+    callback attach-requested();
+    callback link-requested(LinkTarget);
+    callback copy-requested(int);
+
+    // 0 none, 1 DOI, 2 arXiv, 3 URL: the identifier that a single click opens.
+    property <int> main-link: root.doi != "" ? 1 : root.arxiv-id != "" ? 2 : root.url != "" ? 3 : 0;
+
+    spacing: 6px;
+
+    Button {
+        accessible-label: root.has-pdf ? "PDFを開く" : "PDFを添付…";
+        text: root.has-pdf ? "PDFを開く" : "PDFを添付…";
+        primary: true;
+        enabled: root.has-pdf ? (root.open-operable && root.pdf-openable) : root.attach-operable;
+        clicked => {
+            if (root.has-pdf) {
+                root.open-pdf();
+            } else {
+                root.attach-requested();
+            }
+        }
+    }
+    if root.main-link != 0 : Button {
+        accessible-label: root.main-link == 1 ? "DOIを開く" : root.main-link == 2 ? "arXivを開く" : "URLを開く";
+        text: root.main-link == 1 ? "DOI" : root.main-link == 2 ? "arXiv" : "Web";
+        icon: @image-url("../assets/icon/open.svg");
+        enabled: root.open-operable;
+        clicked => {
+            root.link-requested(root.main-link == 1 ? LinkTarget.doi : root.main-link == 2 ? LinkTarget.arxiv : LinkTarget.url);
+        }
+    }
+    if root.main-link != 0 : more-anchor := Rectangle {
+        preferred-width: more.preferred-width;
+        min-width: more.min-width;
+        more := Button {
+            accessible-label: "その他の操作";
+            text: "⋯";
+            width: parent.width;
+            height: parent.height;
+            clicked => {
+                menu.show();
+            }
+        }
+        menu := PopupWindow {
+            x: parent.width - self.width;
+            y: parent.height + 4px;
+            width: 300px;
+            height: list.preferred-height + 8px;
+            Rectangle {
+                background: Theme.surface;
+                border-width: 1px;
+                border-color: Theme.border;
+                border-radius: 6px;
+                list := VerticalLayout {
+                    padding: 4px;
+                    if root.doi != "" : MenuItem {
+                        label: "DOIをコピー";
+                        value: root.doi;
+                        activated => {
+                            root.copy-requested(2);
+                        }
+                    }
+                    if root.arxiv-id != "" && root.main-link != 2 : MenuItem {
+                        label: "arXivを開く";
+                        value: root.arxiv-id;
+                        activated => {
+                            root.link-requested(LinkTarget.arxiv);
+                        }
+                    }
+                    if root.arxiv-id != "" : MenuItem {
+                        label: "arXiv IDをコピー";
+                        value: root.arxiv-id;
+                        activated => {
+                            root.copy-requested(3);
+                        }
+                    }
+                    if root.url != "" && root.main-link != 3 : MenuItem {
+                        label: "URLを開く";
+                        value: root.url;
+                        activated => {
+                            root.link-requested(LinkTarget.url);
+                        }
+                    }
+                    if root.url != "" : MenuItem {
+                        label: "URLをコピー";
+                        value: root.url;
+                        activated => {
+                            root.copy-requested(4);
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+// The two copies used most: the BibTeX entry and the citation key (shown on its button).
+component CopyActions inherits HorizontalLayout {
+    in property <string> citation-key;
+    in property <bool> has-bibtex;
+    callback copy-requested(int);
+
+    spacing: 6px;
+
+    Button {
+        accessible-label: "BibTeX をコピー";
+        text: "BibTeX";
+        icon: @image-url("../assets/icon/copy.svg");
+        enabled: root.has-bibtex;
+        clicked => {
+            root.copy-requested(1);
+        }
+    }
+    Button {
+        accessible-label: "引用キーをコピー";
+        text: root.citation-key;
+        icon: @image-url("../assets/icon/copy.svg");
+        enabled: root.citation-key != "";
+        clicked => {
+            root.copy-requested(0);
+        }
+    }
+}
+
+// Everything that acts on the paper as a whole sits in this one row (two rows when narrow):
+// reading it, opening its page and copying what is cited most. Copying uses the widgets' own
+// clipboard support, so no extra dependency is needed.
+export component DetailActions inherits VerticalLayout {
+    in property <string> citation-key;
+    in property <string> bibtex;
+    in property <string> doi;
+    in property <string> arxiv-id;
+    in property <string> url;
+    in property <bool> has-pdf;
+    in property <bool> pdf-openable;
+    in property <bool> open-operable: true;
+    in property <bool> attach-operable: true;
+    // True when the pane is wide enough for a single row.
+    in property <bool> wide;
+    callback open-pdf();
+    callback attach-requested();
+    callback link-requested(LinkTarget);
+    // Names what was copied so the parent can say so in the status line.
+    callback copied(string);
+
+    spacing: 0px;
+
+    // Hidden sources: a widget can only copy text it holds.
+    key-source := TextInput {
+        visible: false;
+        width: 0px;
+        height: 0px;
+        read-only: true;
+        text: root.citation-key;
+    }
+    bibtex-source := TextInput {
+        visible: false;
+        width: 0px;
+        height: 0px;
+        read-only: true;
+        text: root.bibtex;
+    }
+    doi-source := TextInput {
+        visible: false;
+        width: 0px;
+        height: 0px;
+        read-only: true;
+        text: root.doi;
+    }
+    arxiv-source := TextInput {
+        visible: false;
+        width: 0px;
+        height: 0px;
+        read-only: true;
+        text: root.arxiv-id;
+    }
+    url-source := TextInput {
+        visible: false;
+        width: 0px;
+        height: 0px;
+        read-only: true;
+        text: root.url;
+    }
+
+    function copy(kind: int) {
+        if (kind == 0) {
+            key-source.select-all();
+            key-source.copy();
+            key-source.clear-selection();
+            root.copied("引用キー");
+        } else if (kind == 1) {
+            bibtex-source.select-all();
+            bibtex-source.copy();
+            bibtex-source.clear-selection();
+            root.copied("BibTeX エントリ");
+        } else if (kind == 2) {
+            doi-source.select-all();
+            doi-source.copy();
+            doi-source.clear-selection();
+            root.copied("DOI");
+        } else if (kind == 3) {
+            arxiv-source.select-all();
+            arxiv-source.copy();
+            arxiv-source.clear-selection();
+            root.copied("arXiv ID");
+        } else {
+            url-source.select-all();
+            url-source.copy();
+            url-source.clear-selection();
+            root.copied("URL");
+        }
+    }
+
+    if root.wide : wide-row := HorizontalLayout {
+        spacing: 6px;
+        LinkActions {
+            doi: root.doi;
+            arxiv-id: root.arxiv-id;
+            url: root.url;
+            has-pdf: root.has-pdf;
+            pdf-openable: root.pdf-openable;
+            open-operable: root.open-operable;
+            attach-operable: root.attach-operable;
+            open-pdf => {
+                root.open-pdf();
+            }
+            attach-requested => {
+                root.attach-requested();
+            }
+            link-requested(target) => {
+                root.link-requested(target);
+            }
+            copy-requested(kind) => {
+                root.copy(kind);
+            }
+        }
+        CopyActions {
+            citation-key: root.citation-key;
+            has-bibtex: root.bibtex != "";
+            copy-requested(kind) => {
+                root.copy(kind);
+            }
+        }
+        Rectangle {
+            horizontal-stretch: 1;
+        }
+    }
+    if !root.wide : narrow-rows := VerticalLayout {
+        spacing: 6px;
+        HorizontalLayout {
+            LinkActions {
+                doi: root.doi;
+                arxiv-id: root.arxiv-id;
+                url: root.url;
+                has-pdf: root.has-pdf;
+                pdf-openable: root.pdf-openable;
+                open-operable: root.open-operable;
+                attach-operable: root.attach-operable;
+                open-pdf => {
+                    root.open-pdf();
+                }
+                attach-requested => {
+                    root.attach-requested();
+                }
+                link-requested(target) => {
+                    root.link-requested(target);
+                }
+                copy-requested(kind) => {
+                    root.copy(kind);
+                }
+            }
+            Rectangle {
+                horizontal-stretch: 1;
+            }
+        }
+        HorizontalLayout {
+            CopyActions {
+                citation-key: root.citation-key;
+                has-bibtex: root.bibtex != "";
+                copy-requested(kind) => {
+                    root.copy(kind);
+                }
+            }
+            Rectangle {
+                horizontal-stretch: 1;
+            }
+        }
+    }
+}

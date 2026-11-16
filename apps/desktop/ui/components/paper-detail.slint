@@ -11,58 +11,7 @@ import {
 import { Theme } from "../theme.slint";
 import { LinkTarget, AttachmentRow } from "../types.slint";
 import { AttachmentList } from "attachment-list.slint";
-
-// Small caption used for the identifier rows.
-component FieldLabel inherits Text {
-    // The value beside it carries the same accessible label.
-    accessible-role: none;
-    width: 72px;
-    vertical-alignment: center;
-    font-size: 12px;
-    color: Theme.text-secondary;
-}
-
-// A selectable read-only value with copy (and optionally open) actions.
-// Copy uses the widget's own clipboard support, so no extra dependency is needed.
-component CopyableValue inherits HorizontalBox {
-    in property <string> label;
-    in property <string> value;
-    in property <bool> can-open: false;
-    in property <bool> operable: true;
-    callback open-requested();
-    padding: 0px;
-    spacing: 6px;
-
-    FieldLabel {
-        text: root.label;
-    }
-    field := TextInput {
-        accessible-label: root.label;
-        read-only: true;
-        text: root.value;
-        vertical-alignment: center;
-    }
-    if root.can-open : Button {
-        accessible-label: root.label + "を開く";
-        icon: @image-url("../assets/icon/open.svg");
-        enabled: root.operable;
-        clicked => {
-            root.open-requested();
-        }
-    }
-    Button {
-        accessible-label: root.label + "をコピー";
-        icon: @image-url("../assets/icon/copy.svg");
-        clicked => {
-            field.select-all();
-            field.copy();
-            field.clear-selection();
-        }
-    }
-    Rectangle {
-        horizontal-stretch: 1;
-    }
-}
+import { DetailActions } from "detail-actions.slint";
 
 // Read-only view of the saved paper. Personal values (reading status,
 // favorite, archive, notes) are changed in place; the parent saves them.
@@ -91,6 +40,10 @@ export component PaperDetail inherits Rectangle {
     in property <bool> editable: true;
     in property <string> identifier-warning;
     in property <[AttachmentRow]> attachment-rows;
+    // Id of the PDF the main button opens; empty when none can be opened.
+    in property <string> primary-attachment;
+    // DOI, arXiv ID and URL on one muted line, selectable for manual copying.
+    in property <string> identifiers-line;
 
     callback attach-requested();
     callback attachment-open-requested(string);
@@ -103,6 +56,7 @@ export component PaperDetail inherits Rectangle {
     callback notes-save-requested();
     callback notes-cancel-requested();
     callback link-requested(LinkTarget);
+    callback copied(string);
 
     // Quick actions save immediately, so they wait while a note draft exists.
     property <bool> quick-operable: root.editable && !root.dirty;
@@ -216,13 +170,52 @@ export component PaperDetail inherits Rectangle {
                     wrap: word-wrap;
                 }
 
+                // Reading the paper, opening its page and copying what is cited most are one row.
+                DetailActions {
+                    wide: root.width >= 560px;
+                    citation-key: root.citation-key;
+                    bibtex: root.bibtex;
+                    doi: root.doi;
+                    arxiv-id: root.arxiv-id;
+                    url: root.url;
+                    has-pdf: root.attachment-rows.length > 0;
+                    pdf-openable: root.primary-attachment != "";
+                    open-operable: root.operable;
+                    attach-operable: root.quick-operable;
+                    open-pdf => {
+                        root.attachment-open-requested(root.primary-attachment);
+                    }
+                    attach-requested => {
+                        root.attach-requested();
+                    }
+                    link-requested(target) => {
+                        root.link-requested(target);
+                    }
+                    copied(what) => {
+                        root.copied(what);
+                    }
+                }
+                if root.identifiers-line != "" : TextInput {
+                    accessible-label: "識別子";
+                    read-only: true;
+                    wrap: word-wrap;
+                    font-size: 12px;
+                    color: Theme.text-secondary;
+                    text: root.identifiers-line;
+                }
+                if root.identifier-warning != "" : Text {
+                    text: root.identifier-warning;
+                    color: Theme.warning;
+                    wrap: word-wrap;
+                }
+
                 Rectangle {
                     height: 1px;
                     background: Theme.divider;
                 }
 
-                // The PDF comes first: reading the paper is the most common next step.
-                AttachmentList {
+                // Management of the attached files; opening the main one is in the row above.
+                if root.attachment-rows.length > 0 : AttachmentList {
                     rows: root.attachment-rows;
                     operable: root.quick-operable;
                     attach-requested => {
@@ -235,73 +228,9 @@ export component PaperDetail inherits Rectangle {
                         root.attachment-detach-requested(id);
                     }
                 }
-
-                Rectangle {
+                if root.attachment-rows.length > 0 : Rectangle {
                     height: 1px;
                     background: Theme.divider;
-                }
-
-                // Identifiers: the citation key comes first because it is copied most.
-                CopyableValue {
-                    label: "引用キー";
-                    value: root.citation-key;
-                }
-                if root.doi != "" : CopyableValue {
-                    label: "DOI";
-                    value: root.doi;
-                    can-open: true;
-                    open-requested => {
-                        root.link-requested(LinkTarget.doi);
-                    }
-                }
-                if root.arxiv-id != "" : CopyableValue {
-                    label: "arXiv";
-                    value: root.arxiv-id;
-                    can-open: true;
-                    open-requested => {
-                        root.link-requested(LinkTarget.arxiv);
-                    }
-                }
-                if root.url != "" : CopyableValue {
-                    label: "URL";
-                    value: root.url;
-                    can-open: true;
-                    open-requested => {
-                        root.link-requested(LinkTarget.url);
-                    }
-                }
-                if root.identifier-warning != "" : Text {
-                    text: root.identifier-warning;
-                    color: Theme.warning;
-                    wrap: word-wrap;
-                }
-                HorizontalBox {
-                    padding: 0px;
-                    spacing: 6px;
-                    FieldLabel {
-                        text: "BibTeX";
-                    }
-                    // Hidden source for copying the saved entry.
-                    bibtex-source := TextEdit {
-                        visible: false;
-                        width: 0px;
-                        height: 0px;
-                        read-only: true;
-                        text: root.bibtex;
-                    }
-                    Button {
-                        accessible-label: "BibTeX をコピー";
-                        text: "エントリをコピー";
-                        enabled: root.bibtex != "";
-                        clicked => {
-                            bibtex-source.select-all();
-                            bibtex-source.copy();
-                            bibtex-source.clear-selection();
-                        }
-                    }
-                    Rectangle {
-                        horizontal-stretch: 1;
-                    }
                 }
 
                 if root.abstract-text != "" : Rectangle {

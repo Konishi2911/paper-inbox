@@ -1550,6 +1550,7 @@ fn apply_reply(ui: &MainWindow, reply: Reply) {
         ui.set_abstract_long(long);
         ui.set_keywords_line(crate::detail::keywords_line(&f).into());
         ui.set_paper_bibtex(editor.bibtex.into());
+        ui.set_identifiers_line(crate::detail::identifiers_line(&f).into());
         ui.set_notes_editing(false);
         ui.set_form_error("".into());
         ui.set_citation_key(f.citation_key.into());
@@ -1622,6 +1623,13 @@ fn apply_reply(ui: &MainWindow, reply: Reply) {
                 missing: a.missing,
             })
             .collect();
+        // The main button opens the first file that is still in the library.
+        ui.set_primary_attachment(
+            rows.iter()
+                .find(|r| !r.missing)
+                .map(|r| r.id.clone())
+                .unwrap_or_default(),
+        );
         ui.set_attachment_rows(ModelRc::new(VecModel::from(rows)));
     }
     if let Some((count, bytes)) = reply.cleanup {

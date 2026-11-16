@@ -97,6 +97,21 @@ pub fn keywords_line(form: &PaperForm) -> String {
         .join(" · ")
 }
 
+/// DOI, arXiv ID and URL on one muted line, e.g. `DOI 10.1/x · arXiv 2401.1`. Missing
+/// identifiers are left out; empty when the paper has none.
+pub fn identifiers_line(form: &PaperForm) -> String {
+    [
+        ("DOI", form.doi.trim()),
+        ("arXiv", form.arxiv_id.trim()),
+        ("URL", form.url.trim()),
+    ]
+    .into_iter()
+    .filter(|(_, value)| !value.is_empty())
+    .map(|(label, value)| format!("{label} {value}"))
+    .collect::<Vec<_>>()
+    .join(" · ")
+}
+
 fn encode_path(value: &str) -> String {
     let mut out = String::new();
     for byte in value.bytes() {
@@ -183,5 +198,28 @@ mod size_tests {
         assert_eq!(format_size(340_000), "340 KB");
         assert_eq!(format_size(1_250_000), "1.2 MB");
         assert_eq!(format_size(3_400_000_000), "3.4 GB");
+    }
+}
+
+#[cfg(test)]
+mod identifier_tests {
+    use super::identifiers_line;
+    use crate::application::PaperForm;
+
+    #[test]
+    fn the_identifier_line_lists_only_what_exists() {
+        let mut form = PaperForm::default();
+        assert_eq!(identifiers_line(&form), "");
+        form.doi = " 10.1000/x ".into();
+        form.url = "https://example.test/p".into();
+        assert_eq!(
+            identifiers_line(&form),
+            "DOI 10.1000/x · URL https://example.test/p"
+        );
+        form.arxiv_id = "2401.12345".into();
+        assert_eq!(
+            identifiers_line(&form),
+            "DOI 10.1000/x · arXiv 2401.12345 · URL https://example.test/p"
+        );
     }
 }
