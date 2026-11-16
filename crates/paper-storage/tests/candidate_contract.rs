@@ -579,7 +579,7 @@ fn migration_from_original_v2_preserves_rows_and_failed_migration_is_atomic() {
             let version: i64 = db
                 .pragma_query_value(None, "user_version", |r| r.get(0))
                 .unwrap();
-            assert_eq!(version, 4);
+            assert_eq!(version, 5);
         }
     }
 }

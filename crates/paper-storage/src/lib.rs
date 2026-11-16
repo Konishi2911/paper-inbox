@@ -10,9 +10,13 @@ use std::{
     path::Path,
     sync::{Mutex, MutexGuard},
 };
+mod attachments;
+mod blob;
 mod candidates;
 mod sql;
 mod versions;
+
+pub use blob::{BlobError, FileBlobStore, content_hash_hex, parse_content_hash};
 
 pub type Result<T> = std::result::Result<T, StorageError>;
 #[derive(Debug, thiserror::Error)]
@@ -71,7 +75,7 @@ impl SqliteLibrary {
         db.busy_timeout(std::time::Duration::from_secs(5))?;
         db.pragma_update(None, "foreign_keys", true)?;
         let version: u32 = db.pragma_query_value(None, "user_version", |r| r.get(0))?;
-        if version > 4 {
+        if version > 5 {
             return Err(StorageError::Corrupt(format!(
                 "Unsupported schema version {version}"
             )));
@@ -106,7 +110,8 @@ impl SqliteLibrary {
         }
         versions::migrate(&tx)?;
         candidates::migrate(&tx)?;
-        tx.pragma_update(None, "user_version", 4)?;
+        attachments::migrate(&tx)?;
+        tx.pragma_update(None, "user_version", 5)?;
         tx.commit()?;
         Ok(Self {
             connection: Mutex::new(db),
@@ -126,6 +131,12 @@ impl SqliteLibrary {
         ids.iter()
             .map(|id| sql::get(&tx, *id)?.ok_or(StorageError::NotFound(*id)))
             .collect()
+    }
+    /// Hashes that an attachment which has not been removed still refers to. Stored files
+    /// outside this set are unused and can be reclaimed.
+    pub fn referenced_attachment_hashes(&self) -> Result<Vec<ContentHash>> {
+        let db = self.lock()?;
+        attachments::referenced_hashes(&db)
     }
     pub fn citation_keys(&self, exclude: Option<PaperId>) -> Result<Vec<String>> {
         let db = self.lock()?;
@@ -192,6 +203,12 @@ impl SqliteLibrary {
                 proposal_id,
                 resolution,
             } => return candidates::resolve(self, tx, proposal_id, resolution, now),
+            LibraryCommand::AddAttachment { attachment } => {
+                return attachments::add(self, tx, attachment, now);
+            }
+            LibraryCommand::RemoveAttachment { attachment_id } => {
+                return attachments::remove(self, tx, attachment_id, now);
+            }
             LibraryCommand::SetCanonicalVersion {
                 paper_id,
                 version_id,
@@ -592,9 +609,15 @@ impl PaperRepository for SqliteLibrary {
             conditions.push("s.favorite=?".into());
             values.push(i64::from(v).into());
         }
-        // These entities cannot yet be added through this store.
-        if f.has_attachment == Some(true) {
-            conditions.push("0".into());
+        if let Some(has) = f.has_attachment {
+            conditions.push(
+                if has {
+                    "EXISTS(SELECT 1 FROM attachments a WHERE a.paper_id=p.id AND a.removed_at IS NULL)"
+                } else {
+                    "NOT EXISTS(SELECT 1 FROM attachments a WHERE a.paper_id=p.id AND a.removed_at IS NULL)"
+                }
+                .into(),
+            );
         }
         if let Some(pending) = f.has_pending_proposal {
             conditions.push(if pending {"EXISTS(SELECT 1 FROM update_proposals u WHERE u.paper_id=p.id AND u.status='Pending')"} else {"NOT EXISTS(SELECT 1 FROM update_proposals u WHERE u.paper_id=p.id AND u.status='Pending')"}.into());
@@ -652,7 +675,11 @@ impl PaperRepository for SqliteLibrary {
                     favorite: m.favorite,
                     archived: m.archived,
                     tags: m.tags.clone(),
-                    has_attachment: false,
+                    has_attachment: db.query_row(
+                        "SELECT EXISTS(SELECT 1 FROM attachments WHERE paper_id=?1 AND removed_at IS NULL)",
+                        [p.id().to_string()],
+                        |r| r.get(0),
+                    )?,
                     has_pending_proposal: db.query_row("SELECT EXISTS(SELECT 1 FROM update_proposals WHERE paper_id=?1 AND status='Pending')",[p.id().to_string()],|r|r.get(0))?,
                     created_at: p.created_at(),
                     updated_at: p.updated_at(),
@@ -676,8 +703,9 @@ impl PaperRepository for SqliteLibrary {
             .map(|s| versions::read_snapshot(&db, &s))
             .collect()
     }
-    fn attachments(&self, _paper_id: PaperId) -> Result<Vec<Attachment>> {
-        Ok(vec![])
+    fn attachments(&self, paper_id: PaperId) -> Result<Vec<Attachment>> {
+        let db = self.lock()?;
+        attachments::list(&db, paper_id)
     }
     fn revisions(&self, target: &FieldTarget) -> Result<Vec<FieldRevision>> {
         let db = self.lock()?;
@@ -791,6 +819,9 @@ impl LibraryStore for SqliteLibrary {
                 },
                 "PaperDeleted" => SyncOperation::PaperDeleted(p.id()),
                 "PaperRestored" => SyncOperation::PaperRestored(p.id()),
+                "AttachmentAdded" | "AttachmentRemoved" => {
+                    attachments::read_event(&db, &id, &kind)?
+                }
                 _ => candidates::read_event(&db, &id, &kind)?,
             };
             let mut parent_stmt = db.prepare(
