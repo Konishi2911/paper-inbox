@@ -2,13 +2,45 @@ import { ConfirmDialog } from "../dialogs/confirm-dialog.slint";
 import { CandidateEditor } from "candidate-editor.slint";
 import { ProposalView } from "proposal-view.slint";
 import { VerticalBox, HorizontalBox, Button, ScrollView } from "std-widgets.slint";
+import { Theme } from "../theme.slint";
 
 import { DiffInputField, DiffResolution, DiffFilter, DiffBulkAction, CandidateRow, ProposalRow, VersionRow } from "../types.slint";
+
+// One compact line per candidate or version: title, then a muted summary and its action.
+component RecordRow inherits Rectangle {
+    in property <string> title;
+    in property <string> details;
+    in property <string> badge;
+    in property <string> action;
+    in property <bool> action-enabled;
+    callback activated();
+    background: Theme.surface;
+    border-width:1px;border-color:Theme.border;border-radius:6px;
+    min-width:0px;
+    min-height: content.preferred-height;
+    content := HorizontalBox {
+        padding:8px;spacing:8px;
+        VerticalLayout {
+            spacing:2px;horizontal-stretch:1;min-width:0px;
+            HorizontalLayout {
+                spacing:6px;
+                if root.badge!="" : Text {text:root.badge;font-weight:600;color:Theme.selection-border;}
+                Text {text:root.title;font-weight:600;color:Theme.text-primary;wrap:word-wrap;horizontal-stretch:1;min-width:0px;}
+            }
+            Text {text:root.details;color:Theme.text-secondary;wrap:word-wrap;min-width:0px;}
+        }
+        if root.action!="" : VerticalLayout {
+            alignment:center;
+            Button {text:root.action;enabled:root.action-enabled;clicked=>{root.activated();}}
+        }
+    }
+}
 
 export component MetadataView inherits VerticalBox {
     in property <bool> review-dirty;
     in-out property <DiffFilter> diff-filter;
     in property <string> diff-summary;
+    in property <int> proposal-total;
     callback choose-metadata(string,DiffResolution);
     callback edit-metadata(string,DiffInputField,string);
     callback bulk-metadata(DiffBulkAction);
@@ -53,12 +85,19 @@ export component MetadataView inherits VerticalBox {
     in property <string> review-label;
     callback submit-candidate();
     in property <[VersionRow]> version-rows;
-    Button {text:"DOI / arXiv から候補を取得";enabled:root.metadata-operable && !root.review-dirty && !root.candidate-form-open && !root.associate-confirm;clicked=>{root.begin-lookup();}}
-    Text {text:root.review-label;font-size:20px;wrap:word-wrap;}
-    HorizontalBox {
-        Button {text:"文献へ戻る";enabled:!root.busy && !root.about-open && !root.confirm-discard;clicked=>{root.return-to-paper();}}
-        Button {text:"表示を更新";enabled:!root.busy && !root.about-open && !root.confirm-discard;clicked=>{root.refresh-review();}}
-        Button {text:"候補を入力";enabled:root.metadata-operable && !root.review-dirty && !root.candidate-form-open && !root.associate-confirm;clicked=>{root.begin-candidate();}}
+    private property <bool> can-start: root.metadata-operable && !root.review-dirty && !root.candidate-form-open && !root.associate-confirm;
+    private property <bool> can-leave: !root.busy && !root.about-open && !root.confirm-discard;
+    HorizontalLayout {
+        spacing:8px;
+        Button {text:"文献へ戻る";enabled:root.can-leave;clicked=>{root.return-to-paper();}}
+        Text {text:root.review-label;font-size:18px;font-weight:600;vertical-alignment:center;overflow:elide;horizontal-stretch:1;min-width:0px;}
+    }
+    if !root.candidate-form-open : HorizontalLayout {
+        spacing:6px;
+        Button {text:"DOI / arXiv で取得";enabled:root.can-start;clicked=>{root.begin-lookup();}}
+        Button {text:"候補を手入力";enabled:root.can-start;clicked=>{root.begin-candidate();}}
+        Rectangle {horizontal-stretch:1;}
+        Button {text:"表示を更新";enabled:root.can-leave;clicked=>{root.refresh-review();}}
     }
     if root.candidate-form-open : CandidateEditor {
         about-open : root.about-open;
@@ -87,9 +126,10 @@ export component MetadataView inherits VerticalBox {
         submit-candidate()=>{root.submit-candidate();}
     }
     if !root.candidate-form-open : VerticalBox {
+        padding:0px;
         if root.associate-confirm : ConfirmDialog {
-            message:"この候補を選択中の文献の独立した版として登録しますか？ 同一性は未確定です。書誌項目の変更はすべて項目別の承認待ちになります。";
-            accept-label:"関連付けて版を登録";
+            message:"この候補を文献の別の版として登録しますか？ 書誌項目の変更は項目ごとに承認します。";
+            accept-label:"関連付ける";
             operable:root.metadata-operable;
             cancel-operable:!root.busy && !root.about-open;
             accepted=>{root.associate-candidate(root.associate-id);}
@@ -97,10 +137,12 @@ export component MetadataView inherits VerticalBox {
         }
         ScrollView {
             vertical-stretch:1;
+            content-width: self.visible-width;
             VerticalBox {
-                spacing:12px;alignment:start;
+                spacing:10px;alignment:start;
                 ProposalView {
                     wide:root.width >= 600px;
+                    total:root.proposal-total;
                     diff-filter <=> root.diff-filter;
                     summary:root.diff-summary;
                     dirty:root.review-dirty;
@@ -111,21 +153,28 @@ export component MetadataView inherits VerticalBox {
                     proposal-rows:root.proposal-rows;
                     operable:root.metadata-operable && !root.associate-confirm;
                 }
-                Text {text:"取得した候補";font-size:18px;font-weight:600;}
-                if root.candidate-rows.length==0 : Text {text:"候補はまだ登録されていません。";}
-                for row in root.candidate-rows : VerticalBox {
-                    spacing:5px;padding:8px;
-                    Text {text:row.label;font-weight:600;wrap:word-wrap;}
-                    Text {text:row.details;wrap:word-wrap;}
-                    if row.held : Button {text:"この文献へ関連付ける…";enabled:root.metadata-operable && !root.review-dirty && !root.associate-confirm;clicked=>{root.request-association(row.id);}}
+                HorizontalLayout {
+                    spacing:8px;
+                    Text {text:"取得した候補";font-size:16px;font-weight:600;}
+                    Text {accessible-role:none;text:root.candidate-rows.length==0 ? "なし" : root.candidate-rows.length+" 件";color:Theme.text-secondary;vertical-alignment:center;}
                 }
-                Text {text:"登録済みの版";font-size:18px;font-weight:600;}
-                if root.version-rows.length==0 : Text {text:"版はまだ登録されていません。";}
-                for row in root.version-rows : VerticalBox {
-                    spacing:5px;padding:8px;
-                    Text {text:(row.canonical ? "正規版: " : "")+row.label;font-weight:600;wrap:word-wrap;}
-                    Text {text:row.details;wrap:word-wrap;}
-                    if !row.canonical : Button {text:"正規版切替を提案";enabled:root.metadata-operable && !root.review-dirty && !root.associate-confirm;clicked=>{root.propose-canonical(row.id);}}
+                for row in root.candidate-rows : RecordRow {
+                    title:row.label;details:row.details;
+                    action:row.held ? "関連付ける…" : "";
+                    action-enabled:root.can-start;
+                    activated=>{root.request-association(row.id);}
+                }
+                HorizontalLayout {
+                    spacing:8px;
+                    Text {text:"登録済みの版";font-size:16px;font-weight:600;}
+                    Text {accessible-role:none;text:root.version-rows.length==0 ? "なし" : root.version-rows.length+" 件";color:Theme.text-secondary;vertical-alignment:center;}
+                }
+                for row in root.version-rows : RecordRow {
+                    title:row.label;details:row.details;
+                    badge:row.canonical ? "正規版" : "";
+                    action:row.canonical ? "" : "正規版にする…";
+                    action-enabled:root.can-start;
+                    activated=>{root.propose-canonical(row.id);}
                 }
             }
         }

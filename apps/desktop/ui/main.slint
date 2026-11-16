@@ -415,6 +415,7 @@ export component MainWindow inherits Window {
                         confirm-discard : root.confirm-discard;
                         metadata-operable : root.metadata-operable;
                         proposal-rows : root.filtered-proposal-rows;
+                        proposal-total : root.proposal-rows.length;
                         propose-canonical(arg0)=>{root.propose-canonical(arg0);}
                         review-dirty:root.review-dirty;
                         diff-filter <=> root.diff-filter;

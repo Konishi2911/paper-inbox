@@ -36,6 +36,15 @@ pub const PUBLICATION_TYPES: &[PublicationType] = &[
     PublicationType::Patent,
     PublicationType::Other,
 ];
+
+/// Japanese label for a publication type, matching the editor's choices.
+pub fn publication_type_label(kind: PublicationType) -> &'static str {
+    PUBLICATION_TYPES
+        .iter()
+        .position(|t| *t == kind)
+        .and_then(|i| PUBLICATION_TYPE_LABELS.get(i).copied())
+        .unwrap_or("その他")
+}
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct AuthorInput {
     pub kind: i32,

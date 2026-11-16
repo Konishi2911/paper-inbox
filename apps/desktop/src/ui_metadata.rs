@@ -56,28 +56,56 @@ pub fn begin_form(ui: &MainWindow) {
 }
 pub fn show_review(ui: &MainWindow, review: &MetadataReview) {
     ui.set_review_label(
-        format!(
-            "{}\n{} — 承認待ち {} 件（正規版切替を含む）",
-            review
-                .state
-                .paper
-                .bibliography()
-                .title
-                .as_deref()
-                .unwrap_or("タイトルなし"),
-            review.state.paper.citation_key(),
-            review.proposals.len()
-        )
-        .into(),
+        review
+            .state
+            .paper
+            .bibliography()
+            .title
+            .as_deref()
+            .unwrap_or("タイトルなし")
+            .into(),
     );
-    let candidates=review.candidates.iter().map(|stored| {
-        let identity=assess_identity(review.state.paper.bibliography(),&stored.candidate.bibliography);
-        let label=match identity.outcome {IdentityMatch::Exact=>"識別子が一致",IdentityMatch::RelatedVersion=>"関連する版",IdentityMatch::NeedsReview=>"識別子に矛盾",_=>"同一性を判定できません"};
-        let status=match stored.status {CandidateStatus::Held=>"保留",CandidateStatus::Processed=>"処理済み",CandidateStatus::Associated=>"手動関連付け済み"};
-        let fields=stored.candidate.present_fields.iter().map(|f|metadata::field_label(*f)).collect::<Vec<_>>().join("、");
-        CandidateRow {id:stored.candidate.id.to_string().into(),label:format!("{status} / {label} / {} / {}",metadata::source_label(&stored.candidate.provenance.source),metadata::version_label(stored.candidate.version_kind)).into(),
-            details:format!("タイトル: {}\nDOI: {} / arXiv: {}\n提示項目: {}\n情報源の記録: {} / 更新日時: {}",stored.candidate.bibliography.title.as_deref().unwrap_or("（未提示）"),stored.candidate.bibliography.identifiers.doi_text().unwrap_or("（未提示）"),stored.candidate.bibliography.identifiers.arxiv_text().unwrap_or("（未提示）"),fields,stored.candidate.provenance.source_record_id.as_deref().unwrap_or("（不明）"),stored.candidate.provenance.source_updated_at.map(|t|t.to_rfc3339()).unwrap_or_else(||"（不明）".into())).into(),held:stored.status==CandidateStatus::Held}
-    }).collect::<Vec<_>>();
+    let candidates = review
+        .candidates
+        .iter()
+        .map(|stored| {
+            let candidate = &stored.candidate;
+            let identity =
+                match assess_identity(review.state.paper.bibliography(), &candidate.bibliography)
+                    .outcome
+                {
+                    IdentityMatch::Exact => "識別子が一致",
+                    IdentityMatch::RelatedVersion => "関連する版",
+                    IdentityMatch::NeedsReview => "識別子に矛盾",
+                    _ => "同一性不明",
+                };
+            let status = match stored.status {
+                CandidateStatus::Held => "未処理",
+                CandidateStatus::Processed => "処理済み",
+                CandidateStatus::Associated => "関連付け済み",
+            };
+            let ids = &candidate.bibliography.identifiers;
+            CandidateRow {
+                id: candidate.id.to_string().into(),
+                label: candidate
+                    .bibliography
+                    .title
+                    .as_deref()
+                    .unwrap_or("（タイトル未提示）")
+                    .into(),
+                details: join_present([
+                    Some(metadata::source_label(&candidate.provenance.source)),
+                    Some(metadata::version_label(candidate.version_kind).to_owned()),
+                    Some(identity.to_owned()),
+                    Some(status.to_owned()),
+                    ids.doi_text().map(|d| format!("DOI {d}")),
+                    ids.arxiv_text().map(|a| format!("arXiv {a}")),
+                ])
+                .into(),
+                held: stored.status == CandidateStatus::Held,
+            }
+        })
+        .collect::<Vec<_>>();
     ui.set_candidate_rows(ModelRc::new(VecModel::from(candidates)));
     let proposals = review
         .proposals
@@ -151,17 +179,8 @@ pub fn show_review(ui: &MainWindow, review: &MetadataReview) {
             let source = detail
                 .provenance
                 .as_ref()
-                .map(|p| {
-                    format!(
-                        "{} / 記録: {} / 更新日時: {}",
-                        metadata::source_label(&p.source),
-                        p.source_record_id.as_deref().unwrap_or("（不明）"),
-                        p.source_updated_at
-                            .map(|t| t.to_rfc3339())
-                            .unwrap_or_else(|| "（不明）".into())
-                    )
-                })
-                .unwrap_or_else(|| "版の切替。書誌情報は別途確認します。".into());
+                .map(|p| metadata::source_label(&p.source))
+                .unwrap_or_else(|| "書誌項目は別途確認".into());
             let change_label = match (&detail.current_value, &detail.proposed_value) {
                 (Some(current), proposed) => {
                     match paper_core::service::compare_field_values(current, proposed.as_ref()) {
@@ -173,7 +192,7 @@ pub fn show_review(ui: &MainWindow, review: &MetadataReview) {
                         Err(_) => "比較できません",
                     }
                 }
-                _ => "正規版切替（項目更新とは別操作）",
+                _ => "版の切替",
             };
             let current_source = if detail.current_revisions.is_empty() {
                 "出典記録なし".to_owned()
@@ -261,28 +280,24 @@ pub fn show_review(ui: &MainWindow, review: &MetadataReview) {
         .iter()
         .map(|v| VersionRow {
             id: v.id.to_string().into(),
-            label: format!(
-                "{} / {}",
-                metadata::version_label(v.kind),
-                v.bibliography.title.as_deref().unwrap_or("タイトルなし")
-            )
-            .into(),
-            details: format!(
-                "DOI: {} / arXiv: {} / 出版年: {}",
+            label: v
+                .bibliography
+                .title
+                .as_deref()
+                .unwrap_or("タイトルなし")
+                .into(),
+            details: join_present([
+                Some(metadata::version_label(v.kind).to_owned()),
+                v.bibliography.publication.year.map(|y| y.to_string()),
                 v.bibliography
                     .identifiers
                     .doi_text()
-                    .unwrap_or("（未提示）"),
+                    .map(|d| format!("DOI {d}")),
                 v.bibliography
                     .identifiers
                     .arxiv_text()
-                    .unwrap_or("（未提示）"),
-                v.bibliography
-                    .publication
-                    .year
-                    .map(|v| v.to_string())
-                    .unwrap_or_else(|| "（未提示）".into())
-            )
+                    .map(|a| format!("arXiv {a}")),
+            ])
             .into(),
             canonical: review.state.paper.canonical_version() == Some(v.id),
         })
@@ -292,6 +307,11 @@ pub fn show_review(ui: &MainWindow, review: &MetadataReview) {
     update_summary(ui);
     ui.set_load_required(false);
     ui.set_associate_confirm(false);
+}
+
+/// Joins the parts that are present into one muted summary line.
+fn join_present<const N: usize>(parts: [Option<String>; N]) -> String {
+    parts.into_iter().flatten().collect::<Vec<_>>().join(" · ")
 }
 
 fn provenance_details(p: &Provenance) -> String {
@@ -310,7 +330,7 @@ fn preview_text(value: &str) -> String {
     let mut chars = value.chars();
     let mut preview: String = chars.by_ref().take(600).collect();
     if chars.next().is_some() {
-        preview.push_str("…（全文を表示できます）");
+        preview.push('…');
     }
     preview
 }
@@ -339,25 +359,19 @@ fn update_summary(ui: &MainWindow) {
     use slint::Model;
     let rows = ui.get_proposal_rows();
     let rows = rows.iter().collect::<Vec<_>>();
-    let count = |label: &str| rows.iter().filter(|r| r.change_label == label).count();
     let decided = rows
         .iter()
         .filter(|r| r.decision != crate::DiffResolution::Unresolved)
         .count();
+    let review = rows.iter().filter(|r| r.conflict || r.stale).count();
     ui.set_review_dirty(decided > 0);
     refresh_visible(ui);
-    ui.set_diff_summary(
-        format!(
-            "追加 {} / 変更 {} / 削除 {} / 要確認 {}（差分と重複）\n未判断 {} / 判断済み {}",
-            count("追加"),
-            count("変更"),
-            count("削除"),
-            rows.iter().filter(|r| r.conflict || r.stale).count(),
-            rows.len() - decided,
-            decided
-        )
-        .into(),
-    );
+    let mut summary = format!("{} 件", rows.len());
+    if review > 0 {
+        summary.push_str(&format!(" · 要確認 {review}"));
+    }
+    summary.push_str(&format!(" · 判断済み {decided}"));
+    ui.set_diff_summary(summary.into());
 }
 fn mutate_rows(ui: &MainWindow, mut change: impl FnMut(&mut crate::ProposalRow)) {
     use slint::Model;
@@ -500,6 +514,27 @@ mod diff_display_tests {
         let preview = preview_text(&long);
         assert!(preview.starts_with(&long.chars().take(600).collect::<String>()));
         assert!(preview.chars().count() < 650);
-        assert!(preview.ends_with("（全文を表示できます）"));
+        assert!(preview.ends_with('…'));
+    }
+
+    #[test]
+    fn summary_lines_skip_missing_parts_and_types_use_japanese_labels() {
+        use paper_core::model::{BibliographyValue, PublicationType};
+        assert_eq!(
+            super::join_present([Some("出版社版".into()), None, Some("DOI 10.1/x".into())]),
+            "出版社版 · DOI 10.1/x"
+        );
+        assert_eq!(
+            crate::metadata::value_label(&BibliographyValue::PublicationType(
+                PublicationType::JournalArticle
+            )),
+            "学術誌論文"
+        );
+        assert_eq!(
+            crate::metadata::value_label(&BibliographyValue::PublicationType(
+                PublicationType::Unknown
+            )),
+            "未指定"
+        );
     }
 }

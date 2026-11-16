@@ -2,6 +2,25 @@ import { VerticalBox, HorizontalBox, Button, LineEdit, TextEdit } from "std-widg
 import { ProposalRow, DiffResolution, DiffInputField } from "../types.slint";
 import { Theme } from "../theme.slint";
 
+// Short status tag shown next to the field name instead of a sentence.
+component Badge inherits Rectangle {
+    in property <string> text;
+    in property <bool> warning;
+    background: root.warning ? Theme.diff-conflict : Theme.selection;
+    border-radius: 4px;
+    border-width: 1px;
+    border-color: root.warning ? Theme.warning : Theme.selection-border;
+    width: label.preferred-width + 12px;
+    height: label.preferred-height + 4px;
+    label := Text {
+        x: 6px;
+        y: 2px;
+        text: root.text;
+        font-size: 12px;
+        color: root.warning ? Theme.warning : Theme.text-primary;
+    }
+}
+
 component ComparedValue inherits Rectangle {
     in property <string> heading;
     in property <string> value;
@@ -11,10 +30,14 @@ component ComparedValue inherits Rectangle {
     min-width:0px;
     min-height: content.preferred-height;
     content := VerticalBox {
-        padding:10px;spacing:6px;
-        Text {text:root.heading;font-weight:600;color:Theme.text-primary;wrap:word-wrap;min-width:0px;}
+        padding:10px;spacing:4px;
+        // Heading and source share one line so the value starts right below.
+        HorizontalLayout {
+            spacing:6px;
+            Text {text:root.heading;font-weight:600;color:Theme.text-primary;}
+            Text {text:root.source;color:Theme.text-secondary;overflow:elide;horizontal-stretch:1;min-width:0px;}
+        }
         Text {text:root.value == "" ? "（空文字列）" : root.value;wrap:word-wrap;color:Theme.text-primary;min-width:0px;}
-        Text {text:"情報源: "+root.source;wrap:word-wrap;color:Theme.text-secondary;min-width:0px;}
     }
 }
 export component MetadataDiffCard inherits Rectangle {
@@ -25,59 +48,67 @@ export component MetadataDiffCard inherits Rectangle {
     callback edit(string,DiffInputField,string);
     private property <bool> details-open:false;
     private property <bool> full-open:false;
-    private property <bool> diff-open:false;
+    private property <DiffResolution> decision: root.proposal.decision;
     background: root.proposal.conflict || root.proposal.stale ? Theme.diff-conflict : Theme.diff-current;
     border-width:1px;border-color:Theme.border;border-radius:6px;
     min-width:0px;
     min-height: content.preferred-height;
     content := VerticalBox {
         padding:10px;spacing:8px;
-        Text {text:root.proposal.label+" / "+root.proposal.change-label;font-weight:600;wrap:word-wrap;color:Theme.text-primary;min-width:0px;}
-        Text {text:"承認待ち / "+root.proposal.reason;wrap:word-wrap;color:Theme.text-secondary;min-width:0px;}
-        if root.proposal.conflict : Text {text:"要確認: 現在値の保護・競合に関する承認が必要です。";wrap:word-wrap;color:Theme.warning;min-width:0px;}
-        if root.proposal.long-text : Button {text:root.full-open ? "長文を折りたたむ" : "全文を表示";clicked=>{root.full-open=!root.full-open;}}
+        HorizontalLayout {
+            spacing:8px;
+            Text {text:root.proposal.label;font-weight:600;color:Theme.text-primary;vertical-alignment:center;}
+            VerticalLayout {alignment:center;Badge {text:root.proposal.change-label;}}
+            if root.proposal.conflict : VerticalLayout {alignment:center;Badge {text:"要確認";warning:true;}}
+            Rectangle {horizontal-stretch:1;}
+            if root.proposal.long-text : Button {text:root.full-open ? "長文を折りたたむ" : "全文を表示";clicked=>{root.full-open=!root.full-open;}}
+        }
+        if root.proposal.conflict && !root.proposal.stale : Text {text:root.proposal.reason;wrap:word-wrap;color:Theme.warning;min-width:0px;}
+        if root.proposal.stale : Text {text:"作成後に値が変わりました。表示を更新してください。";wrap:word-wrap;color:Theme.warning;min-width:0px;}
         if root.wide : HorizontalBox {
             padding:0px;spacing:8px;
-            ComparedValue {heading:"現在値";value:root.full-open ? root.proposal.current : root.proposal.current-preview;source:root.proposal.current-source;horizontal-stretch:1;}
-            ComparedValue {heading:"提案値";value:root.full-open ? root.proposal.proposed : root.proposal.proposed-preview;source:root.proposal.source;horizontal-stretch:1;background:Theme.diff-proposed;}
+            ComparedValue {heading:"現在";value:root.full-open ? root.proposal.current : root.proposal.current-preview;source:root.proposal.current-source;horizontal-stretch:1;}
+            ComparedValue {heading:"提案";value:root.full-open ? root.proposal.proposed : root.proposal.proposed-preview;source:root.proposal.source;horizontal-stretch:1;background:Theme.diff-proposed;}
         }
         if !root.wide : VerticalBox {
             padding:0px;spacing:8px;
-            ComparedValue {heading:"現在値";value:root.full-open ? root.proposal.current : root.proposal.current-preview;source:root.proposal.current-source;}
-            ComparedValue {heading:"提案値";value:root.full-open ? root.proposal.proposed : root.proposal.proposed-preview;source:root.proposal.source;background:Theme.diff-proposed;}
+            ComparedValue {heading:"現在";value:root.full-open ? root.proposal.current : root.proposal.current-preview;source:root.proposal.current-source;}
+            ComparedValue {heading:"提案";value:root.full-open ? root.proposal.proposed : root.proposal.proposed-preview;source:root.proposal.source;background:Theme.diff-proposed;}
         }
         if root.proposal.structured-diff!="" : Text {text:root.proposal.structured-diff;wrap:word-wrap;min-width:0px;color:Theme.text-secondary;}
-        if root.proposal.text-diff!="" : Button {text:root.diff-open ? "単語差分を閉じる" : "単語差分を表示";clicked=>{root.diff-open=!root.diff-open;}}
-        if root.diff-open : Text {text:"【＋追加】【−削除】は表示用の注記です。\n"+root.proposal.text-diff;wrap:word-wrap;min-width:0px;color:Theme.text-primary;}
-        Button {text:root.details-open ? "出典・改訂の詳細を閉じる" : "出典・改訂の詳細";clicked=>{root.details-open=!root.details-open;}}
         if root.details-open : VerticalBox {
             padding:0px;spacing:8px;
+            if root.proposal.text-diff!="" : Text {text:"単語差分（【＋】追加・【−】削除）\n"+root.proposal.text-diff;wrap:word-wrap;min-width:0px;color:Theme.text-primary;}
             Text {text:"現在値の出典\n"+(root.proposal.current-details=="" ? "出典記録なし" : root.proposal.current-details);wrap:word-wrap;min-width:0px;color:Theme.text-secondary;}
             Text {text:"提案値の出典\n"+root.proposal.proposed-details;wrap:word-wrap;min-width:0px;color:Theme.text-secondary;}
         }
-        if root.proposal.stale : Text {text:"作成後に値が変わっています。表示を更新して確認してください。";wrap:word-wrap;color:Theme.warning;min-width:0px;}
-        Text {text:"判断: "+(root.proposal.decision==DiffResolution.unresolved ? "未判断・保留" : root.proposal.decision==DiffResolution.keep-current ? "現在値を維持" : root.proposal.decision==DiffResolution.accept-proposed ? "提案値を採用" : "カスタム値");wrap:word-wrap;min-width:0px;}
-        HorizontalBox {
-            padding:0px;
-            Button {text:"提案値を採用";enabled:root.operable && !root.proposal.stale;clicked=>{root.choose(root.proposal.id,DiffResolution.accept-proposed);}}
-            Button {text:"現在値を維持";enabled:root.operable;clicked=>{root.choose(root.proposal.id,DiffResolution.keep-current);}}
+        // The chosen decision is shown by the highlighted (primary) button.
+        HorizontalLayout {
+            spacing:6px;
+            Button {text:"提案値を採用";primary:root.decision==DiffResolution.accept-proposed;enabled:root.operable && !root.proposal.stale;clicked=>{root.choose(root.proposal.id,DiffResolution.accept-proposed);}}
+            Button {text:"現在値を維持";primary:root.decision==DiffResolution.keep-current;enabled:root.operable;clicked=>{root.choose(root.proposal.id,DiffResolution.keep-current);}}
+            if root.wide && root.proposal.custom-kind>0 : Button {text:"値を編集";primary:root.decision==DiffResolution.custom;enabled:root.operable && !root.proposal.stale;clicked=>{root.choose(root.proposal.id,DiffResolution.custom);}}
+            if root.wide && root.decision!=DiffResolution.unresolved : Button {text:"判断を取り消す";enabled:root.operable;clicked=>{root.choose(root.proposal.id,DiffResolution.unresolved);}}
+            Rectangle {horizontal-stretch:1;}
+            Button {text:root.details-open ? "詳細を閉じる" : "詳細";clicked=>{root.details-open=!root.details-open;}}
         }
-        HorizontalBox {
-            padding:0px;
-            if root.proposal.custom-kind>0 : Button {text:"カスタム値";enabled:root.operable && !root.proposal.stale;clicked=>{root.choose(root.proposal.id,DiffResolution.custom);}}
-            Button {text:"判断を保留";enabled:root.operable;clicked=>{root.choose(root.proposal.id,DiffResolution.unresolved);}}
+        if !root.wide && (root.proposal.custom-kind>0 || root.decision!=DiffResolution.unresolved) : HorizontalLayout {
+            spacing:6px;
+            if root.proposal.custom-kind>0 : Button {text:"値を編集";primary:root.decision==DiffResolution.custom;enabled:root.operable && !root.proposal.stale;clicked=>{root.choose(root.proposal.id,DiffResolution.custom);}}
+            if root.decision!=DiffResolution.unresolved : Button {text:"判断を取り消す";enabled:root.operable;clicked=>{root.choose(root.proposal.id,DiffResolution.unresolved);}}
+            Rectangle {horizontal-stretch:1;}
         }
-        if root.proposal.decision==DiffResolution.custom : VerticalBox {
+        if root.decision==DiffResolution.custom : VerticalBox {
             padding:0px;
-            Text {text:"空入力は明示的な削除として保存します。";wrap:word-wrap;min-width:0px;}
+            Text {text:"空欄のまま適用すると削除になります。";wrap:word-wrap;min-width:0px;color:Theme.text-secondary;}
             if root.proposal.custom-kind==1 : TextEdit {
                 accessible-label:"カスタム値の入力";text:root.proposal.custom-text;enabled:root.operable;
                 preferred-height:100px;edited=>{root.edit(root.proposal.id,DiffInputField.value,self.text);}
             }
             if root.proposal.custom-kind==2 : VerticalBox {
                 padding:0px;
-                LineEdit {accessible-label:"カスタムDOI";text:root.proposal.custom-doi;enabled:root.operable;edited=>{root.edit(root.proposal.id,DiffInputField.doi,self.text);}}
-                LineEdit {accessible-label:"カスタムarXiv ID";text:root.proposal.custom-arxiv;enabled:root.operable;edited=>{root.edit(root.proposal.id,DiffInputField.arxiv,self.text);}}
+                LineEdit {accessible-label:"カスタムDOI";placeholder-text:"DOI";text:root.proposal.custom-doi;enabled:root.operable;edited=>{root.edit(root.proposal.id,DiffInputField.doi,self.text);}}
+                LineEdit {accessible-label:"カスタムarXiv ID";placeholder-text:"arXiv ID";text:root.proposal.custom-arxiv;enabled:root.operable;edited=>{root.edit(root.proposal.id,DiffInputField.arxiv,self.text);}}
             }
         }
     }

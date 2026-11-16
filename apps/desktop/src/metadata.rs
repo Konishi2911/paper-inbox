@@ -275,7 +275,9 @@ pub fn value_label(value: &BibliographyValue) -> String {
                 v.join(", ")
             }
         }
-        BibliographyValue::PublicationType(v) => format!("{v:?}"),
+        BibliographyValue::PublicationType(v) => {
+            crate::application::publication_type_label(*v).to_owned()
+        }
     }
 }
 pub fn reason_label(reason: ProposalReason) -> &'static str {

@@ -40,20 +40,16 @@ fn comparison_reflows_expands_provenance_and_preserves_resolution_contract() {
     w.set_proposal_rows(ModelRc::new(VecModel::from(vec![row.clone()])));
     let resolutions = Rc::new(RefCell::new(Vec::new()));
     let output = resolutions.clone();
-    w.on_choose_metadata(move |id, decision| {
-        output
-            .borrow_mut()
-            .push((id.to_string(), decision == DiffResolution::AcceptProposed))
-    });
+    w.on_choose_metadata(move |id, decision| output.borrow_mut().push((id.to_string(), decision)));
     w.show().unwrap();
     w.window().set_size(slint::LogicalSize::new(1600., 1100.));
     let columns = values(&w);
     assert_eq!(columns.len(), 2);
     assert!((columns[0].absolute_position().y - columns[1].absolute_position().y).abs() < 2.);
     assert!(columns[1].absolute_position().x > columns[0].absolute_position().x + 100.);
-    control(&w, "出典・改訂の詳細").invoke_accessible_default_action();
+    control(&w, "詳細").invoke_accessible_default_action();
     assert!(
-        ElementHandle::find_by_accessible_label(&w, "出典・改訂の詳細を閉じる")
+        ElementHandle::find_by_accessible_label(&w, "詳細を閉じる")
             .next()
             .is_some()
     );
@@ -61,7 +57,7 @@ fn comparison_reflows_expands_provenance_and_preserves_resolution_contract() {
         resolutions.borrow().is_empty(),
         "expansion never resolves a proposal"
     );
-    control(&w, "出典・改訂の詳細を閉じる").invoke_accessible_default_action();
+    control(&w, "詳細を閉じる").invoke_accessible_default_action();
     w.window().set_size(slint::LogicalSize::new(1080., 1100.));
     let stacked = values(&w);
     assert_eq!(stacked.len(), 2);
@@ -78,11 +74,14 @@ fn comparison_reflows_expands_provenance_and_preserves_resolution_contract() {
         card.absolute_position().y + card.size().height
     );
     control(&w, "提案値を採用").invoke_accessible_default_action();
-    assert_eq!(*resolutions.borrow(), vec![("proposal-1".into(), true)]);
+    assert_eq!(
+        *resolutions.borrow(),
+        vec![("proposal-1".into(), DiffResolution::AcceptProposed)]
+    );
     control(&w, "現在値を維持").invoke_accessible_default_action();
     assert_eq!(
         resolutions.borrow().last(),
-        Some(&("proposal-1".into(), false))
+        Some(&("proposal-1".into(), DiffResolution::KeepCurrent))
     );
     w.set_busy(true);
     assert_eq!(
@@ -102,6 +101,20 @@ fn comparison_reflows_expands_provenance_and_preserves_resolution_contract() {
         Some(false)
     );
     assert_eq!(control(&w, "現在値を維持").accessible_enabled(), Some(true));
+    assert!(
+        ElementHandle::find_by_accessible_label(&w, "判断を取り消す")
+            .next()
+            .is_none(),
+        "an undecided card offers no undo"
+    );
+    let mut decided = row.clone();
+    decided.decision = DiffResolution::AcceptProposed;
+    w.set_proposal_rows(ModelRc::new(VecModel::from(vec![decided])));
+    control(&w, "判断を取り消す").invoke_accessible_default_action();
+    assert_eq!(
+        resolutions.borrow().last(),
+        Some(&("proposal-1".into(), DiffResolution::Unresolved))
+    );
     let mut long = row;
     long.current = "日本語 α²\n".repeat(1000).into();
     long.current_preview = "日本語のプレビュー".into();

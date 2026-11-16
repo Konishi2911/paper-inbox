@@ -1,8 +1,11 @@
 import { VerticalBox, HorizontalBox, Button, ComboBox } from "std-widgets.slint";
 import { ProposalRow, DiffInputField, DiffResolution, DiffFilter, DiffBulkAction } from "../types.slint";
 import { MetadataDiffCard } from "../components/metadata-diff-row.slint";
+import { Theme } from "../theme.slint";
 export component ProposalView inherits Rectangle {
     in property <[ProposalRow]> proposal-rows;
+    // Number of proposals before filtering; 0 hides the whole review toolbar.
+    in property <int> total;
     in property <bool> operable;
     in property <bool> wide;
     in property <bool> dirty;
@@ -14,27 +17,28 @@ export component ProposalView inherits Rectangle {
     callback apply();
     min-height:content.preferred-height;min-width:0px;
     content := VerticalBox {
-        padding:0px;spacing:12px;
-        Text {text:"更新内容を比較";font-size:18px;font-weight:600;wrap:word-wrap;}
-        Text {text:root.summary;wrap:word-wrap;min-width:0px;}
-        Text {text:"判断は「判断を適用」で保存します。未判断は保留します。正規版切替・手動値・識別子は個別に判断してください。";wrap:word-wrap;min-width:0px;}
-        ComboBox {
-            accessible-label:"差分フィルタ";
-            model:["すべてのフィールド","変更あり","要確認のみ","未判断のみ","判断済み"];
-            current-index:root.diff-filter==DiffFilter.all ? 0 : root.diff-filter==DiffFilter.changed ? 1 : root.diff-filter==DiffFilter.conflict ? 2 : root.diff-filter==DiffFilter.unresolved ? 3 : 4;
-            selected(index)=>{root.diff-filter=index==0 ? DiffFilter.all : index==1 ? DiffFilter.changed : index==2 ? DiffFilter.conflict : index==3 ? DiffFilter.unresolved : DiffFilter.decided;}
+        padding:0px;spacing:10px;
+        HorizontalLayout {
+            spacing:8px;
+            Text {text:"更新の提案";font-size:18px;font-weight:600;vertical-alignment:center;}
+            Text {text:root.total==0 ? "なし" : root.summary;color:Theme.text-secondary;vertical-alignment:center;wrap:word-wrap;horizontal-stretch:1;min-width:0px;}
         }
-        VerticalBox {
-            padding:0px;spacing:6px;
-            Button {text:"要確認でない項目を採用";enabled:root.operable;clicked=>{root.bulk(DiffBulkAction.accept-safe);}}
-            HorizontalBox {
-                padding:0px;
-                Button {text:"すべて現在値を維持";enabled:root.operable;clicked=>{root.bulk(DiffBulkAction.keep-all);}}
-                Button {text:"判断をリセット";enabled:root.operable && root.dirty;clicked=>{root.bulk(DiffBulkAction.reset);}}
+        if root.total>0 : HorizontalLayout {
+            spacing:6px;
+            ComboBox {
+                accessible-label:"差分フィルタ";
+                width:112px;
+                model:["すべて","変更あり","要確認","未判断","判断済み"];
+                current-index:root.diff-filter==DiffFilter.all ? 0 : root.diff-filter==DiffFilter.changed ? 1 : root.diff-filter==DiffFilter.conflict ? 2 : root.diff-filter==DiffFilter.unresolved ? 3 : 4;
+                selected(index)=>{root.diff-filter=index==0 ? DiffFilter.all : index==1 ? DiffFilter.changed : index==2 ? DiffFilter.conflict : index==3 ? DiffFilter.unresolved : DiffFilter.decided;}
             }
+            Button {text:"安全な項目を採用";enabled:root.operable;clicked=>{root.bulk(DiffBulkAction.accept-safe);}}
+            Button {text:"すべて維持";enabled:root.operable;clicked=>{root.bulk(DiffBulkAction.keep-all);}}
+            Rectangle {horizontal-stretch:1;}
+            if root.dirty : Button {text:"リセット";enabled:root.operable;clicked=>{root.bulk(DiffBulkAction.reset);}}
+            Button {text:"判断を適用";primary:true;enabled:root.operable && root.dirty;clicked=>{root.apply();}}
         }
-        Button {text:"判断を適用";enabled:root.operable && root.dirty;clicked=>{root.apply();}}
-        if root.proposal-rows.length==0 : Text {text:"この表示条件に合う更新候補はありません。";wrap:word-wrap;}
+        if root.total>0 && root.proposal-rows.length==0 : Text {text:"この条件に合う提案はありません。";wrap:word-wrap;color:Theme.text-secondary;}
         for row in root.proposal-rows : MetadataDiffCard {
             proposal:row;operable:root.operable;wide:root.wide;
             choose(id,decision)=>{root.choose(id,decision);}
