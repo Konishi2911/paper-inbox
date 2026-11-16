@@ -9,7 +9,8 @@ import {
 } from "std-widgets.slint";
 
 import { Theme } from "../theme.slint";
-import { LinkTarget } from "../types.slint";
+import { LinkTarget, AttachmentRow } from "../types.slint";
+import { AttachmentList } from "attachment-list.slint";
 
 // Small caption used for the identifier rows.
 component FieldLabel inherits Text {
@@ -89,7 +90,11 @@ export component PaperDetail inherits Rectangle {
     in property <bool> operable: true;
     in property <bool> editable: true;
     in property <string> identifier-warning;
+    in property <[AttachmentRow]> attachment-rows;
 
+    callback attach-requested();
+    callback attachment-open-requested(string);
+    callback attachment-detach-requested(string);
     callback edit-requested();
     callback metadata-requested();
     callback reading-status-selected(int);
@@ -209,6 +214,26 @@ export component PaperDetail inherits Rectangle {
                     text: root.publication-summary;
                     color: Theme.text-secondary;
                     wrap: word-wrap;
+                }
+
+                Rectangle {
+                    height: 1px;
+                    background: Theme.divider;
+                }
+
+                // The PDF comes first: reading the paper is the most common next step.
+                AttachmentList {
+                    rows: root.attachment-rows;
+                    operable: root.quick-operable;
+                    attach-requested => {
+                        root.attach-requested();
+                    }
+                    open-requested(id) => {
+                        root.attachment-open-requested(id);
+                    }
+                    detach-requested(id) => {
+                        root.attachment-detach-requested(id);
+                    }
                 }
 
                 Rectangle {

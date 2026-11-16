@@ -1,8 +1,9 @@
 use crate::export::{self, PreparedExport};
 use crate::{
-    AuthorAction, AuthorRow, DetailView, LinkTarget, LookupField, MainWindow, NavigationAction,
-    PaperRow,
+    AttachmentRow, AuthorAction, AuthorRow, DetailView, LinkTarget, LookupField, MainWindow,
+    NavigationAction, PaperRow,
     application::{Application, AuthorInput, PaperForm, QuickChange},
+    attachment::AttachmentFiles,
     config::Config,
     lookup::{LookupPreview, LookupUserInput},
 };
@@ -42,6 +43,11 @@ enum Request {
     },
     ConfirmExport,
     CancelExport,
+    AttachPdf(PathBuf),
+    OpenAttachment(AttachmentId),
+    DetachAttachment(AttachmentId),
+    PrepareCleanup,
+    ReclaimUnused,
     Shutdown,
 }
 struct EditorView {
@@ -71,6 +77,16 @@ struct Reply {
     lookup_preview: Option<(LookupPreview, String)>,
     key_suggestion: Option<String>,
     form_error: Option<String>,
+    /// Attachment rows of the paper in `editor`; sent together with every editor reload.
+    attachments: Option<Vec<AttachmentView>>,
+    /// Unused file count and total bytes; opens the cleanup screen.
+    cleanup: Option<(usize, u64)>,
+}
+struct AttachmentView {
+    id: String,
+    name: String,
+    details: String,
+    missing: bool,
 }
 pub type LookupProvider = Box<
     dyn FnMut(&PaperIdentifier) -> Result<Vec<MetadataCandidate>, paper_metadata::LookupError>
@@ -84,6 +100,7 @@ struct PendingLookup {
 struct Worker {
     config: Config,
     app: Option<Application>,
+    files: Option<AttachmentFiles>,
     editing: Option<PaperEditState>,
     query: PaperQuery,
     pending_export: Option<PreparedExport>,
@@ -94,6 +111,37 @@ struct Worker {
 }
 impl Worker {
     fn handle(&mut self, request: Request) -> Reply {
+        let mut reply = self.handle_request(request);
+        self.fill_attachments(&mut reply);
+        reply
+    }
+    /// Every editor reload carries the paper's PDFs, so the list never lags behind.
+    fn fill_attachments(&self, reply: &mut Reply) {
+        let Some(editor) = &reply.editor else {
+            return;
+        };
+        let mut rows = vec![];
+        if let (Some(id), Some(app), Some(files)) = (editor.id, &self.app, &self.files) {
+            match files.list(&app.store, id) {
+                Ok(list) => {
+                    for a in list {
+                        let missing = !files.is_present(&a).unwrap_or(false);
+                        rows.push(AttachmentView {
+                            id: a.id.to_string(),
+                            name: a.filename.clone(),
+                            details: crate::detail::attachment_details(&a, missing),
+                            missing,
+                        });
+                    }
+                }
+                Err(e) => reply
+                    .message
+                    .push_str(&format!(" PDFの一覧を読み込めません: {e}")),
+            }
+        }
+        reply.attachments = Some(rows);
+    }
+    fn handle_request(&mut self, request: Request) -> Reply {
         if matches!(request, Request::Initialize) {
             return match self.config.prepare().and_then(|_| {
                 SqliteLibrary::open_local(&self.config.database)
@@ -101,6 +149,16 @@ impl Worker {
             }) {
                 Ok(store) => {
                     self.app = Some(Application { store });
+                    let files = AttachmentFiles::open(
+                        &self.config.files_dir(),
+                        &std::env::temp_dir().join("paper-inbox-open"),
+                    );
+                    let files_note = files
+                        .as_ref()
+                        .err()
+                        .map(|e| format!(" PDFの保存先を開けないため、PDF機能は使えません: {e}"))
+                        .unwrap_or_default();
+                    self.files = files.ok();
                     self.editing = None;
                     self.pending_export = None;
                     self.review = None;
@@ -117,7 +175,7 @@ impl Worker {
                             }),
                             ready: Some(true),
                             close_metadata: true,
-                            message: "準備ができました。".into(),
+                            message: format!("準備ができました。{files_note}"),
                             ..Default::default()
                         },
                         Err(e) => Reply {
@@ -615,6 +673,111 @@ impl Worker {
                     ..Default::default()
                 }
             }
+            Request::AttachPdf(path) => {
+                let (Some(state), Some(files)) = (self.editing.as_ref(), self.files.as_ref())
+                else {
+                    return Reply {
+                        message: "PDFを添付する文献を選択してください。".into(),
+                        ..Default::default()
+                    };
+                };
+                let id = state.paper.id();
+                match files.attach(&app.store, id, &path) {
+                    Ok(attachment) => {
+                        self.after_save(id, &format!("PDFを添付しました: {}", attachment.filename))
+                    }
+                    Err(e) => Reply {
+                        message: e.to_string(),
+                        ..Default::default()
+                    },
+                }
+            }
+            Request::OpenAttachment(attachment_id) | Request::DetachAttachment(attachment_id) => {
+                let detach = matches!(request, Request::DetachAttachment(_));
+                let (Some(state), Some(files)) = (self.editing.as_ref(), self.files.as_ref())
+                else {
+                    return Reply {
+                        message: "文献を選択してください。".into(),
+                        ..Default::default()
+                    };
+                };
+                let id = state.paper.id();
+                // Only attachments of the paper on screen can be opened or removed.
+                let found = files
+                    .list(&app.store, id)
+                    .map(|list| list.into_iter().find(|a| a.id == attachment_id));
+                let attachment = match found {
+                    Ok(Some(a)) => a,
+                    Ok(None) => {
+                        return Reply {
+                            message: "このPDFは見つかりません。表示を更新してください。".into(),
+                            ..Default::default()
+                        };
+                    }
+                    Err(e) => {
+                        return Reply {
+                            message: e.to_string(),
+                            ..Default::default()
+                        };
+                    }
+                };
+                if detach {
+                    match files.detach(&app.store, attachment.id) {
+                        Ok(()) => self.after_save(
+                            id,
+                            "PDFを取り外しました。ファイルは「未使用PDFの整理」で削除するまで残ります。",
+                        ),
+                        Err(e) => Reply {
+                            message: e.to_string(),
+                            ..Default::default()
+                        },
+                    }
+                } else {
+                    let opened = files
+                        .prepare_open(&attachment)
+                        .and_then(|path| AttachmentFiles::open_with_system(&path));
+                    Reply {
+                        message: match opened {
+                            Ok(()) => format!("PDFを開きました: {}", attachment.filename),
+                            Err(e) => e.to_string(),
+                        },
+                        ..Default::default()
+                    }
+                }
+            }
+            Request::PrepareCleanup => match self.files.as_ref().map(|f| f.unused(&app.store)) {
+                Some(Ok(unused)) => Reply {
+                    cleanup: Some((unused.len(), unused.iter().map(|(_, bytes)| bytes).sum())),
+                    ..Default::default()
+                },
+                Some(Err(e)) => Reply {
+                    message: e.to_string(),
+                    ..Default::default()
+                },
+                None => Reply {
+                    message: "PDFの保存先を開けていません。再接続してください。".into(),
+                    ..Default::default()
+                },
+            },
+            Request::ReclaimUnused => match self.files.as_ref().map(|f| f.reclaim(&app.store)) {
+                Some(Ok(report)) => Reply {
+                    cleanup: Some((0, 0)),
+                    message: format!(
+                        "未使用のPDFを {} 件（{}）削除しました。",
+                        report.files,
+                        crate::detail::format_size(report.bytes)
+                    ),
+                    ..Default::default()
+                },
+                Some(Err(e)) => Reply {
+                    message: e.to_string(),
+                    ..Default::default()
+                },
+                None => Reply {
+                    message: "PDFの保存先を開けていません。再接続してください。".into(),
+                    ..Default::default()
+                },
+            },
             Request::Initialize | Request::Shutdown => unreachable!(),
         }
     }
@@ -735,11 +898,28 @@ pub fn attach(ui: &MainWindow, config: Config) -> Controller {
         }),
     )
 }
+/// Chooses the PDF to attach. It runs on the UI thread and is replaced in tests.
+pub type FilePicker = Box<dyn Fn() -> Option<PathBuf>>;
+fn choose_pdf() -> Option<PathBuf> {
+    rfd::FileDialog::new()
+        .set_title("添付するPDFを選択")
+        .add_filter("PDF", &["pdf"])
+        .pick_file()
+}
 /// Inject transport for deterministic integration tests; production uses fixed HTTPS hosts.
 pub fn attach_with_lookup_provider(
     ui: &MainWindow,
     config: Config,
     lookup_provider: LookupProvider,
+) -> Controller {
+    attach_with_providers(ui, config, lookup_provider, Box::new(choose_pdf))
+}
+/// Like [`attach_with_lookup_provider`] with an injectable file chooser.
+pub fn attach_with_providers(
+    ui: &MainWindow,
+    config: Config,
+    lookup_provider: LookupProvider,
+    file_picker: FilePicker,
 ) -> Controller {
     ui.set_database_path(config.database.to_string_lossy().as_ref().into());
     let (sender, receiver) = mpsc::channel();
@@ -748,6 +928,7 @@ pub fn attach_with_lookup_provider(
         let mut state = Worker {
             config,
             app: None,
+            files: None,
             editing: None,
             pending_export: None,
             review: None,
@@ -793,6 +974,7 @@ pub fn attach_with_lookup_provider(
                 }
                 NavigationAction::ImportPaper => Request::BeginLookup(true),
                 NavigationAction::CreatePaper => Request::New,
+                NavigationAction::AttachmentCleanup => Request::PrepareCleanup,
                 NavigationAction::Reconnect => {
                     ui.set_ready(false);
                     Request::Initialize
@@ -914,6 +1096,51 @@ pub fn attach_with_lookup_provider(
         if let Some(ui) = weak.upgrade() {
             let notes = ui.get_notes().to_string();
             dispatch(&ui, &tx, Request::Quick(QuickChange::Notes(notes)));
+        }
+    });
+    let tx = sender.clone();
+    let weak = ui.as_weak();
+    ui.on_attach_pdf(move || {
+        if let Some(ui) = weak.upgrade() {
+            match file_picker() {
+                Some(path) => dispatch(&ui, &tx, Request::AttachPdf(path)),
+                None => ui.set_status("PDFの添付をやめました。".into()),
+            }
+        }
+    });
+    let tx = sender.clone();
+    let weak = ui.as_weak();
+    ui.on_open_attachment(move |id| {
+        if let Some(ui) = weak.upgrade() {
+            match uuid::Uuid::parse_str(&id) {
+                Ok(id) => dispatch(
+                    &ui,
+                    &tx,
+                    Request::OpenAttachment(AttachmentId::from_uuid(id)),
+                ),
+                Err(_) => ui.set_status("PDFの ID を読み取れません。".into()),
+            }
+        }
+    });
+    let tx = sender.clone();
+    let weak = ui.as_weak();
+    ui.on_detach_attachment(move |id| {
+        if let Some(ui) = weak.upgrade() {
+            match uuid::Uuid::parse_str(&id) {
+                Ok(id) => dispatch(
+                    &ui,
+                    &tx,
+                    Request::DetachAttachment(AttachmentId::from_uuid(id)),
+                ),
+                Err(_) => ui.set_status("PDFの ID を読み取れません。".into()),
+            }
+        }
+    });
+    let tx = sender.clone();
+    let weak = ui.as_weak();
+    ui.on_reclaim_unused(move || {
+        if let Some(ui) = weak.upgrade() {
+            dispatch(&ui, &tx, Request::ReclaimUnused);
         }
     });
     let weak = ui.as_weak();
@@ -1385,6 +1612,24 @@ fn apply_reply(ui: &MainWindow, reply: Reply) {
     if let Some(error) = reply.form_error {
         ui.set_form_error(error.into());
     }
+    if let Some(rows) = reply.attachments {
+        let rows: Vec<_> = rows
+            .into_iter()
+            .map(|a| AttachmentRow {
+                id: a.id.into(),
+                name: a.name.into(),
+                details: a.details.into(),
+                missing: a.missing,
+            })
+            .collect();
+        ui.set_attachment_rows(ModelRc::new(VecModel::from(rows)));
+    }
+    if let Some((count, bytes)) = reply.cleanup {
+        ui.set_cleanup_count(count.min(i32::MAX as usize) as i32);
+        ui.set_cleanup_size(crate::detail::format_size(bytes).into());
+        next_view = Some(DetailView::AttachmentCleanup);
+    }
+
     if reply.load_required {
         ui.set_load_required(true);
     }

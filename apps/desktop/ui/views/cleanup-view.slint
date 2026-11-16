@@ -1,0 +1,55 @@
+import { VerticalBox, HorizontalBox, Button } from "std-widgets.slint";
+import { Theme } from "../theme.slint";
+
+// Deleting files is permanent, so this screen states exactly what will be removed.
+export component CleanupView inherits VerticalBox {
+    in property <int> count;
+    in property <string> size;
+    in property <bool> operable: true;
+    callback reclaim-requested();
+    callback close-requested();
+
+    spacing: 12px;
+    alignment: start;
+
+    Text {
+        text: "未使用PDFの整理";
+        font-size: 18px;
+        font-weight: 600;
+        color: Theme.text-primary;
+    }
+    Text {
+        text: root.count == 0
+            ? "未使用のPDFはありません。"
+            : "どの文献にも添付されていないPDFが " + root.count + " 件（" + root.size + "）あります。";
+        wrap: word-wrap;
+        color: Theme.text-primary;
+    }
+    Text {
+        text: "文献から取り外したPDFは、ここで削除するまでライブラリに残ります。削除したファイルは元に戻せません。";
+        wrap: word-wrap;
+        color: Theme.text-secondary;
+    }
+    HorizontalBox {
+        padding: 0px;
+        spacing: 8px;
+        Button {
+            text: root.count == 0 ? "削除" : root.count + " 件を削除";
+            primary: true;
+            enabled: root.operable && root.count > 0;
+            clicked => {
+                root.reclaim-requested();
+            }
+        }
+        Button {
+            text: "閉じる";
+            enabled: root.operable;
+            clicked => {
+                root.close-requested();
+            }
+        }
+        Rectangle {
+            horizontal-stretch: 1;
+        }
+    }
+}

@@ -3,6 +3,7 @@ import { MetadataView } from "views/metadata-view.slint";
 import { ExportDialog } from "dialogs/export-dialog.slint";
 import { ImportView } from "views/import-view.slint";
 import { ExportView } from "views/export-view.slint";
+import { CleanupView } from "views/cleanup-view.slint";
 import { AboutDialog } from "dialogs/about-dialog.slint";
 import { VerticalBox, HorizontalBox, Button } from "std-widgets.slint";
 import { Theme } from "theme.slint";
@@ -11,9 +12,9 @@ import { Sidebar } from "components/sidebar.slint";
 import { Splitter } from "components/splitter.slint";
 import { PaperDetail } from "components/paper-detail.slint";
 import { PaperEditor } from "components/paper-editor.slint";
-import { DiffInputField, DiffResolution, DiffFilter, DiffBulkAction, DetailView, AuthorAction, NavigationAction, AuthorRow, PaperRow, LookupField, LinkTarget, CandidateRow, ProposalRow, VersionRow } from "types.slint";
+import { AttachmentRow, DiffInputField, DiffResolution, DiffFilter, DiffBulkAction, DetailView, AuthorAction, NavigationAction, AuthorRow, PaperRow, LookupField, LinkTarget, CandidateRow, ProposalRow, VersionRow } from "types.slint";
 
-export { DiffInputField, DiffResolution, DiffFilter, DiffBulkAction, DetailView, AuthorAction, NavigationAction, AuthorRow, PaperRow, LookupField, LinkTarget, CandidateRow, ProposalRow, VersionRow } from "types.slint";
+export { AttachmentRow, DiffInputField, DiffResolution, DiffFilter, DiffBulkAction, DetailView, AuthorAction, NavigationAction, AuthorRow, PaperRow, LookupField, LinkTarget, CandidateRow, ProposalRow, VersionRow } from "types.slint";
 
 export component MainWindow inherits Window {
     title:"Paper Inbox";
@@ -30,6 +31,15 @@ export component MainWindow inherits Window {
     in-out property <bool> about-open:false;
     in-out property <bool> sidebar-collapsed:false;
     out property <bool> export-settings-open: root.detail-view==DetailView.export-settings;
+    out property <bool> cleanup-open: root.detail-view==DetailView.attachment-cleanup;
+    // PDFs of the paper on screen and the unused-file summary, both set by Rust.
+    in-out property <[AttachmentRow]> attachment-rows;
+    in-out property <int> cleanup-count:0;
+    in-out property <string> cleanup-size;
+    callback attach-pdf();
+    callback open-attachment(string);
+    callback detach-attachment(string);
+    callback reclaim-unused();
 
     out property <bool> lookup-open: root.detail-view==DetailView.import;
     in-out property <bool> lookup-new:false;
@@ -248,6 +258,7 @@ export component MainWindow inherits Window {
                 && !root.metadata-open
                 && !root.lookup-open
                 && !root.export-settings-open
+                && !root.cleanup-open
         )) {
             root.request-navigation(NavigationAction.open-paper,id);
         }
@@ -292,6 +303,7 @@ export component MainWindow inherits Window {
                 }
 
                 export-requested => { root.toggle-export(); }
+                cleanup-requested => { root.request-navigation(NavigationAction.attachment-cleanup,""); }
                 about-requested => { root.about-open = true; }
                 reconnect-requested => { root.request-navigation(NavigationAction.reconnect,""); }
             }
@@ -349,6 +361,19 @@ export component MainWindow inherits Window {
                         prepare-export()=>{root.prepare-export();}
                         return-requested()=>{root.close-export();}
                         selected-count : root.selected-count;
+                    }
+                    if root.detail-view==DetailView.attachment-cleanup : CleanupView {
+                        count : root.cleanup-count;
+                        size : root.cleanup-size;
+                        operable : root.operable;
+                        reclaim-requested()=>{root.reclaim-unused();}
+                        close-requested()=>{
+                            if (root.editing-id=="") {
+                                root.detail-view=DetailView.empty;
+                            } else {
+                                root.request-navigation(NavigationAction.open-paper,root.editing-id);
+                            }
+                        }
                     }
                     if root.detail-view==DetailView.import : ImportView {
                         about-open : root.about-open;
@@ -480,6 +505,10 @@ export component MainWindow inherits Window {
                                 }
                             }
                             link-requested(target) => { root.open-link(target); }
+                            attachment-rows: root.attachment-rows;
+                            attach-requested => { root.attach-pdf(); }
+                            attachment-open-requested(id) => { root.open-attachment(id); }
+                            attachment-detach-requested(id) => { root.detach-attachment(id); }
                         }
                         if root.detail-view==DetailView.paper-editor : PaperEditor {
                             citation-key <=> root.citation-key;

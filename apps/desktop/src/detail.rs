@@ -143,3 +143,45 @@ pub fn web_url(value: &str) -> Option<String> {
 pub fn open_in_browser(url: &str) -> Result<(), String> {
     webbrowser::open(url).map_err(|e| format!("ブラウザーで開けませんでした: {e}"))
 }
+
+/// File size for people: `340 KB`, `1.2 MB` (decimal units, one decimal above 1 MB).
+pub fn format_size(bytes: u64) -> String {
+    const KB: u64 = 1000;
+    const MB: u64 = 1000 * KB;
+    const GB: u64 = 1000 * MB;
+    if bytes >= GB {
+        format!("{:.1} GB", bytes as f64 / GB as f64)
+    } else if bytes >= MB {
+        format!("{:.1} MB", bytes as f64 / MB as f64)
+    } else if bytes >= KB {
+        format!("{} KB", bytes.div_ceil(KB))
+    } else {
+        format!("{bytes} B")
+    }
+}
+
+/// The muted line under an attachment's name.
+pub fn attachment_details(attachment: &paper_core::model::Attachment, missing: bool) -> String {
+    if missing {
+        return "ファイルが見つかりません。ライブラリのフォルダーを確認してください。".into();
+    }
+    format!(
+        "{} · {} に追加",
+        format_size(attachment.size_bytes),
+        attachment.created_at.format("%Y-%m-%d")
+    )
+}
+
+#[cfg(test)]
+mod size_tests {
+    use super::format_size;
+    #[test]
+    fn sizes_are_short_and_round_up_small_files() {
+        assert_eq!(format_size(0), "0 B");
+        assert_eq!(format_size(999), "999 B");
+        assert_eq!(format_size(1001), "2 KB");
+        assert_eq!(format_size(340_000), "340 KB");
+        assert_eq!(format_size(1_250_000), "1.2 MB");
+        assert_eq!(format_size(3_400_000_000), "3.4 GB");
+    }
+}

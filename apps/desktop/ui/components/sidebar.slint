@@ -21,6 +21,7 @@ export component Sidebar inherits Rectangle {
     callback add-requested();
     callback library-requested(bool);
     callback export-requested();
+    callback cleanup-requested();
     callback about-requested();
     callback reconnect-requested();
 
@@ -108,6 +109,21 @@ export component Sidebar inherits Rectangle {
 
             clicked => {
                 root.export-requested();
+            }
+        }
+
+        // Files no paper uses any more are deleted only from this explicit screen.
+        Button {
+            accessible-label: "未使用PDFの整理";
+
+            text: root.collapsed
+                ? "整"
+                : "未使用PDFの整理";
+
+            enabled: root.operable;
+
+            clicked => {
+                root.cleanup-requested();
             }
         }
 

@@ -71,6 +71,7 @@ fn screen(w: &MainWindow, expected: DetailView) {
         "MetadataView",
         "ExportView",
         "ExportDialog",
+        "CleanupView",
     ];
     let visible = names
         .into_iter()
@@ -88,6 +89,7 @@ fn screen(w: &MainWindow, expected: DetailView) {
         DetailView::MetadataReview | DetailView::MetadataCandidateEditor => Some("MetadataView"),
         DetailView::ExportSettings => Some("ExportView"),
         DetailView::ExportPreview => Some("ExportDialog"),
+        DetailView::AttachmentCleanup => Some("CleanupView"),
     };
     assert_eq!(
         visible,
@@ -135,6 +137,12 @@ fn enum_transitions_restore_nested_drafts_and_do_not_leave_the_source_on_failed_
     screen(&w, DetailView::ExportSettings);
     assert!(w.get_dirty());
     click(&w, "文献を追加");
+    assert!(w.get_confirm_discard());
+    screen(&w, DetailView::ExportSettings);
+    click(&w, "編集を続ける");
+    screen(&w, DetailView::ExportSettings);
+    // The cleanup screen is also guarded by the unsaved-input confirmation.
+    click(&w, "未使用PDFの整理");
     assert!(w.get_confirm_discard());
     screen(&w, DetailView::ExportSettings);
     click(&w, "編集を続ける");

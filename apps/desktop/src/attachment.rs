@@ -65,10 +65,19 @@ pub struct AttachmentFiles {
 }
 
 impl AttachmentFiles {
-    /// Opens (creating if needed) the file store. Copies left from a previous run are removed;
-    /// a viewer that still holds one open simply keeps its copy.
+    /// Opens (creating if needed) the file store. Temporary copies older than a day are
+    /// removed; newer ones may belong to another running instance or an open viewer.
     pub fn open(files_dir: &Path, open_dir: &Path) -> Result<Self, AppError> {
-        let _ = fs::remove_dir_all(open_dir);
+        Self::open_with_retention(files_dir, open_dir, STALE_AFTER)
+    }
+
+    /// Like [`Self::open`] with an explicit age after which temporary copies are deleted.
+    pub fn open_with_retention(
+        files_dir: &Path,
+        open_dir: &Path,
+        retention: std::time::Duration,
+    ) -> Result<Self, AppError> {
+        sweep_stale_copies(open_dir, retention);
         Ok(Self {
             blobs: FileBlobStore::open(files_dir)?,
             open_dir: open_dir.to_owned(),
@@ -165,6 +174,11 @@ impl AttachmentFiles {
         Ok(())
     }
 
+    /// Cheap presence test for list rows; it does not read the file.
+    pub fn is_present(&self, attachment: &Attachment) -> Result<bool, AppError> {
+        Ok(self.blobs.contains(&attachment.content_hash)?)
+    }
+
     /// Checks the stored file; re-reads it fully, so use it on demand rather than per row.
     pub fn check(&self, attachment: &Attachment) -> Result<FileState, AppError> {
         if !self.blobs.contains(&attachment.content_hash)? {
@@ -241,6 +255,27 @@ impl AttachmentFiles {
             }
         }
         Ok(report)
+    }
+}
+
+/// Copies handed to a viewer are kept for a day so that another running instance or a
+/// viewer that is still open never loses its file; older ones are deleted.
+const STALE_AFTER: std::time::Duration = std::time::Duration::from_secs(24 * 60 * 60);
+
+fn sweep_stale_copies(open_dir: &Path, retention: std::time::Duration) {
+    let Ok(entries) = fs::read_dir(open_dir) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let old = entry
+            .metadata()
+            .and_then(|m| m.modified())
+            .ok()
+            .and_then(|modified| modified.elapsed().ok())
+            .is_some_and(|age| age > retention);
+        if old {
+            let _ = fs::remove_dir_all(entry.path());
+        }
     }
 }
 

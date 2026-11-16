@@ -195,11 +195,21 @@ fn opening_uses_a_named_temporary_copy_and_never_a_damaged_one() {
     let message = input_message(f.files.prepare_open(&attachment).unwrap_err());
     assert!(message.contains("見つかりません"), "{message}");
 
-    // The next start clears copies left behind.
+    // A restart keeps recent copies (another instance or a viewer may use them) and removes
+    // only the ones older than the retention.
     drop(f.files);
     let restarted = AttachmentFiles::open(&f.sandbox.files(), &f.sandbox.viewer()).unwrap();
-    assert!(!f.sandbox.viewer().exists());
+    assert!(copy.exists() && second.exists());
     drop(restarted);
+    std::thread::sleep(std::time::Duration::from_millis(50));
+    let swept = AttachmentFiles::open_with_retention(
+        &f.sandbox.files(),
+        &f.sandbox.viewer(),
+        std::time::Duration::from_millis(10),
+    )
+    .unwrap();
+    assert!(!copy.exists() && !second.exists());
+    drop(swept);
 }
 
 #[test]
