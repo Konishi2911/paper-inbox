@@ -30,6 +30,13 @@ impl Config {
         }
         Ok(Self { database })
     }
+    /// Folder of the attachment files: `library-files` next to the database file.
+    pub fn files_dir(&self) -> PathBuf {
+        self.database
+            .parent()
+            .unwrap_or(std::path::Path::new(""))
+            .join("library-files")
+    }
     pub fn prepare(&self) -> Result<(), String> {
         if let Some(parent) = self.database.parent().filter(|p| !p.as_os_str().is_empty()) {
             std::fs::create_dir_all(parent).map_err(|e| {

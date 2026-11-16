@@ -118,6 +118,16 @@ impl FileBlobStore {
         found.sort_by_key(|h| *h.as_bytes());
         Ok(found)
     }
+    /// Size in bytes of a stored file.
+    pub fn size(&self, hash: &ContentHash) -> Result<u64, BlobError> {
+        match fs::metadata(self.path_of(hash)) {
+            Ok(m) => Ok(m.len()),
+            Err(e) if e.kind() == io::ErrorKind::NotFound => {
+                Err(BlobError::NotFound(content_hash_hex(hash)))
+            }
+            Err(e) => Err(e.into()),
+        }
+    }
     /// Deletes one stored file. Returns false when it was not there.
     pub fn remove(&self, hash: &ContentHash) -> Result<bool, BlobError> {
         match fs::remove_file(self.path_of(hash)) {

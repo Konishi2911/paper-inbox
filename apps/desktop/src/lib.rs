@@ -1,4 +1,5 @@
 pub mod application;
+pub mod attachment;
 pub mod config;
 pub mod ui;
 slint::include_modules!();
