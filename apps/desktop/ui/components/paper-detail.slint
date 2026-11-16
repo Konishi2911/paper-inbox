@@ -35,14 +35,15 @@ component CopyableValue inherits HorizontalBox {
     FieldLabel {
         text: root.label;
     }
-    field := LineEdit {
+    field := TextInput {
         accessible-label: root.label;
         read-only: true;
         text: root.value;
+        vertical-alignment: center;
     }
     if root.can-open : Button {
         accessible-label: root.label + "を開く";
-        text: "開く";
+        icon: @image-url("../assets/icon/open.svg");
         enabled: root.operable;
         clicked => {
             root.open-requested();
@@ -50,12 +51,15 @@ component CopyableValue inherits HorizontalBox {
     }
     Button {
         accessible-label: root.label + "をコピー";
-        text: "コピー";
+        icon: @image-url("../assets/icon/copy.svg");
         clicked => {
             field.select-all();
             field.copy();
             field.clear-selection();
         }
+    }
+    Rectangle {
+        horizontal-stretch: 1;
     }
 }
 
