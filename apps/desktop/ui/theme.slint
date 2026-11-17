@@ -1,36 +1,42 @@
+import { Palette } from "std-widgets.slint";
+
+// Every color has a light and a dark value; the dark one is chosen when the system (or the
+// platform's window theme) reports a dark color scheme, so views never branch on it themselves.
 export global Theme {
+    out property <bool> dark: Palette.color-scheme == ColorScheme.dark;
+
     // Backgrounds
-    out property <color> background: #f4f6fa;
-    out property <color> sidebar: #eaf0f8;
-    out property <color> list-background: #f8faff;
-    out property <color> surface: #ffffff;
+    out property <color> background: root.dark ? #14181f : #f4f6fa;
+    out property <color> sidebar: root.dark ? #1a2029 : #eaf0f8;
+    out property <color> list-background: root.dark ? #181d25 : #f8faff;
+    out property <color> surface: root.dark ? #1f252f : #ffffff;
 
     // Text colors
-    out property <color> text-primary: #20314f;
-    out property <color> text-secondary: #66758b;
-    out property <color> text-muted: #536783;
+    out property <color> text-primary: root.dark ? #e4e9f2 : #20314f;
+    out property <color> text-secondary: root.dark ? #9aa7bb : #66758b;
+    out property <color> text-muted: root.dark ? #8f9db3 : #536783;
 
     // Borders
-    out property <color> border: #e1e7ef;
-    out property <color> divider: #d6dfed;
+    out property <color> border: root.dark ? #333c4a : #e1e7ef;
+    out property <color> divider: root.dark ? #303948 : #d6dfed;
 
     // Selection
-    out property <color> selection: #e6efff;
-    out property <color> selection-border: #6e95da;
-    out property <color> hover: #f0f4fa;
+    out property <color> selection: root.dark ? #25344f : #e6efff;
+    out property <color> selection-border: root.dark ? #5b84d0 : #6e95da;
+    out property <color> hover: root.dark ? #262e3a : #f0f4fa;
 
     // Warning
-    out property <color> warning: #945616;
+    out property <color> warning: root.dark ? #e8a95c : #945616;
 
     // Metadata comparison: labels accompany every color cue.
-    out property <color> diff-current: #f3f5f8;
-    out property <color> diff-proposed: #eef6f0;
-    out property <color> diff-conflict: #fff4e4;
+    out property <color> diff-current: root.dark ? #232a35 : #f3f5f8;
+    out property <color> diff-proposed: root.dark ? #1f3128 : #eef6f0;
+    out property <color> diff-conflict: root.dark ? #3a2e1c : #fff4e4;
 
     // Modal overlay
-    out property <color> overlay: #00000066;
+    out property <color> overlay: root.dark ? #000000aa : #00000066;
 
     // Splitter
-    out property <color> splitter: #d6dfed;
-    out property <color> splitter-active: #6e95da;
+    out property <color> splitter: root.dark ? #303948 : #d6dfed;
+    out property <color> splitter-active: root.dark ? #5b84d0 : #6e95da;
 }
