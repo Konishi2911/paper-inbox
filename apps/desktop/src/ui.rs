@@ -66,7 +66,6 @@ struct Reply {
     ready: Option<bool>,
     saved: bool,
     load_required: bool,
-    offset: Option<i32>,
     export_preview: Option<(String, String, String, bool)>,
     clear_export: bool,
     metadata: Option<MetadataReview>,
@@ -367,7 +366,6 @@ impl Worker {
                 Ok(list) => {
                     self.query = query;
                     Reply {
-                        offset: Some(self.query.pagination.offset as i32),
                         list: Some(list),
                         message: "一覧を更新しました。".into(),
                         ..Default::default()
@@ -828,21 +826,7 @@ impl Worker {
             }
         }
         match app.list(&self.query) {
-            Ok(mut list) => {
-                if self.query.pagination.offset >= list.total_count {
-                    self.query.pagination.offset = if list.total_count == 0 {
-                        0
-                    } else {
-                        (list.total_count - 1) / 20 * 20
-                    };
-                    match app.list(&self.query) {
-                        Ok(page) => list = page,
-                        Err(e) => reply
-                            .message
-                            .push_str(&format!(" 一覧の更新に失敗しました: {e}")),
-                    }
-                }
-                reply.offset = Some(self.query.pagination.offset as i32);
+            Ok(list) => {
                 reply.list = Some(list);
             }
             Err(e) => reply
@@ -937,7 +921,7 @@ pub fn attach_with_providers(
             lookup_provider,
             query: PaperQuery {
                 pagination: Pagination {
-                    limit: 20,
+                    limit: 50,
                     offset: 0,
                 },
                 ..Default::default()
@@ -1476,8 +1460,8 @@ fn query_from_ui(ui: &MainWindow) -> PaperQuery {
             _ => PaperSort::default(),
         },
         pagination: Pagination {
-            limit: 20,
-            offset: ui.get_offset().max(0) as usize,
+            limit: ui.get_limit().max(1) as usize,
+            offset: 0,
         },
     }
 }
@@ -1525,9 +1509,6 @@ fn apply_reply(ui: &MainWindow, reply: Reply) {
     if reply.close_metadata {
         ui.set_lookup_dirty(false);
         ui.set_candidate_dirty(false);
-    }
-    if let Some(offset) = reply.offset {
-        ui.set_offset(offset);
     }
     if let Some(ready) = reply.ready {
         ui.set_ready(ready);

@@ -24,7 +24,6 @@ fn list_controls_share_query_values_and_notify_parent_without_owning_navigation(
         citation_key: "Author2026".into(),
         selected: false,
     }])));
-    w.set_total(45);
     let queries = Rc::new(RefCell::new(Vec::new()));
     let recorded = queries.clone();
     let weak = w.as_weak();
@@ -32,25 +31,23 @@ fn list_controls_share_query_values_and_notify_parent_without_owning_navigation(
         let w = weak.upgrade().unwrap();
         recorded.borrow_mut().push((
             w.get_search_text().to_string(),
-            w.get_offset(),
+            w.get_limit(),
             w.get_include_archived(),
         ));
     });
-    control(&w, "次へ").invoke_accessible_default_action();
-    assert_eq!(queries.borrow().last().unwrap().1, 20);
-    control(&w, "次へ").invoke_accessible_default_action();
-    assert_eq!(queries.borrow().last().unwrap().1, 40);
-    control(&w, "前へ").invoke_accessible_default_action();
-    assert_eq!(queries.borrow().last().unwrap().1, 20);
+    w.set_limit(100);
     control(&w, "文献を検索").set_accessible_value("Graph");
     assert_eq!(w.get_search_text(), "Graph");
     control(&w, "検索").invoke_accessible_default_action();
     assert_eq!(
         queries.borrow().last().unwrap(),
-        &("Graph".into(), 0, false)
+        &("Graph".into(), 50, false)
     );
     control(&w, "アーカイブを含める").invoke_accessible_default_action();
-    assert_eq!(queries.borrow().last().unwrap(), &("Graph".into(), 0, true));
+    assert_eq!(
+        queries.borrow().last().unwrap(),
+        &("Graph".into(), 50, true)
+    );
     let navigation = Rc::new(RefCell::new(Vec::new()));
     let received = navigation.clone();
     w.on_navigate(move |action, id| received.borrow_mut().push((action, id.to_string())));
@@ -61,6 +58,5 @@ fn list_controls_share_query_values_and_notify_parent_without_owning_navigation(
     );
     w.set_busy(true);
     assert_eq!(control(&w, "検索").accessible_enabled(), Some(false));
-    assert_eq!(control(&w, "次へ").accessible_enabled(), Some(false));
     w.hide().unwrap();
 }

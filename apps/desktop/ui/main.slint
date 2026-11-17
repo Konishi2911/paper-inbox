@@ -71,7 +71,7 @@ export component MainWindow inherits Window {
     in-out property <bool> show-deleted:false;
     in-out property <bool> include-archived:false;
     in-out property <int> sort-index:0;
-    in-out property <int> offset:0;
+    in-out property <int> limit:50;
     in-out property <int> total:0;
     in-out property <string> citation-key;
     in-out property <string> paper-title;
@@ -300,7 +300,7 @@ export component MainWindow inherits Window {
                 library-requested(deleted) => {
                     root.show-deleted = deleted;
                     root.search-text = "";
-                    root.offset = 0;
+                    root.limit = 50;
                     root.search();
                 }
 
@@ -316,7 +316,8 @@ export component MainWindow inherits Window {
                 editing-id : root.editing-id;
                 export-settings-open : root.export-settings-open || (root.detail-view==DetailView.export-preview && root.preview-return-view==DetailView.export-settings);
                 include-archived <=> root.include-archived;
-                offset <=> root.offset;
+                limit <=> root.limit;
+                load-more()=>{root.limit += 50; root.search();}
                 opened(arg0)=>{root.open-paper(arg0);}
                 operable : root.operable;
                 papers : root.papers;
