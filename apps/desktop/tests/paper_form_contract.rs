@@ -259,8 +259,9 @@ fn detail_presentation_and_links_are_built_only_from_valid_values() {
     };
     assert_eq!(
         detail::publication_summary(&form),
-        "Journal 30(2), pp. 1-10, 2024・学術誌論文・Press"
+        "Journal 30(2), pp. 1-10, 2024"
     );
+    assert_eq!(detail::publication_type(&form), "学術誌論文");
     assert_eq!(detail::publication_summary(&PaperForm::default()), "");
     assert_eq!(detail::authors_short(&form), "G F1, G F2, G F3 他2名");
     assert_eq!(detail::authors_full(&form).matches(", ").count(), 4);
