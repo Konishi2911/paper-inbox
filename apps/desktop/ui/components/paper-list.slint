@@ -30,7 +30,11 @@ export component PaperList inherits Rectangle {
     background: Theme.list-background;
     VerticalBox {
         padding:16px;spacing:10px;
-        Text {text:root.show-deleted ? "削除済み" : "すべての文献";font-size:20px;font-weight:700;color:Theme.text-primary;}
+        HorizontalBox {
+            padding:0px;spacing:8px;
+            Text {text:root.show-deleted ? "削除済み" : "すべての文献";font-size:20px;font-weight:700;color:Theme.text-primary;vertical-alignment:center;}
+            Text {text:root.total==root.papers.length ? root.total+"件" : root.papers.length+" / "+root.total+"件";color:Theme.text-secondary;vertical-alignment:center;}
+        }
         HorizontalBox {
             LineEdit {accessible-label:"文献を検索";enabled:root.operable;text<=>root.search-text;placeholder-text:"タイトル・著者・引用キーを検索";accepted=>{root.limit=50;root.search();}}
             Button {enabled:root.operable;text:"検索";clicked=>{root.limit=50;root.search();}}
@@ -61,6 +65,5 @@ export component PaperList inherits Rectangle {
                 if root.papers.length==0 : Text {text:root.search-text!="" ? "一致する文献がありません。検索語を変えてください。" : (root.show-deleted ? "削除済みの文献はありません。" : "文献がまだありません。左のメニューから登録しましょう。");wrap:word-wrap;color:Theme.text-secondary;}
             }
         }
-        Text {text:root.total==0 ? "0件" : root.papers.length+" / "+root.total+" 件";horizontal-alignment:center;color:Theme.text-secondary;}
     }
 }
