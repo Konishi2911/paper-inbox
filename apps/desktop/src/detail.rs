@@ -39,7 +39,14 @@ pub fn authors_short(form: &PaperForm) -> String {
     )
 }
 
-/// One line such as `Journal 30(2), pp. 1–10, 2024・学術誌論文・Publisher`.
+pub fn publication_type(form: &PaperForm) -> String {
+    PUBLICATION_TYPE_LABELS
+        .get(form.publication_type)
+        .unwrap_or(&"")
+        .to_string()
+}
+
+/// One line such as `Journal 30(2), pp. 1–10, 2024`.
 pub fn publication_summary(form: &PaperForm) -> String {
     let mut citation = Vec::new();
     let container = form.container_title.trim();
@@ -63,19 +70,7 @@ pub fn publication_summary(form: &PaperForm) -> String {
     if !form.year.trim().is_empty() {
         citation.push(form.year.trim().to_string());
     }
-    let mut parts = Vec::new();
-    if !citation.is_empty() {
-        parts.push(citation.join(", "));
-    }
-    if form.publication_type != 0
-        && let Some(label) = PUBLICATION_TYPE_LABELS.get(form.publication_type)
-    {
-        parts.push((*label).to_string());
-    }
-    if !form.publisher.trim().is_empty() {
-        parts.push(form.publisher.trim().to_string());
-    }
-    parts.join("・")
+    citation.join(", ")
 }
 
 /// A preview cut on a character boundary, and whether text was omitted.
