@@ -12,6 +12,8 @@ mod ui_metadata;
 
 pub mod lookup;
 
+pub mod pdf_identifier;
+
 pub mod detail;
 
 pub mod metadata_resolution;
