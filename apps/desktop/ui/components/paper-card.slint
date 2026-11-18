@@ -45,7 +45,7 @@ export component PaperCard inherits Rectangle {
         easing: ease-out;
     }
 
-    preferred-height: root.export-mode ? 108px : 72px;
+    preferred-height: root.export-mode ? 126px : 90px;
 
     // Content
     VerticalBox {
@@ -63,7 +63,12 @@ export component PaperCard inherits Rectangle {
                         ? "（タイトルなし）"
                         : root.title;
 
+                    // At most two lines in a fixed height. A height that follows the wrapped
+                    // text is not seen by the ScrollView, which then cannot reach the last cards.
                     wrap: word-wrap;
+                    overflow: elide;
+                    height: 38px;
+                    vertical-alignment: top;
                     font-weight: 600;
                     color: Theme.text-primary;
                 }
