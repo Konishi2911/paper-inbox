@@ -73,6 +73,9 @@ fn splitter_tracks_window_pointer_and_cards_fit_at_narrow_widths() {
         year: "2026".into(),
         citation_key: "Layout2026".into(),
         selected: false,
+        reading_status: 0,
+        favorite: false,
+        has_pdf: false,
     }])));
     for export in [false, true] {
         w.set_detail_view(if export {

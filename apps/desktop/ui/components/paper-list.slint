@@ -7,6 +7,9 @@ export component PaperList inherits Rectangle {
     in property <string> editing-id;
     in property <bool> export-settings-open;
     in-out property <bool> include-archived;
+    in-out property <bool> filter-unread;
+    in-out property <bool> filter-favorite;
+    in-out property <bool> filter-pdf;
     in-out property <int> limit: 50;
     callback load-more();
     callback opened(string);
@@ -27,6 +30,17 @@ export component PaperList inherits Rectangle {
         if (root.more-wanted()) { root.load-more(); }
     }
 
+    // Typing searches by itself shortly after the last keystroke; Enter and the button search at once.
+    typing := Timer {
+        interval: 300ms;
+        running: false;
+        triggered => {
+            self.running = false;
+            root.limit = 50;
+            root.search();
+        }
+    }
+
     background: Theme.list-background;
     VerticalBox {
         padding:16px;spacing:10px;
@@ -36,8 +50,15 @@ export component PaperList inherits Rectangle {
             Text {text:root.total==root.papers.length ? root.total+"件" : root.papers.length+" / "+root.total+"件";color:Theme.text-secondary;vertical-alignment:center;}
         }
         HorizontalBox {
-            LineEdit {accessible-label:"文献を検索";enabled:root.operable;text<=>root.search-text;placeholder-text:"タイトル・著者・引用キーを検索";accepted=>{root.limit=50;root.search();}}
+            LineEdit {accessible-label:"文献を検索";text<=>root.search-text;placeholder-text:"タイトル・著者・引用キーを検索";accepted=>{typing.running=false;root.limit=50;root.search();} edited=>{typing.running=false;typing.running=true;}}
             Button {enabled:root.operable;text:"検索";clicked=>{root.limit=50;root.search();}}
+        }
+        HorizontalBox {
+            padding:0px;spacing:6px;
+            Button {accessible-label:"未読だけ表示";text:"未読";primary:root.filter-unread;enabled:root.operable;clicked=>{root.filter-unread=!root.filter-unread;root.limit=50;root.search();}}
+            Button {accessible-label:"お気に入りだけ表示";text:"★";primary:root.filter-favorite;enabled:root.operable;clicked=>{root.filter-favorite=!root.filter-favorite;root.limit=50;root.search();}}
+            Button {accessible-label:"PDFありだけ表示";text:"PDFあり";primary:root.filter-pdf;enabled:root.operable;clicked=>{root.filter-pdf=!root.filter-pdf;root.limit=50;root.search();}}
+            Rectangle {horizontal-stretch:1;}
         }
         CheckBox {enabled:root.operable && !root.show-deleted;text:"アーカイブを含める";checked<=>root.include-archived;toggled=>{root.limit=50;root.search();}}
         ComboBox {enabled:root.operable;model:["追加日の新しい順","タイトル順","出版年の新しい順"];current-index<=>root.sort-index;selected(index)=>{root.limit=50;root.search();}}
@@ -53,6 +74,9 @@ export component PaperList inherits Rectangle {
                     authors: row.authors;
                     year: row.year;
                     citation-key: row.citation-key;
+                    reading-status: row.reading-status;
+                    favorite: row.favorite;
+                    has-pdf: row.has-pdf;
 
                     active: root.editing-id == row.id;
                     selected: row.selected;

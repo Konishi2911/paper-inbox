@@ -70,6 +70,9 @@ export component MainWindow inherits Window {
     in-out property <string> search-text;
     in-out property <bool> show-deleted:false;
     in-out property <bool> include-archived:false;
+    in-out property <bool> filter-unread:false;
+    in-out property <bool> filter-favorite:false;
+    in-out property <bool> filter-pdf:false;
     in-out property <int> sort-index:0;
     in-out property <int> limit:50;
     in-out property <int> total:0;
@@ -316,6 +319,9 @@ export component MainWindow inherits Window {
                 editing-id : root.editing-id;
                 export-settings-open : root.export-settings-open || (root.detail-view==DetailView.export-preview && root.preview-return-view==DetailView.export-settings);
                 include-archived <=> root.include-archived;
+                filter-unread <=> root.filter-unread;
+                filter-favorite <=> root.filter-favorite;
+                filter-pdf <=> root.filter-pdf;
                 limit <=> root.limit;
                 load-more()=>{root.limit += 50; root.search();}
                 opened(arg0)=>{root.open-paper(arg0);}

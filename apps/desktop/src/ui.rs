@@ -1441,6 +1441,9 @@ fn query_from_ui(ui: &MainWindow) -> PaperQuery {
         text: Some(ui.get_search_text().into()),
         filter: PaperFilter {
             include_archived: ui.get_show_deleted() || ui.get_include_archived(),
+            reading_status: ui.get_filter_unread().then_some(ReadingStatus::Unread),
+            favorite: ui.get_filter_favorite().then_some(true),
+            has_attachment: ui.get_filter_pdf().then_some(true),
             deletion: if ui.get_show_deleted() {
                 DeletionFilter::Deleted
             } else {
@@ -1634,6 +1637,13 @@ fn apply_reply(ui: &MainWindow, reply: Reply) {
                 id: p.id.to_string().into(),
                 title: p.title.unwrap_or_default().into(),
                 citation_key: p.citation_key.as_str().into(),
+                reading_status: match p.reading_status {
+                    ReadingStatus::Unread => 0,
+                    ReadingStatus::Reading => 1,
+                    ReadingStatus::Read => 2,
+                },
+                favorite: p.favorite,
+                has_pdf: p.has_attachment,
                 year: p.year.map(|y| y.to_string()).unwrap_or_default().into(),
                 authors: p
                     .authors

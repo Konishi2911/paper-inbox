@@ -26,6 +26,9 @@ fn the_paper_list_scrolls_with_the_wheel() {
             year: "2026".into(),
             citation_key: format!("Key{i}").into(),
             selected: false,
+            reading_status: 0,
+            favorite: false,
+            has_pdf: false,
         })
         .collect();
     w.set_papers(ModelRc::new(VecModel::from(rows)));
