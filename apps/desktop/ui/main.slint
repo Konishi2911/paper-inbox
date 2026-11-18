@@ -225,6 +225,15 @@ export component MainWindow inherits Window {
         && !root.editor-deleted
         && !root.load-required;
 
+    // A file is being dragged over the window (set from the OS drag events in Rust).
+    in-out property <bool> drop-hover:false;
+    // A dropped PDF is attached to the paper on screen only when the attach button would work.
+    out property <bool> can-drop-attach:
+        root.detail-view == DetailView.paper-detail
+        && root.editable
+        && !root.dirty;
+    callback file-dropped(string);
+
     in-out property <bool> confirm-discard:false;
     in-out property <bool> confirm-delete:false;
     property <NavigationAction> pending-action;
@@ -610,6 +619,28 @@ export component MainWindow inherits Window {
         HorizontalBox {
             padding:10px;
             Text {text:root.status;wrap:word-wrap;color:Theme.text-muted;}
+        }
+    }
+    // Shown only while a file is dragged over the window. It takes no input of its own.
+    if root.drop-hover : Rectangle {
+        x:0px;y:0px;width:parent.width;height:parent.height;
+        background:Theme.overlay;
+        Rectangle {
+            x:16px;y:16px;width:parent.width - 32px;height:parent.height - 32px;
+            border-radius:12px;
+            border-width:3px;
+            border-color:root.can-drop-attach ? Theme.accent : Theme.text-muted;
+            Text {
+                x:(parent.width - self.width) / 2;
+                y:(parent.height - self.height) / 2;
+                horizontal-alignment:center;
+                font-size:20px;
+                font-weight:700;
+                color:Theme.on-accent;
+                text:root.can-drop-attach
+                    ? "ここにドロップして、開いている文献にPDFを添付"
+                    : "ここでは添付できません（添付する文献を開いてください）";
+            }
         }
     }
     if root.about-open : Rectangle {

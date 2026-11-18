@@ -948,6 +948,43 @@ pub fn attach(ui: &MainWindow, config: Config) -> Controller {
         }),
     )
 }
+/// Accepts a dropped file only when its extension says PDF; the content is checked again
+/// when it is attached, so a renamed file is still refused there.
+pub fn dropped_pdf(path: &str) -> Result<PathBuf, &'static str> {
+    let path = PathBuf::from(path);
+    let is_pdf = path
+        .extension()
+        .and_then(|e| e.to_str())
+        .is_some_and(|e| e.eq_ignore_ascii_case("pdf"));
+    if is_pdf {
+        Ok(path)
+    } else {
+        Err("PDFファイル（.pdf）だけドロップできます。")
+    }
+}
+
+/// Forwards the operating system's file-drag events to the window. Slint has no API for
+/// files dragged in from outside, so this uses its (unstable) winit hook; with a backend that
+/// is not winit, such as the one in tests, it does nothing. Windows and macOS deliver these
+/// events; Wayland does not in this winit version, so the attach button stays the way there.
+fn install_file_drop(ui: &MainWindow) {
+    use slint::winit_030::{EventResult, WinitWindowAccessor, winit::event::WindowEvent};
+    let weak = ui.as_weak();
+    ui.window().on_winit_window_event(move |_, event| {
+        if let Some(ui) = weak.upgrade() {
+            match event {
+                WindowEvent::HoveredFile(_) => ui.set_drop_hover(true),
+                WindowEvent::HoveredFileCancelled => ui.set_drop_hover(false),
+                WindowEvent::DroppedFile(path) => {
+                    // One event is sent per file; each is handled on its own.
+                    ui.invoke_file_dropped(path.to_string_lossy().as_ref().into());
+                }
+                _ => {}
+            }
+        }
+        EventResult::Propagate
+    });
+}
 /// Chooses the PDF to attach. It runs on the UI thread and is replaced in tests.
 pub type FilePicker = Box<dyn Fn() -> Option<PathBuf>>;
 fn choose_pdf() -> Option<PathBuf> {
@@ -1163,6 +1200,27 @@ pub fn attach_with_providers(
             }
         }
     });
+    let tx = sender.clone();
+    let weak = ui.as_weak();
+    ui.on_file_dropped(move |path| {
+        if let Some(ui) = weak.upgrade() {
+            ui.set_drop_hover(false);
+            match dropped_pdf(&path) {
+                Err(message) => ui.set_status(message.into()),
+                Ok(_) if ui.get_busy() => {
+                    ui.set_status("処理中のためドロップを受け付けられません。".into());
+                }
+                Ok(path) if ui.get_can_drop_attach() => {
+                    dispatch(&ui, &tx, Request::AttachPdf(path));
+                }
+                Ok(_) => ui.set_status(
+                    "PDFを添付する文献を開き、編集中の内容を保存してからドロップしてください。"
+                        .into(),
+                ),
+            }
+        }
+    });
+    install_file_drop(ui);
     let tx = sender.clone();
     let weak = ui.as_weak();
     ui.on_open_attachment(move |id| {
