@@ -146,3 +146,13 @@ pub struct TagCount {
     pub tag: crate::model::Tag,
     pub paper_count: usize,
 }
+
+/// A saved paper that carries a DOI or arXiv ID, found by `find_by_identifiers`.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct IdentifierMatch {
+    pub paper_id: PaperId,
+    pub citation_key: String,
+    pub title: Option<String>,
+    /// The paper is in the trash. It still keeps its identifiers and its citation key.
+    pub deleted: bool,
+}

@@ -13,6 +13,7 @@ use std::{
 mod attachments;
 mod blob;
 mod candidates;
+mod identifiers;
 mod sql;
 mod tags;
 mod versions;
@@ -745,6 +746,13 @@ impl PaperRepository for SqliteLibrary {
     }
     fn paper_tags(&self, paper_id: PaperId) -> Result<Vec<Tag>> {
         tags::of_paper(&*self.lock()?, paper_id)
+    }
+    fn find_by_identifiers(
+        &self,
+        doi: Option<&Doi>,
+        arxiv: Option<&ArxivId>,
+    ) -> Result<Vec<IdentifierMatch>> {
+        identifiers::find(&*self.lock()?, doi, arxiv)
     }
     fn attachments(&self, paper_id: PaperId) -> Result<Vec<Attachment>> {
         let db = self.lock()?;

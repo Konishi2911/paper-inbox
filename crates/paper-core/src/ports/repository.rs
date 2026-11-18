@@ -1,9 +1,9 @@
 use crate::model::{
-    Attachment, EventId, FieldRevision, FieldTarget, Paper, PaperId, PaperVersion, SyncEvent, Tag,
-    UpdateProposal,
+    ArxivId, Attachment, Doi, EventId, FieldRevision, FieldTarget, Paper, PaperId, PaperVersion,
+    SyncEvent, Tag, UpdateProposal,
 };
 
-use crate::query::{PaperQuery, SearchResult, TagCount};
+use crate::query::{IdentifierMatch, PaperQuery, SearchResult, TagCount};
 
 use crate::command::{CommitResult, LibraryCommand};
 
@@ -24,6 +24,15 @@ pub trait PaperRepository: Send + Sync {
 
     /// The tags assigned to the paper, by name. Assignments are kept for deleted papers.
     fn paper_tags(&self, paper_id: PaperId) -> Result<Vec<Tag>, Self::Error>;
+
+    /// Papers whose bibliography, or any of whose versions, has this DOI or arXiv ID. An arXiv ID
+    /// matches with or without a version suffix (`2401.01234` finds `2401.01234v2`). Papers in the
+    /// trash are included, marked as deleted; live ones come first.
+    fn find_by_identifiers(
+        &self,
+        doi: Option<&Doi>,
+        arxiv: Option<&ArxivId>,
+    ) -> Result<Vec<IdentifierMatch>, Self::Error>;
 
     fn revisions(&self, target: &FieldTarget) -> Result<Vec<FieldRevision>, Self::Error>;
 

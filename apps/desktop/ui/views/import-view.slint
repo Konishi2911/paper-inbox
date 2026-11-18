@@ -1,6 +1,6 @@
 import { VerticalBox, HorizontalBox, LineEdit, TextEdit, ComboBox, CheckBox, ScrollView } from "std-widgets.slint";
 import { Theme } from "../theme.slint";
-import { LookupField, TagRow } from "../types.slint";
+import { DuplicateRow, LookupField, TagRow } from "../types.slint";
 import { AppButton } from "../components/app-button.slint";
 import { TagEditor } from "../components/tag-editor.slint";
 
@@ -28,6 +28,8 @@ export component ImportView inherits VerticalBox {
     in property <bool> lookup-new;
     in property <string> lookup-pdf-name;
     callback pdf-clear();
+    in property <[DuplicateRow]> lookup-duplicates;
+    callback open-duplicate(string);
     in property <[string]> lookup-candidates;
     callback pick-pdf-requested();
     in property <[TagRow]> lookup-tags;
@@ -108,6 +110,45 @@ export component ImportView inherits VerticalBox {
         }
     }
 
+    // The same DOI or arXiv ID is already in the library. Registering stays possible;
+    // the warning only makes the choice visible and offers the existing paper.
+    if root.lookup-new && root.lookup-has-result && root.lookup-duplicates.length > 0 : Rectangle {
+        background: Theme.diff-current;
+        border-radius: 6px;
+        border-width: 1px;
+        border-color: Theme.warning;
+        VerticalBox {
+            padding: 12px;
+            spacing: 6px;
+            Text {
+                text: "同じ DOI / arXiv ID の文献がすでに登録されています";
+                font-weight: 700;
+                color: Theme.warning;
+                wrap: word-wrap;
+            }
+            for duplicate in root.lookup-duplicates : HorizontalBox {
+                padding: 0px;
+                spacing: 8px;
+                Text {
+                    text: duplicate.label + (duplicate.deleted ? "（削除済み。開くと復元できます）" : "");
+                    horizontal-stretch: 1;
+                    vertical-alignment: center;
+                    wrap: word-wrap;
+                    color: Theme.text-primary;
+                }
+                AppButton {
+                    accessible-label: duplicate.label + "を開く";
+                    text: "既存を開く";
+                    kind: "outline";
+                    small: true;
+                    enabled: root.interactive;
+                    clicked => {
+                        root.open-duplicate(duplicate.id);
+                    }
+                }
+            }
+        }
+    }
     // Other identifiers found in the PDF; choosing one only fills the field.
     if root.lookup-new && root.lookup-candidates.length > 1 : HorizontalBox {
         padding: 0px;
@@ -268,7 +309,7 @@ export component ImportView inherits VerticalBox {
         padding: 0px;
         spacing: 8px;
         AppButton {
-            text: root.lookup-new ? "登録" : "更新候補として保存";
+            text: root.lookup-new ? (root.lookup-duplicates.length > 0 ? "重複を承知で登録" : "登録") : "更新候補として保存";
             primary: true;
             enabled: root.can-confirm;
             clicked => {

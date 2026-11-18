@@ -24,6 +24,9 @@ export struct AuthorRow { kind:int, given:string, name:string, orcid:string }
 
 export struct PaperRow { selected:bool, id:string, title:string, authors:string, year:string, citation-key:string, reading-status:int, favorite:bool, has-pdf:bool }
 
+// A saved paper that has the same DOI or arXiv ID as what is about to be registered.
+export struct DuplicateRow { id:string, label:string, deleted:bool }
+
 export struct AttachmentRow { id:string, name:string, details:string, missing:bool }
 
 // A tag in the sidebar (count, selected as a filter) or on a paper (count 0, not selected).

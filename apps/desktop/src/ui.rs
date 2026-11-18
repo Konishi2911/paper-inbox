@@ -87,6 +87,8 @@ struct Reply {
     /// Identifier found in that PDF, put into the identifier field; and every candidate found.
     lookup_identifier: Option<String>,
     lookup_candidates: Option<Vec<String>>,
+    /// Saved papers with the same DOI or arXiv ID as the fetched result (empty when none).
+    lookup_duplicates: Option<Vec<IdentifierMatch>>,
     lookup_preview: Option<(LookupPreview, String)>,
     key_suggestion: Option<String>,
     form_error: Option<String>,
@@ -294,6 +296,13 @@ impl Worker {
                             String::new()
                         };
                         let details = crate::lookup::preview(&candidate);
+                        // Only a new registration can duplicate a paper; updating one cannot.
+                        let duplicates = if self.lookup_new {
+                            app.duplicates_of(&candidate.bibliography)
+                                .unwrap_or_default()
+                        } else {
+                            vec![]
+                        };
                         self.pending_lookup = Some(PendingLookup {
                             candidate,
                             paper_id: PaperId::new(),
@@ -301,6 +310,7 @@ impl Worker {
                         });
                         Reply {
                             lookup_preview: Some((details, key)),
+                            lookup_duplicates: Some(duplicates),
                             message: "取得結果を確認してください。まだ保存していません。".into(),
                             ..Default::default()
                         }
@@ -1811,6 +1821,7 @@ fn apply_reply(ui: &MainWindow, reply: Reply) {
         ui.set_lookup_tags(ModelRc::default());
         ui.set_lookup_pdf("".into());
         ui.set_lookup_candidates(ModelRc::default());
+        ui.set_lookup_duplicates(ModelRc::default());
         ui.set_lookup_pdf_name("".into());
         ui.set_lookup_has_result(false);
         ui.set_lookup_dirty(false);
@@ -1819,6 +1830,21 @@ fn apply_reply(ui: &MainWindow, reply: Reply) {
         ui.set_lookup_pdf(path.into());
         ui.set_lookup_pdf_name(name.into());
         ui.set_lookup_dirty(true);
+    }
+    if let Some(duplicates) = reply.lookup_duplicates {
+        let rows: Vec<crate::DuplicateRow> = duplicates
+            .into_iter()
+            .map(|d| crate::DuplicateRow {
+                id: d.paper_id.to_string().into(),
+                label: match d.title {
+                    Some(title) if !title.is_empty() => format!("{}  {}", d.citation_key, title),
+                    _ => d.citation_key,
+                }
+                .into(),
+                deleted: d.deleted,
+            })
+            .collect();
+        ui.set_lookup_duplicates(ModelRc::new(VecModel::from(rows)));
     }
     if let Some(candidates) = reply.lookup_candidates {
         let rows: Vec<slint::SharedString> = candidates.into_iter().map(Into::into).collect();
@@ -1831,6 +1857,7 @@ fn apply_reply(ui: &MainWindow, reply: Reply) {
     if reply.lookup_open == Some(false) {
         ui.set_lookup_tags(ModelRc::default());
         ui.set_lookup_candidates(ModelRc::default());
+        ui.set_lookup_duplicates(ModelRc::default());
         ui.set_lookup_pdf("".into());
         ui.set_lookup_pdf_name("".into());
         ui.set_lookup_dirty(false);

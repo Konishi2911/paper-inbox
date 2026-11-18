@@ -1,6 +1,7 @@
 use crate::application::{AppError, Application, PaperForm, tag_name_message};
 use paper_core::{
-    command::LibraryCommand, model::*, ports::PaperRepository, service::suggest_citation_key,
+    command::LibraryCommand, model::*, ports::PaperRepository, query::IdentifierMatch,
+    service::suggest_citation_key,
 };
 
 /// Personal values entered on the unified add screen. They are not
@@ -35,6 +36,12 @@ impl Application {
         exclude: Option<PaperId>,
     ) -> Result<String, AppError> {
         Ok(suggest_citation_key(b, &self.store.citation_keys(exclude)?).to_string())
+    }
+    /// Saved papers (deleted ones last) that have the same DOI or arXiv ID as this bibliography.
+    pub fn duplicates_of(&self, b: &Bibliography) -> Result<Vec<IdentifierMatch>, AppError> {
+        Ok(self
+            .store
+            .find_by_identifiers(b.identifiers.doi.as_ref(), b.identifiers.arxiv_id.as_ref())?)
     }
     /// Registers the fetched candidate and the personal values in one transaction.
     pub fn register_lookup(

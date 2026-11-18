@@ -13,10 +13,10 @@ import { EmptyState } from "components/empty-state.slint";
 import { Splitter } from "components/splitter.slint";
 import { PaperDetail } from "components/paper-detail.slint";
 import { PaperEditor } from "components/paper-editor.slint";
-import { AttachmentRow, TagRow, DiffInputField, DiffResolution, DiffFilter, DiffBulkAction, DetailView, AuthorAction, NavigationAction, AuthorRow, PaperRow, LookupField, LinkTarget, CandidateRow, ProposalRow, VersionRow } from "types.slint";
+import { AttachmentRow, DuplicateRow, TagRow, DiffInputField, DiffResolution, DiffFilter, DiffBulkAction, DetailView, AuthorAction, NavigationAction, AuthorRow, PaperRow, LookupField, LinkTarget, CandidateRow, ProposalRow, VersionRow } from "types.slint";
 import { AppButton } from "components/app-button.slint";
 
-export { AttachmentRow, TagRow, DiffInputField, DiffResolution, DiffFilter, DiffBulkAction, DetailView, AuthorAction, NavigationAction, AuthorRow, PaperRow, LookupField, LinkTarget, CandidateRow, ProposalRow, VersionRow } from "types.slint";
+export { AttachmentRow, DuplicateRow, TagRow, DiffInputField, DiffResolution, DiffFilter, DiffBulkAction, DetailView, AuthorAction, NavigationAction, AuthorRow, PaperRow, LookupField, LinkTarget, CandidateRow, ProposalRow, VersionRow } from "types.slint";
 
 export component MainWindow inherits Window {
     title:"Paper Inbox";
@@ -246,6 +246,8 @@ export component MainWindow inherits Window {
     in-out property <string> lookup-pdf;
     in-out property <string> lookup-pdf-name;
     // Identifiers found in that PDF, offered below the identifier field.
+    // Saved papers with the same DOI or arXiv ID as the fetched result.
+    in-out property <[DuplicateRow]> lookup-duplicates;
     in-out property <[string]> lookup-candidates;
     callback pick-lookup-pdf();
     callback file-dropped(string);
@@ -445,6 +447,8 @@ export component MainWindow inherits Window {
                         lookup-favorite <=> root.lookup-favorite;
                         lookup-new : root.lookup-new;
                         lookup-pdf-name : root.lookup-pdf-name;
+                        lookup-duplicates : root.lookup-duplicates;
+                        open-duplicate(id) => { root.open-paper(id); }
                         lookup-candidates : root.lookup-candidates;
                         pick-pdf-requested => { root.pick-lookup-pdf(); }
                         pdf-clear => { root.lookup-pdf = ""; root.lookup-pdf-name = ""; }
