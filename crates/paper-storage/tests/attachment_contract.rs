@@ -435,12 +435,12 @@ fn a_version_4_database_is_upgraded_in_place_and_newer_ones_are_refused() {
         .unwrap()
         .pragma_query_value(None, "user_version", |r| r.get(0))
         .unwrap();
-    assert_eq!(version, 5);
+    assert_eq!(version, 6);
     drop(store);
 
     rusqlite::Connection::open(sandbox.database())
         .unwrap()
-        .pragma_update(None, "user_version", 6)
+        .pragma_update(None, "user_version", 7)
         .unwrap();
     assert!(SqliteLibrary::open_local(sandbox.database()).is_err());
 }

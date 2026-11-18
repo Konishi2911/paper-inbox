@@ -472,19 +472,6 @@ fn invalid_or_unsupported_commands_leave_no_partial_data() {
     };
     assert!(store.commit_at(bad, now(1)).is_err());
     assert_eq!(db.counts(), counts);
-    assert!(matches!(
-        store.commit_at(
-            LibraryCommand::CreateTag {
-                tag: Tag {
-                    id: TagId::new(),
-                    name: "tag".into()
-                }
-            },
-            now(1)
-        ),
-        Err(StorageError::Unsupported(_))
-    ));
-    assert_eq!(db.counts(), counts);
     let tagged = Paper::from_parts(
         PaperId::new(),
         CitationKey::parse("tagged").unwrap(),
@@ -777,7 +764,7 @@ fn local_identity_persists_and_v1_upgrade_keeps_data() {
         .raw()
         .pragma_query_value(None, "user_version", |r| r.get(0))
         .unwrap();
-    assert_eq!(version, 5);
+    assert_eq!(version, 6);
     drop(reopened);
     db.raw().pragma_update(None, "user_version", 99).unwrap();
     assert!(SqliteLibrary::open_local(&db.path).is_err());

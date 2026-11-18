@@ -139,3 +139,10 @@ pub struct MetadataReview {
     pub proposals: Vec<MetadataProposalDetail>,
     pub versions: Vec<crate::model::PaperVersion>,
 }
+
+/// A tag with the number of papers that carry it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct TagCount {
+    pub tag: crate::model::Tag,
+    pub paper_count: usize,
+}

@@ -27,7 +27,10 @@ pub use bibliography::{
     Bibliography, CandidateStatus, Identifiers, MetadataCandidate, StoredMetadataCandidate,
 };
 
-pub use user_metadata::{Collection, ReadingStatus, Tag, UserMetadata};
+pub use user_metadata::{
+    Collection, MAX_TAG_NAME_CHARS, ReadingStatus, Tag, TagNameError, UserMetadata,
+    normalize_tag_name,
+};
 
 pub use paper::{Paper, PaperError, PaperVersion};
 

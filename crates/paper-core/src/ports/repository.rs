@@ -1,9 +1,9 @@
 use crate::model::{
-    Attachment, EventId, FieldRevision, FieldTarget, Paper, PaperId, PaperVersion, SyncEvent,
+    Attachment, EventId, FieldRevision, FieldTarget, Paper, PaperId, PaperVersion, SyncEvent, Tag,
     UpdateProposal,
 };
 
-use crate::query::{PaperQuery, SearchResult};
+use crate::query::{PaperQuery, SearchResult, TagCount};
 
 use crate::command::{CommitResult, LibraryCommand};
 
@@ -17,6 +17,13 @@ pub trait PaperRepository: Send + Sync {
     fn versions(&self, paper_id: PaperId) -> Result<Vec<PaperVersion>, Self::Error>;
 
     fn attachments(&self, paper_id: PaperId) -> Result<Vec<Attachment>, Self::Error>;
+
+    /// Every tag by name, with how many papers carry it. Deleted papers are not counted and
+    /// archived ones only when asked for. Tags nobody carries are included with a count of 0.
+    fn tags(&self, include_archived: bool) -> Result<Vec<TagCount>, Self::Error>;
+
+    /// The tags assigned to the paper, by name. Assignments are kept for deleted papers.
+    fn paper_tags(&self, paper_id: PaperId) -> Result<Vec<Tag>, Self::Error>;
 
     fn revisions(&self, target: &FieldTarget) -> Result<Vec<FieldRevision>, Self::Error>;
 
