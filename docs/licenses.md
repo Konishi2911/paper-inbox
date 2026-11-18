@@ -23,6 +23,15 @@
 
 [依存クレートのライセンス宣言](dependency-licenses.md)に、Linux 向け Cargo 依存のバージョンと宣言を記録しています。ライセンスは MIT / Apache-2.0 以外も含み、Slint が内包する第三者素材にもそれぞれの条件があります。
 
+
+追加した主な依存（2026-11-19 の更新で一覧へ反映）:
+
+- `lopdf`（MIT）: 追加画面でPDFから DOI・arXiv ID を探すために使います。PDFの読み取りだけで、ファイルを書き換えません。依存として `aes` / `cbc` / `md-5` / `sha2`（RustCrypto、MIT OR Apache-2.0）、`weezl`、`rangemap`、`stringprep` なども入ります。
+- `rfd`（MIT）: PDF添付のファイル選択に使います。
+- BSD-3-Clause を含むもの: `alloc-no-stdlib`、`alloc-stdlib`、`brotli-decompressor`（BSD-3-Clause/MIT）、`encoding_rs`（`(Apache-2.0 OR MIT) AND BSD-3-Clause`）。バイナリを配布する際は、BSD-3-Clause の著作権表示・条件・免責を同梱物に含めてください。
+- Unicode-3.0 を含むもの: `unicode-normalization`、`unicode-properties`（`(MIT OR Apache-2.0) AND Unicode-3.0`）。配布時は Unicode のライセンス通知を含めてください。
+- 一覧は外部の依存だけを載せ、本プロジェクトのクレート（`paper-*`）は含みません。
+
 依存一覧は配布物のライセンス本文・著作権通知を集めたものではありません。バイナリ配布を整備する際は、対象 OS・有効機能・同梱素材に対応する第三者ライセンス本文・通知を一緒に用意してください。現時点では配布パッケージは提供していません。
 
 Crossref / arXiv から取得する書誌情報・概要・リンク先の文書に、本プロジェクトのライセンスを適用するものではありません。API の仕様・利用条件は[取得仕様の公式参照先](metadata-lookup-and-keys.md#providers-and-mapping)を参照してください。
