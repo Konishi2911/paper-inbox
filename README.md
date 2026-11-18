@@ -2,9 +2,18 @@
 
 ローカルの SQLite に文献を保存する、Rust + Slint 製の文献管理アプリです。DOI / arXiv ID からの書誌情報取得、引用キーの提案、手動編集、更新候補の承認、BibTeX 出力を行えます。
 
-現在は開発中です。動作確認は Ubuntu 22.04 / WSL2 + WSLg、Rust 1.100.0 で行っています。Windows・macOS 向けの保存先には対応していますが、各 OS の動作検証や配布パッケージの整備はまだ行っていません。
+現在は v0.1.0 に向けて整備中です。Windows・macOS 向けに署名なしのバイナリを配布する予定で、CI での確認は [`.github/workflows`](.github/workflows) にあります。開発時の動作確認は Ubuntu 22.04 / WSL2 + WSLg と Windows で行っています。macOS での操作確認は配布前に行います。
 
-## 起動
+## ダウンロードと初回起動
+
+[Releases](https://github.com/Konishi2911/paper-inbox/releases) から、お使いの OS 向けの zip を展開し、`paper-desktop`（Windows は `paper-desktop.exe`）を起動します。インストーラーはなく、削除は展開したフォルダーとデータ（下記「データの保存」）を消すだけです。
+
+実行ファイルには署名がないため、初回は OS の警告が出ます。配布元を確認したうえで次のとおり進めてください。
+
+- **Windows**: 「Windows によってPCが保護されました」と出たら、「詳細情報」→「実行」を選びます。
+- **macOS**: 「開発元を確認できません」と出たら、Finder で実行ファイルを右クリックして「開く」を選びます。ブロックされた場合は「システム設定」→「プライバシーとセキュリティ」の「このまま開く」を使います。端末から `xattr -d com.apple.quarantine paper-desktop` でも解除できます。
+
+## ソースからの起動
 
 Rust / Cargo と、Slint の描画バックエンドに必要なビルド・GUI 環境が必要です。WSL2 では WSLg を利用してください。依存バージョンは [Cargo.lock](Cargo.lock) に固定しています。
 
