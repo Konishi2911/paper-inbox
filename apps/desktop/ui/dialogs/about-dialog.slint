@@ -1,5 +1,6 @@
-import { VerticalBox, Button, AboutSlint } from "std-widgets.slint";
+import { VerticalBox, AboutSlint } from "std-widgets.slint";
 import { Theme } from "../theme.slint";
+import { AppButton } from "../components/app-button.slint";
 
 export component AboutDialog inherits FocusScope {
     callback close();
@@ -17,7 +18,7 @@ export component AboutDialog inherits FocusScope {
             Text {text:"ローカルで管理する文献ライブラリ";wrap:word-wrap;}
             Text {text:"独自コード: MIT OR Apache-2.0\nCopyright © 2026 Paper Inbox contributors";wrap:word-wrap;font-size:13px;}
             AboutSlint {height:110px;}
-            Button {text:"閉じる";clicked=>{root.close();}}
+            AppButton {kind:"outline";text:"閉じる";clicked=>{root.close();}}
         }
     }
 }

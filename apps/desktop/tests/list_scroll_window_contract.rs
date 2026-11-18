@@ -3,7 +3,7 @@ use paper_desktop::{MainWindow, PaperRow};
 use slint::{ComponentHandle, ModelRc, VecModel, platform::WindowEvent};
 
 fn first_card_y(w: &MainWindow) -> f32 {
-    ElementHandle::find_by_accessible_label(w, "文献を開く: Paper 3")
+    ElementHandle::find_by_accessible_label(w, "文献を開く: Paper 2")
         .next()
         .expect("card")
         .absolute_position()
@@ -32,7 +32,7 @@ fn the_paper_list_scrolls_with_the_wheel() {
         })
         .collect();
     w.set_papers(ModelRc::new(VecModel::from(rows)));
-    let _ = ElementHandle::find_by_accessible_label(&w, "文献を開く: Paper 3").count();
+    let _ = ElementHandle::find_by_accessible_label(&w, "文献を開く: Paper 2").count();
     w.set_total(120);
     let asked = std::rc::Rc::new(std::cell::Cell::new(0));
     let counter = asked.clone();

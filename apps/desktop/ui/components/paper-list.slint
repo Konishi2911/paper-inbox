@@ -1,7 +1,8 @@
-import { VerticalBox, HorizontalBox, Button, LineEdit, TextEdit, ComboBox, CheckBox, ScrollView } from "std-widgets.slint";
+import { VerticalBox, HorizontalBox, LineEdit, TextEdit, ComboBox, CheckBox, ScrollView } from "std-widgets.slint";
 import { PaperCard } from "paper-card.slint";
 import { Theme } from "../theme.slint";
 import { PaperRow } from "../types.slint";
+import { AppButton, Chip } from "app-button.slint";
 
 export component PaperList inherits Rectangle {
     in property <string> editing-id;
@@ -52,13 +53,13 @@ export component PaperList inherits Rectangle {
         }
         HorizontalBox {
             LineEdit {accessible-label:"文献を検索";text<=>root.search-text;placeholder-text:"タイトル・著者・引用キーを検索";accepted=>{typing.running=false;root.limit=50;root.search();} edited=>{typing.running=false;typing.running=true;}}
-            Button {enabled:root.operable;text:"検索";clicked=>{root.limit=50;root.search();}}
+            AppButton {enabled:root.operable;text:"検索";clicked=>{root.limit=50;root.search();}}
         }
         HorizontalBox {
             padding:0px;spacing:6px;
-            Button {accessible-label:"未読だけ表示";text:"未読";primary:root.filter-unread;enabled:root.operable;clicked=>{root.filter-unread=!root.filter-unread;root.limit=50;root.search();}}
-            Button {accessible-label:"お気に入りだけ表示";text:"★";primary:root.filter-favorite;enabled:root.operable;clicked=>{root.filter-favorite=!root.filter-favorite;root.limit=50;root.search();}}
-            Button {accessible-label:"PDFありだけ表示";text:"PDFあり";primary:root.filter-pdf;enabled:root.operable;clicked=>{root.filter-pdf=!root.filter-pdf;root.limit=50;root.search();}}
+            Chip {accessible-label:"未読だけ表示";text:"未読";on:root.filter-unread;enabled:root.operable;clicked=>{root.filter-unread=!root.filter-unread;root.limit=50;root.search();}}
+            Chip {accessible-label:"お気に入りだけ表示";text:"★ お気に入り";on:root.filter-favorite;enabled:root.operable;clicked=>{root.filter-favorite=!root.filter-favorite;root.limit=50;root.search();}}
+            Chip {accessible-label:"PDFありだけ表示";text:"PDFあり";on:root.filter-pdf;enabled:root.operable;clicked=>{root.filter-pdf=!root.filter-pdf;root.limit=50;root.search();}}
             Rectangle {horizontal-stretch:1;}
         }
         CheckBox {enabled:root.operable && !root.show-deleted;text:"アーカイブを含める";checked<=>root.include-archived;toggled=>{root.limit=50;root.search();}}

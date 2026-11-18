@@ -1,6 +1,7 @@
-import { VerticalBox, HorizontalBox, Button, LineEdit, ComboBox, TextEdit } from "std-widgets.slint";
+import { VerticalBox, HorizontalBox, LineEdit, ComboBox, TextEdit } from "std-widgets.slint";
 import { Theme } from "../theme.slint";
 import { AuthorAction, AuthorRow } from "../types.slint";
+import { AppButton } from "app-button.slint";
 
 // One author per line. Kind and ORCID are rarely changed, so they open on demand.
 component AuthorLine inherits VerticalBox {
@@ -44,35 +45,43 @@ component AuthorLine inherits VerticalBox {
                 root.author-edit(root.index, 1, text);
             }
         }
-        Button {
+        AppButton {
             accessible-label: "著者" + (root.index + 1) + "の詳細";
             text: root.details-open ? "▴" : "⋯";
+            kind: "ghost";
+            small: true;
             width: 32px;
             clicked => {
                 root.details-open = !root.details-open;
             }
         }
-        Button {
+        AppButton {
             accessible-label: "著者" + (root.index + 1) + "を上へ";
             text: "↑";
+            kind: "ghost";
+            small: true;
             width: 32px;
             enabled: root.editable && root.index > 0;
             clicked => {
                 root.author-action(AuthorAction.move-up, root.index);
             }
         }
-        Button {
+        AppButton {
             accessible-label: "著者" + (root.index + 1) + "を下へ";
             text: "↓";
+            kind: "ghost";
+            small: true;
             width: 32px;
             enabled: root.editable && root.index + 1 < root.count;
             clicked => {
                 root.author-action(AuthorAction.move-down, root.index);
             }
         }
-        Button {
+        AppButton {
             accessible-label: "著者" + (root.index + 1) + "を削除";
             text: "×";
+            kind: "ghost";
+            small: true;
             width: 32px;
             enabled: root.editable;
             clicked => {
@@ -138,14 +147,14 @@ export component AuthorEditor inherits VerticalBox {
     HorizontalBox {
         padding: 0px;
         spacing: 6px;
-        Button {
+        AppButton {
             enabled: root.editable;
             text: "著者を追加";
             clicked => {
                 root.author-action(AuthorAction.add, 0);
             }
         }
-        Button {
+        AppButton {
             enabled: root.editable;
             text: root.bulk-open ? "まとめて入力を閉じる" : "まとめて入力";
             clicked => {
@@ -173,7 +182,7 @@ export component AuthorEditor inherits VerticalBox {
         }
         HorizontalBox {
             padding: 0px;
-            Button {
+            AppButton {
                 text: "一覧に追加";
                 enabled: root.editable && root.bulk-text != "";
                 clicked => {

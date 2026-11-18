@@ -1,8 +1,9 @@
 import { ConfirmDialog } from "../dialogs/confirm-dialog.slint";
-import { VerticalBox, HorizontalBox, Button, LineEdit, TextEdit, ComboBox, CheckBox, ScrollView } from "std-widgets.slint";
+import { VerticalBox, HorizontalBox, LineEdit, TextEdit, ComboBox, CheckBox, ScrollView } from "std-widgets.slint";
 import { AuthorEditor } from "author-editor.slint";
 import { Theme } from "../theme.slint";
 import { AuthorAction, AuthorRow } from "../types.slint";
+import { AppButton } from "app-button.slint";
 
 // Label on the left, input on the right: halves the form height and keeps
 // labels in one column so the eye moves straight down.
@@ -114,21 +115,21 @@ export component PaperEditor inherits VerticalBox {
                     horizontal-stretch: 1;
                 }
                 // New papers can switch to identifier lookup; unsaved input is confirmed by the parent.
-                if !root.saved-paper : Button {
+                if !root.saved-paper : AppButton {
                     text: "DOI / arXiv から取得に切り替え";
                     enabled: root.operable;
                     clicked => {
                         root.lookup-requested();
                     }
                 }
-                if root.saved-paper : Button {
+                if root.saved-paper : AppButton {
                     text: "候補・版を確認";
                     enabled: root.editable;
                     clicked => {
                         root.metadata-requested();
                     }
                 }
-                if root.saved-paper : Button {
+                if root.saved-paper : AppButton {
                     text: "再読込";
                     enabled: root.operable;
                     clicked => {
@@ -325,7 +326,7 @@ export component PaperEditor inherits VerticalBox {
                                 root.dirty = true;
                             }
                         }
-                        Button {
+                        AppButton {
                             text: "引用キーを提案";
                             enabled: root.editable;
                             clicked => {
@@ -421,7 +422,7 @@ export component PaperEditor inherits VerticalBox {
             HorizontalBox {
                 padding: 0px;
                 spacing: 8px;
-                Button {
+                AppButton {
                     text: root.saved-paper ? "変更を保存" : "文献を登録";
                     primary: true;
                     enabled: root.can-save;
@@ -429,8 +430,9 @@ export component PaperEditor inherits VerticalBox {
                         root.save();
                     }
                 }
-                if root.saved-paper && root.edit-mode && !root.editor-deleted : Button {
+                if root.saved-paper && root.edit-mode && !root.editor-deleted : AppButton {
                     text: "編集をキャンセル";
+                    kind: "outline";
                     enabled: root.operable;
                     clicked => {
                         root.cancel-requested();
@@ -446,14 +448,15 @@ export component PaperEditor inherits VerticalBox {
                 Rectangle {
                     horizontal-stretch: 1;
                 }
-                if root.saved-paper && !root.editor-deleted : Button {
+                if root.saved-paper && !root.editor-deleted : AppButton {
                     text: "削除する…";
+                    kind: "danger";
                     enabled: root.operable && !root.load-required;
                     clicked => {
                         root.delete-requested();
                     }
                 }
-                if root.editor-deleted : Button {
+                if root.editor-deleted : AppButton {
                     text: "復元する";
                     enabled: root.operable && !root.load-required;
                     clicked => {

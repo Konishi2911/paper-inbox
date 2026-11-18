@@ -1,6 +1,7 @@
-import { VerticalBox, HorizontalBox, Button } from "std-widgets.slint";
+import { VerticalBox, HorizontalBox } from "std-widgets.slint";
 import { AttachmentRow } from "../types.slint";
 import { Theme } from "../theme.slint";
+import { AppButton } from "app-button.slint";
 
 // PDFs of the paper on screen. Opening is the main action; removing asks once in the row
 // itself because the file is only reclaimed later by the explicit cleanup.
@@ -30,7 +31,7 @@ export component AttachmentList inherits VerticalBox {
         Rectangle {
             horizontal-stretch: 1;
         }
-        Button {
+        AppButton {
             text: "追加…";
             enabled: root.operable;
             clicked => {
@@ -65,7 +66,7 @@ export component AttachmentList inherits VerticalBox {
                     min-width: 0px;
                 }
             }
-            if root.confirming != row.id : Button {
+            if root.confirming != row.id : AppButton {
                 accessible-label: row.name + "を開く";
                 text: "開く";
                 primary: true;
@@ -74,9 +75,10 @@ export component AttachmentList inherits VerticalBox {
                     root.open-requested(row.id);
                 }
             }
-            if root.confirming != row.id : Button {
+            if root.confirming != row.id : AppButton {
                 accessible-label: row.name + "を取り外す";
                 text: "取り外す";
+                kind: "danger";
                 enabled: root.operable;
                 clicked => {
                     root.confirming = row.id;
@@ -87,19 +89,20 @@ export component AttachmentList inherits VerticalBox {
                 vertical-alignment: center;
                 color: Theme.warning;
             }
-            if root.confirming == row.id : Button {
+            if root.confirming == row.id : AppButton {
                 accessible-label: row.name + "の取り外しを実行";
                 text: "取り外す";
-                primary: true;
+                kind: "danger";
                 enabled: root.operable;
                 clicked => {
                     root.confirming = "";
                     root.detach-requested(row.id);
                 }
             }
-            if root.confirming == row.id : Button {
+            if root.confirming == row.id : AppButton {
                 accessible-label: row.name + "の取り外しをやめる";
                 text: "やめる";
+                kind: "outline";
                 clicked => {
                     root.confirming = "";
                 }

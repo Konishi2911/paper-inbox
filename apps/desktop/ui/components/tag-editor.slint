@@ -1,6 +1,7 @@
-import { VerticalBox, HorizontalBox, Button, LineEdit, ScrollView } from "std-widgets.slint";
+import { VerticalBox, HorizontalBox, LineEdit, ScrollView } from "std-widgets.slint";
 import { TagRow } from "../types.slint";
 import { Theme } from "../theme.slint";
+import { AppButton } from "app-button.slint";
 
 // Tags of the paper on screen. A tag is added by typing a name and pressing Enter (an
 // existing tag with the same name is reused), or by clicking a suggestion; it is removed
@@ -62,9 +63,11 @@ export component TagEditor inherits VerticalBox {
                         vertical-alignment: center;
                         color: Theme.text-primary;
                     }
-                    Button {
+                    AppButton {
                         accessible-label: tag.name + "を外す";
                         text: "×";
+                        kind: "ghost";
+                        small: true;
                         width: 24px;
                         enabled: root.operable;
                         clicked => {
@@ -84,7 +87,7 @@ export component TagEditor inherits VerticalBox {
             color: Theme.text-secondary;
             font-size: 12px;
         }
-        for s in root.suggestions : Button {
+        for s in root.suggestions : AppButton {
             accessible-label: s.name + "を付ける";
             text: s.name;
             enabled: root.operable;

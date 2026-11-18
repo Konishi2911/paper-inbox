@@ -1,5 +1,6 @@
-import { VerticalBox, HorizontalBox, Button } from "std-widgets.slint";
+import { VerticalBox, HorizontalBox } from "std-widgets.slint";
 import { Theme } from "../theme.slint";
+import { AppButton } from "../components/app-button.slint";
 
 // Deleting files is permanent, so this screen states exactly what will be removed.
 export component CleanupView inherits VerticalBox {
@@ -33,16 +34,17 @@ export component CleanupView inherits VerticalBox {
     HorizontalBox {
         padding: 0px;
         spacing: 8px;
-        Button {
+        AppButton {
             text: root.count == 0 ? "削除" : root.count + " 件を削除";
-            primary: true;
+            kind: "danger";
             enabled: root.operable && root.count > 0;
             clicked => {
                 root.reclaim-requested();
             }
         }
-        Button {
+        AppButton {
             text: "閉じる";
+            kind: "outline";
             enabled: root.operable;
             clicked => {
                 root.close-requested();

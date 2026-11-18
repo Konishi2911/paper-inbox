@@ -1,11 +1,11 @@
 import {
     VerticalBox,
-    Button,
     ScrollView
 } from "std-widgets.slint";
 
 import { Theme } from "../theme.slint";
 import { TagRow } from "../types.slint";
+import { AppButton } from "app-button.slint";
 
 export component Sidebar inherits Rectangle {
     // Input properties
@@ -36,7 +36,7 @@ export component Sidebar inherits Rectangle {
         padding: 12px;
         spacing: 12px;
 
-        Button {
+        AppButton {
             accessible-label: "文献を追加";
 
             text: root.collapsed
@@ -66,8 +66,10 @@ export component Sidebar inherits Rectangle {
             font-weight: 600;
         }
 
-        Button {
+        AppButton {
             accessible-label: "すべての文献";
+            kind: "ghost";
+            align-start: true;
 
             text: root.collapsed
                 ? "全"
@@ -80,8 +82,10 @@ export component Sidebar inherits Rectangle {
             }
         }
 
-        Button {
+        AppButton {
             accessible-label: "削除済み";
+            kind: "ghost";
+            align-start: true;
 
             text: root.collapsed
                 ? "削"
@@ -100,8 +104,10 @@ export component Sidebar inherits Rectangle {
         }
 
         // Export section
-        Button {
+        AppButton {
             accessible-label: "BibTeX 出力";
+            kind: "ghost";
+            align-start: true;
 
             text: root.collapsed
                 ? "出"
@@ -117,8 +123,10 @@ export component Sidebar inherits Rectangle {
         }
 
         // Files no paper uses any more are deleted only from this explicit screen.
-        Button {
+        AppButton {
             accessible-label: "未使用PDFの整理";
+            kind: "ghost";
+            align-start: true;
 
             text: root.collapsed
                 ? "整"
@@ -149,10 +157,11 @@ export component Sidebar inherits Rectangle {
                     spacing: 4px;
                     for tag in root.tag-rows : VerticalBox {
                         padding: 0px;
-                        if tag.count > 0 || tag.selected : Button {
+                        if tag.count > 0 || tag.selected : AppButton {
                             accessible-label: "タグ " + tag.name + (tag.selected ? "の絞り込みを解除" : "で絞り込む");
                             text: tag.name + " (" + tag.count + ")";
-                            primary: tag.selected;
+                            kind: tag.selected ? "tonal" : "ghost";
+                            align-start: true;
                             enabled: root.operable;
                             clicked => {
                                 root.tag-toggled(tag.id);
@@ -172,8 +181,10 @@ export component Sidebar inherits Rectangle {
         }
 
         // Application information
-        Button {
+        AppButton {
             accessible-label: "このアプリについて";
+            kind: "ghost";
+            align-start: true;
 
             text: root.collapsed
                 ? "i"
@@ -187,8 +198,10 @@ export component Sidebar inherits Rectangle {
         }
 
         // Reconnect
-        Button {
+        AppButton {
             accessible-label: "保存先に再接続";
+            kind: "ghost";
+            align-start: true;
 
             text: root.collapsed
                 ? "↻"

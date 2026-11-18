@@ -1,10 +1,11 @@
 import { ConfirmDialog } from "../dialogs/confirm-dialog.slint";
 import { CandidateEditor } from "candidate-editor.slint";
 import { ProposalView } from "proposal-view.slint";
-import { VerticalBox, HorizontalBox, Button, ScrollView } from "std-widgets.slint";
+import { VerticalBox, HorizontalBox, ScrollView } from "std-widgets.slint";
 import { Theme } from "../theme.slint";
 
 import { DiffInputField, DiffResolution, DiffFilter, DiffBulkAction, CandidateRow, ProposalRow, VersionRow } from "../types.slint";
+import { AppButton } from "../components/app-button.slint";
 
 // One compact line per candidate or version: title, then a muted summary and its action.
 component RecordRow inherits Rectangle {
@@ -31,7 +32,7 @@ component RecordRow inherits Rectangle {
         }
         if root.action!="" : VerticalLayout {
             alignment:center;
-            Button {text:root.action;enabled:root.action-enabled;clicked=>{root.activated();}}
+            AppButton {text:root.action;enabled:root.action-enabled;clicked=>{root.activated();}}
         }
     }
 }
@@ -89,15 +90,15 @@ export component MetadataView inherits VerticalBox {
     private property <bool> can-leave: !root.busy && !root.about-open && !root.confirm-discard;
     HorizontalLayout {
         spacing:8px;
-        Button {text:"文献へ戻る";enabled:root.can-leave;clicked=>{root.return-to-paper();}}
+        AppButton {kind:"ghost";text:"文献へ戻る";enabled:root.can-leave;clicked=>{root.return-to-paper();}}
         Text {text:root.review-label;font-size:18px;font-weight:600;vertical-alignment:center;overflow:elide;horizontal-stretch:1;min-width:0px;}
     }
     if !root.candidate-form-open : HorizontalLayout {
         spacing:6px;
-        Button {text:"DOI / arXiv で取得";enabled:root.can-start;clicked=>{root.begin-lookup();}}
-        Button {text:"候補を手入力";enabled:root.can-start;clicked=>{root.begin-candidate();}}
+        AppButton {text:"DOI / arXiv で取得";enabled:root.can-start;clicked=>{root.begin-lookup();}}
+        AppButton {text:"候補を手入力";enabled:root.can-start;clicked=>{root.begin-candidate();}}
         Rectangle {horizontal-stretch:1;}
-        Button {text:"表示を更新";enabled:root.can-leave;clicked=>{root.refresh-review();}}
+        AppButton {kind:"ghost";text:"表示を更新";enabled:root.can-leave;clicked=>{root.refresh-review();}}
     }
     if root.candidate-form-open : CandidateEditor {
         about-open : root.about-open;

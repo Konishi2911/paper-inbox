@@ -33,6 +33,18 @@ export global Theme {
     out property <color> diff-proposed: root.dark ? #1f3128 : #eef6f0;
     out property <color> diff-conflict: root.dark ? #3a2e1c : #fff4e4;
 
+    // Buttons: filled accent, soft fill, outline, danger. Hover and press are a translucent
+    // wash of `wash` over the button, so they work on any background.
+    out property <color> accent: root.dark ? #6f95d8 : #3d5a80;
+    out property <color> on-accent: #ffffff;
+    out property <color> tonal: root.dark ? #2a3342 : #e6ecf5;
+    out property <color> outline: root.dark ? #3b4658 : #cdd6e4;
+    out property <color> danger-fill: root.dark ? #4a2a2a : #fbe9e7;
+    out property <color> danger-text: root.dark ? #ff9d94 : #b3261e;
+    out property <color> wash: root.dark ? #ffffff : #20314f;
+    out property <color> chip-on: root.dark ? #6f95d8.with-alpha(0.28) : #3d5a80.with-alpha(0.14);
+    out property <color> chip-on-text: root.dark ? #b9ceff : #2f4a6d;
+
     // Modal overlay
     out property <color> overlay: root.dark ? #000000aa : #00000066;
 

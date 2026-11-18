@@ -1,4 +1,5 @@
-import { VerticalBox, HorizontalBox, Button, LineEdit, CheckBox } from "std-widgets.slint";
+import { VerticalBox, HorizontalBox, LineEdit, CheckBox } from "std-widgets.slint";
+import { AppButton } from "../components/app-button.slint";
 
 
 export component ExportView inherits VerticalBox {
@@ -25,7 +26,7 @@ export component ExportView inherits VerticalBox {
         CheckBox {enabled:root.operable;text:"概要";checked<=>root.export-abstract;}
         CheckBox {enabled:root.operable;text:"キーワード";checked<=>root.export-keywords;}
     }
-    Button {enabled:root.operable && root.selected-count>0;text:"出力内容を確認";clicked=>{root.prepare-export();}}
-    Button {text:"詳細・入力へ戻る";enabled:root.operable;clicked=>{root.return-requested();}}
+    AppButton {enabled:root.operable && root.selected-count>0;text:"出力内容を確認";clicked=>{root.prepare-export();}}
+    AppButton {kind:"outline";text:"詳細・入力へ戻る";enabled:root.operable;clicked=>{root.return-requested();}}
     Rectangle {background:transparent;vertical-stretch:1;}
 }

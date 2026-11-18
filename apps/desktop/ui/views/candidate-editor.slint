@@ -1,5 +1,6 @@
-import { VerticalBox, HorizontalBox, Button, LineEdit, TextEdit, ComboBox, CheckBox, ScrollView } from "std-widgets.slint";
+import { VerticalBox, HorizontalBox, LineEdit, TextEdit, ComboBox, CheckBox, ScrollView } from "std-widgets.slint";
 import { Theme } from "../theme.slint";
+import { AppButton } from "../components/app-button.slint";
 
 
 export component CandidateEditor inherits VerticalBox {
@@ -78,8 +79,8 @@ export component CandidateEditor inherits VerticalBox {
     }
     HorizontalLayout {
         spacing:6px;
-        Button {text:"候補を登録";primary:true;enabled:root.metadata-operable;clicked=>{root.submit-candidate();}}
-        Button {text:"入力を破棄して戻る";enabled:!root.busy && !root.about-open && !root.confirm-discard;clicked=>{root.cancel-candidate();}}
+        AppButton {text:"候補を登録";primary:true;enabled:root.metadata-operable;clicked=>{root.submit-candidate();}}
+        AppButton {kind:"outline";text:"入力を破棄して戻る";enabled:!root.busy && !root.about-open && !root.confirm-discard;clicked=>{root.cancel-candidate();}}
         Rectangle {horizontal-stretch:1;}
     }
 }

@@ -1,6 +1,7 @@
-import { Button } from "std-widgets.slint";
+
 import { Theme } from "../theme.slint";
 import { LinkTarget } from "../types.slint";
+import { AppButton } from "app-button.slint";
 
 // One line of the "more" menu: what it does, and the value it acts on.
 component MenuItem inherits Rectangle {
@@ -67,7 +68,7 @@ component LinkActions inherits HorizontalLayout {
 
     spacing: 6px;
 
-    Button {
+    AppButton {
         accessible-label: root.has-pdf ? "PDFを開く" : "PDFを添付…";
         text: root.has-pdf ? "PDFを開く" : "PDFを添付…";
         primary: true;
@@ -80,7 +81,7 @@ component LinkActions inherits HorizontalLayout {
             }
         }
     }
-    if root.main-link != 0 : Button {
+    if root.main-link != 0 : AppButton {
         accessible-label: root.main-link == 1 ? "DOIを開く" : root.main-link == 2 ? "arXivを開く" : "URLを開く";
         text: root.main-link == 1 ? "DOI" : root.main-link == 2 ? "arXiv" : "Web";
         icon: @image-url("../assets/icon/open.svg");
@@ -92,9 +93,10 @@ component LinkActions inherits HorizontalLayout {
     if root.main-link != 0 : more-anchor := Rectangle {
         preferred-width: more.preferred-width;
         min-width: more.min-width;
-        more := Button {
+        more := AppButton {
             accessible-label: "その他の操作";
             text: "…";
+            kind: "ghost";
             width: parent.width;
             height: parent.height;
             clicked => {
@@ -162,7 +164,7 @@ component CopyActions inherits HorizontalLayout {
 
     spacing: 6px;
 
-    Button {
+    AppButton {
         accessible-label: "BibTeX をコピー";
         text: "BibTeX";
         icon: @image-url("../assets/icon/copy.svg");
@@ -171,7 +173,7 @@ component CopyActions inherits HorizontalLayout {
             root.copy-requested(1);
         }
     }
-    Button {
+    AppButton {
         accessible-label: "引用キーをコピー";
         text: root.citation-key;
         icon: @image-url("../assets/icon/copy.svg");

@@ -1,5 +1,6 @@
-import { VerticalBox, HorizontalBox, Button } from "std-widgets.slint";
+import { VerticalBox, HorizontalBox } from "std-widgets.slint";
 import { Theme } from "../theme.slint";
+import { AppButton } from "../components/app-button.slint";
 
 export component ConfirmDialog inherits VerticalBox {
     in property <string> message;
@@ -12,7 +13,7 @@ export component ConfirmDialog inherits VerticalBox {
     callback cancelled();
     Text {text:root.message;wrap:word-wrap;color:root.warning ? Theme.warning : Theme.text-primary;}
     HorizontalBox {
-        Button {text:root.accept-label;enabled:root.operable;clicked=>{root.accepted();}}
-        Button {text:root.cancel-label;enabled:root.cancel-operable;clicked=>{root.cancelled();}}
+        AppButton {text:root.accept-label;enabled:root.operable;clicked=>{root.accepted();}}
+        AppButton {kind:"outline";text:root.cancel-label;enabled:root.cancel-operable;clicked=>{root.cancelled();}}
     }
 }

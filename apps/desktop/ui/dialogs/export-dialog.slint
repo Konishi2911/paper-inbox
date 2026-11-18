@@ -1,4 +1,5 @@
-import { VerticalBox, HorizontalBox, Button, TextEdit } from "std-widgets.slint";
+import { VerticalBox, HorizontalBox, TextEdit } from "std-widgets.slint";
+import { AppButton } from "../components/app-button.slint";
 
 
 export component ExportDialog inherits VerticalBox {
@@ -17,7 +18,7 @@ export component ExportDialog inherits VerticalBox {
     TextEdit { text:root.export-warnings=="" ? "警告はありません。" : root.export-warnings;read-only:true;height:100px; }
     TextEdit { text:root.export-preview;read-only:true;vertical-stretch:1; }
     HorizontalBox {
-        Button {text:root.export-replaces ? "既存ファイルを置き換える" : "ファイルへ出力";enabled:!root.busy && !root.about-open;clicked=>{root.confirm-export();}}
-        Button {text:"キャンセル";enabled:!root.busy && !root.about-open;clicked=>{root.cancel-export();}}
+        AppButton {text:root.export-replaces ? "既存ファイルを置き換える" : "ファイルへ出力";enabled:!root.busy && !root.about-open;clicked=>{root.confirm-export();}}
+        AppButton {kind:"outline";text:"キャンセル";enabled:!root.busy && !root.about-open;clicked=>{root.cancel-export();}}
     }
 }

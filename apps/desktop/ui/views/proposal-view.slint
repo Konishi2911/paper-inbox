@@ -1,7 +1,8 @@
-import { VerticalBox, HorizontalBox, Button, ComboBox } from "std-widgets.slint";
+import { VerticalBox, HorizontalBox, ComboBox } from "std-widgets.slint";
 import { ProposalRow, DiffInputField, DiffResolution, DiffFilter, DiffBulkAction } from "../types.slint";
 import { MetadataDiffCard } from "../components/metadata-diff-row.slint";
 import { Theme } from "../theme.slint";
+import { AppButton } from "../components/app-button.slint";
 export component ProposalView inherits Rectangle {
     in property <[ProposalRow]> proposal-rows;
     // Number of proposals before filtering; 0 hides the whole review toolbar.
@@ -32,11 +33,11 @@ export component ProposalView inherits Rectangle {
                 current-index:root.diff-filter==DiffFilter.all ? 0 : root.diff-filter==DiffFilter.changed ? 1 : root.diff-filter==DiffFilter.conflict ? 2 : root.diff-filter==DiffFilter.unresolved ? 3 : 4;
                 selected(index)=>{root.diff-filter=index==0 ? DiffFilter.all : index==1 ? DiffFilter.changed : index==2 ? DiffFilter.conflict : index==3 ? DiffFilter.unresolved : DiffFilter.decided;}
             }
-            Button {text:"安全な項目を採用";enabled:root.operable;clicked=>{root.bulk(DiffBulkAction.accept-safe);}}
-            Button {text:"すべて維持";enabled:root.operable;clicked=>{root.bulk(DiffBulkAction.keep-all);}}
+            AppButton {text:"安全な項目を採用";enabled:root.operable;clicked=>{root.bulk(DiffBulkAction.accept-safe);}}
+            AppButton {text:"すべて維持";enabled:root.operable;clicked=>{root.bulk(DiffBulkAction.keep-all);}}
             Rectangle {horizontal-stretch:1;}
-            if root.dirty : Button {text:"リセット";enabled:root.operable;clicked=>{root.bulk(DiffBulkAction.reset);}}
-            Button {text:"判断を適用";primary:true;enabled:root.operable && root.dirty;clicked=>{root.apply();}}
+            if root.dirty : AppButton {text:"リセット";enabled:root.operable;clicked=>{root.bulk(DiffBulkAction.reset);}}
+            AppButton {text:"判断を適用";primary:true;enabled:root.operable && root.dirty;clicked=>{root.apply();}}
         }
         if root.total>0 && root.proposal-rows.length==0 : Text {text:"この条件に合う提案はありません。";wrap:word-wrap;color:Theme.text-secondary;}
         for row in root.proposal-rows : MetadataDiffCard {

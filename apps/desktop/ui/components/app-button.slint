@@ -1,0 +1,171 @@
+import { Theme } from "../theme.slint";
+
+// The app's own button. The standard widget cannot change its fill, radius or states, so
+// every button in the app is this one and takes its colors from Theme.
+//
+// Kinds: "primary" (filled accent, one main action per screen), "tonal" (soft fill, the
+// default for secondary actions), "outline", "ghost" (no background; toolbars and rows) and
+// "danger" (removing or discarding). Hover and press are a translucent layer of Theme.wash
+// over the button instead of a different fill, so a transparent button looks right on any
+// background in both the light and the dark scheme.
+export component AppButton inherits Rectangle {
+    in property <string> text;
+    in property <string> kind: "tonal";
+    // Kept so that code written for the standard Button still reads naturally.
+    in property <bool> primary: false;
+    in property <bool> enabled: true;
+    in property <bool> small: false;
+    // Left-aligned label, for lists of buttons such as the sidebar.
+    in property <bool> align-start: false;
+    // Optional icon before the label, tinted like the label.
+    in property <image> icon;
+    callback clicked();
+
+    property <string> look: root.primary ? "primary" : root.kind;
+    property <bool> hot: root.enabled && touch.has-hover;
+    property <bool> down: root.enabled && touch.pressed;
+    property <color> wash: root.look == "primary" ? #ffffff : Theme.wash;
+
+    preferred-width: row.preferred-width + (root.small ? 20px : 28px);
+    min-width: self.preferred-width;
+    preferred-height: root.small ? 28px : 34px;
+    min-height: self.preferred-height;
+    max-height: self.preferred-height;
+    horizontal-stretch: 0;
+    vertical-stretch: 0;
+    border-radius: 8px;
+    border-width: root.look == "outline" ? 1px : 0px;
+    border-color: Theme.outline;
+    background: root.look == "primary" ? Theme.accent
+        : root.look == "tonal" ? Theme.tonal
+        : root.look == "danger" ? Theme.danger-fill
+        : #00000000;
+    opacity: root.enabled ? 1.0 : 0.4;
+
+    accessible-role: button;
+    accessible-label: root.text;
+    accessible-enabled: root.enabled;
+    accessible-action-default => {
+        if (root.enabled) {
+            root.clicked();
+        }
+    }
+
+    // The state layer.
+    Rectangle {
+        border-radius: root.border-radius;
+        background: root.down ? root.wash.with-alpha(root.look == "primary" ? 0.22 : 0.16)
+            : root.hot ? root.wash.with-alpha(root.look == "primary" ? 0.12 : 0.08)
+            : #00000000;
+        animate background { duration: 120ms; }
+    }
+    // The keyboard focus ring, drawn just outside the button.
+    Rectangle {
+        x: -3px;
+        y: -3px;
+        width: parent.width + 6px;
+        height: parent.height + 6px;
+        border-radius: root.border-radius + 3px;
+        border-width: focus.has-focus ? 2px : 0px;
+        border-color: Theme.accent.with-alpha(0.6);
+    }
+    row := HorizontalLayout {
+        x: root.align-start ? 12px : max(8px, (parent.width - self.preferred-width) / 2);
+        y: (parent.height - self.preferred-height) / 2;
+        width: min(self.preferred-width, parent.width - 16px);
+        height: self.preferred-height;
+        spacing: 6px;
+        if root.icon.width > 0 : Image {
+            source: root.icon;
+            width: 16px;
+            height: 16px;
+            y: (parent.height - self.height) / 2;
+            colorize: label.color;
+        }
+        label := Text {
+            accessible-role: none;
+            text: root.text;
+            font-size: root.small ? 12px : 13px;
+            font-weight: 600;
+            overflow: elide;
+            vertical-alignment: center;
+            color: root.look == "primary" ? Theme.on-accent
+                : root.look == "danger" ? Theme.danger-text
+                : Theme.text-primary;
+        }
+    }
+    focus := FocusScope {
+        enabled: root.enabled;
+        focus-on-tab-navigation: true;
+        key-pressed(event) => {
+            if (root.enabled && (event.text == " " || event.text == Key.Return)) {
+                root.clicked();
+                return accept;
+            }
+            return reject;
+        }
+    }
+    touch := TouchArea {
+        enabled: root.enabled;
+        mouse-cursor: pointer;
+        clicked => {
+            root.clicked();
+        }
+    }
+}
+
+// A rounded filter pill: outlined when off, softly filled and bold when on.
+export component Chip inherits Rectangle {
+    in property <string> text;
+    in property <bool> on: false;
+    in property <bool> enabled: true;
+    callback clicked();
+
+    property <bool> hot: root.enabled && touch.has-hover;
+
+    preferred-width: label.preferred-width + 24px;
+    min-width: self.preferred-width;
+    preferred-height: 28px;
+    min-height: self.preferred-height;
+    max-height: self.preferred-height;
+    horizontal-stretch: 0;
+    vertical-stretch: 0;
+    border-radius: self.height / 2;
+    border-width: root.on ? 0px : 1px;
+    border-color: Theme.outline;
+    background: root.on ? Theme.chip-on : #00000000;
+    opacity: root.enabled ? 1.0 : 0.4;
+
+    accessible-role: button;
+    accessible-label: root.text;
+    accessible-enabled: root.enabled;
+    accessible-checkable: true;
+    accessible-checked: root.on;
+    accessible-action-default => {
+        if (root.enabled) {
+            root.clicked();
+        }
+    }
+
+    Rectangle {
+        border-radius: root.border-radius;
+        background: root.hot ? Theme.wash.with-alpha(0.08) : #00000000;
+        animate background { duration: 120ms; }
+    }
+    label := Text {
+        accessible-role: none;
+        x: (parent.width - self.width) / 2;
+        y: (parent.height - self.height) / 2;
+        text: root.text;
+        font-size: 12px;
+        font-weight: root.on ? 700 : 500;
+        color: root.on ? Theme.chip-on-text : Theme.text-muted;
+    }
+    touch := TouchArea {
+        enabled: root.enabled;
+        mouse-cursor: pointer;
+        clicked => {
+            root.clicked();
+        }
+    }
+}
