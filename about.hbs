@@ -1,0 +1,24 @@
+# Third-Party Notices / 第三者ライセンス通知
+
+Paper Inbox は下記のクレートを含みます。各クレートは自身のライセンスに従います。
+Paper Inbox's own code is `MIT OR Apache-2.0`. The Slint crates (`slint`, `i-slint-*`) are used under the Slint Royalty-free 2.0 license, whose text is in `LICENSES/LicenseRef-Slint-Royalty-free-2.0.md`; they are not repeated below.
+
+## ライセンス別一覧 / Overview
+
+{{#each overview}}
+- [{{{name}}}](#{{id}}) ({{count}})
+{{/each}}
+
+{{#each licenses}}
+## <a id="{{id}}"></a>{{{name}}}
+
+Used by:
+{{#each used_by}}
+- [{{crate.name}} {{crate.version}}]({{#if crate.repository}}{{crate.repository}}{{else}}https://crates.io/crates/{{crate.name}}{{/if}})
+{{/each}}
+
+```
+{{{text}}}
+```
+
+{{/each}}

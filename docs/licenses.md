@@ -35,3 +35,12 @@
 依存一覧は配布物のライセンス本文・著作権通知を集めたものではありません。バイナリ配布を整備する際は、対象 OS・有効機能・同梱素材に対応する第三者ライセンス本文・通知を一緒に用意してください。現時点では配布パッケージは提供していません。
 
 Crossref / arXiv から取得する書誌情報・概要・リンク先の文書に、本プロジェクトのライセンスを適用するものではありません。API の仕様・利用条件は[取得仕様の公式参照先](metadata-lookup-and-keys.md#providers-and-mapping)を参照してください。
+
+## 配布物の第三者通知
+
+リポジトリ直下の [THIRD-PARTY-NOTICES.md](../THIRD-PARTY-NOTICES.md) は、Windows（x86_64）と macOS（arm64・x86_64）向けの依存のライセンス本文を集めた通知で、配布 zip に同梱します。`cargo-about` で生成します（設定は `about.toml`、書式は `about.hbs`）。依存を変更したら再生成してください。Slint のクレートは Royalty-free 2.0 として `LICENSES/` の本文に従うため、この通知には含めていません。
+
+```sh
+cargo install cargo-about --locked --features cli
+cargo about generate about.hbs --locked -o THIRD-PARTY-NOTICES.md
+```
