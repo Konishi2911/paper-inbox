@@ -506,3 +506,118 @@ pub fn parse_author_list(text: &str) -> Vec<AuthorInput> {
         .filter(|author| !author.name.is_empty())
         .collect()
 }
+
+/// Result of giving a paper a tag by name.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct TagAssignment {
+    pub tag: Tag,
+    /// The tag did not exist yet and was created together with the assignment.
+    pub created: bool,
+}
+
+fn tag_name_message(error: TagNameError) -> &'static str {
+    match error {
+        TagNameError::Empty => "タグ名を入力してください。",
+        TagNameError::TooLong => "タグ名は64文字までです。",
+        TagNameError::Control => "タグ名に使えない文字が含まれています。",
+    }
+}
+
+impl Application {
+    /// Every tag with its paper count, for the sidebar and for completion.
+    pub fn tag_counts(&self, include_archived: bool) -> Result<Vec<TagCount>, AppError> {
+        Ok(self.store.tags(include_archived)?)
+    }
+
+    pub fn paper_tags(&self, paper_id: PaperId) -> Result<Vec<Tag>, AppError> {
+        Ok(self.store.paper_tags(paper_id)?)
+    }
+
+    /// Gives the paper the tag with this name. An existing tag is found by the same folding
+    /// the storage uses (case, width, spacing), so `ml` reuses `ML`; otherwise it is created.
+    /// Creating and assigning are one transaction.
+    pub fn add_tag_by_name(
+        &self,
+        state: &PaperEditState,
+        name: &str,
+    ) -> Result<TagAssignment, AppError> {
+        if state.paper.deleted_at().is_some() {
+            return Err(AppError::Input(
+                "削除済みの文献にはタグを付けられません。復元してから操作してください。".into(),
+            ));
+        }
+        let (display, key) = normalize_tag_name(name)
+            .map_err(|e| AppError::Input(tag_name_message(e).to_owned()))?;
+        let paper_id = state.paper.id();
+        let existing = self
+            .store
+            .tags(true)?
+            .into_iter()
+            .map(|c| c.tag)
+            .find(|t| t.key().ok().as_deref() == Some(key.as_str()));
+        let (tag, mut commands, created) = match existing {
+            Some(tag) => {
+                if self
+                    .store
+                    .paper_tags(paper_id)?
+                    .iter()
+                    .any(|t| t.id == tag.id)
+                {
+                    return Err(AppError::Input(format!(
+                        "タグ「{}」はすでに付いています。",
+                        tag.name
+                    )));
+                }
+                (tag, vec![], false)
+            }
+            None => {
+                let tag = Tag {
+                    id: TagId::new(),
+                    name: display,
+                };
+                (tag.clone(), vec![LibraryCommand::CreateTag { tag }], true)
+            }
+        };
+        commands.push(LibraryCommand::AddTag {
+            paper_id,
+            tag_id: tag.id,
+        });
+        self.store.commit_batch_at(commands, &[], Utc::now())?;
+        Ok(TagAssignment { tag, created })
+    }
+
+    pub fn remove_tag(&self, state: &PaperEditState, tag_id: TagId) -> Result<(), AppError> {
+        self.store.commit_batch_at(
+            vec![LibraryCommand::RemoveTag {
+                paper_id: state.paper.id(),
+                tag_id,
+            }],
+            &[],
+            Utc::now(),
+        )?;
+        Ok(())
+    }
+}
+
+/// Up to `limit` tag names to offer while typing: names containing the typed text (by the
+/// tag folding), prefix matches first, skipping tags the paper already has.
+pub fn tag_suggestions(all: &[TagCount], taken: &[TagId], typed: &str, limit: usize) -> Vec<Tag> {
+    let Ok((_, typed_key)) = normalize_tag_name(typed) else {
+        return vec![];
+    };
+    let mut hits: Vec<(bool, &Tag)> = all
+        .iter()
+        .map(|c| &c.tag)
+        .filter(|t| !taken.contains(&t.id))
+        .filter_map(|t| {
+            let key = t.key().ok()?;
+            key.contains(&typed_key)
+                .then(|| (key.starts_with(&typed_key), t))
+        })
+        .collect();
+    hits.sort_by_key(|(prefix, _)| !prefix);
+    hits.into_iter()
+        .take(limit)
+        .map(|(_, t)| t.clone())
+        .collect()
+}
