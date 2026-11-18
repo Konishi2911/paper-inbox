@@ -1,7 +1,8 @@
 import { VerticalBox, HorizontalBox, LineEdit, TextEdit, ComboBox, CheckBox, ScrollView } from "std-widgets.slint";
 import { Theme } from "../theme.slint";
-import { LookupField } from "../types.slint";
+import { LookupField, TagRow } from "../types.slint";
 import { AppButton } from "../components/app-button.slint";
+import { TagEditor } from "../components/tag-editor.slint";
 
 // Unified add screen (lookup-new) and identifier lookup for an existing paper.
 // Fetched bibliography is read-only so its provenance is preserved; only
@@ -25,6 +26,11 @@ export component ImportView inherits VerticalBox {
     in-out property <int> lookup-reading-status;
     in-out property <bool> lookup-favorite;
     in property <bool> lookup-new;
+    in property <[TagRow]> lookup-tags;
+    in property <[TagRow]> tag-suggestions;
+    callback tag-add-requested(string);
+    callback tag-remove-requested(string);
+    callback tag-input-changed(string);
     in property <bool> ready;
 
     property <bool> interactive: root.ready && !root.busy && !root.confirm-discard && !root.about-open;
@@ -181,6 +187,14 @@ export component ImportView inherits VerticalBox {
                     Rectangle {
                         horizontal-stretch: 1;
                     }
+                }
+                TagEditor {
+                    tags: root.lookup-tags;
+                    suggestions: root.tag-suggestions;
+                    operable: root.interactive;
+                    add-requested(name) => { root.tag-add-requested(name); }
+                    remove-requested(id) => { root.tag-remove-requested(id); }
+                    input-changed(text) => { root.tag-input-changed(text); }
                 }
                 TextEdit {
                     accessible-label: "登録時のメモ";

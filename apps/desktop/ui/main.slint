@@ -43,6 +43,11 @@ export component MainWindow inherits Window {
     callback add-tag(string);
     callback remove-tag(string);
     callback tag-input-changed(string);
+    // Tags chosen on the add screen; they are only saved together with the paper.
+    in-out property <[TagRow]> lookup-tags;
+    callback lookup-tag-add(string);
+    callback lookup-tag-remove(string);
+    callback lookup-tag-input-changed(string);
     callback toggle-tag-filter(string);
     in-out property <string> identifiers-line;
     in-out property <int> cleanup-count:0;
@@ -414,6 +419,11 @@ export component MainWindow inherits Window {
                         lookup-reading-status <=> root.lookup-reading-status;
                         lookup-favorite <=> root.lookup-favorite;
                         lookup-new : root.lookup-new;
+                        lookup-tags : root.lookup-tags;
+                        tag-suggestions : root.tag-suggestions;
+                        tag-add-requested(name) => { root.lookup-tag-add(name); }
+                        tag-remove-requested(id) => { root.lookup-tag-remove(id); }
+                        tag-input-changed(text) => { root.lookup-tag-input-changed(text); }
                         ready : root.ready;
                         manual-requested => {root.request-navigation(NavigationAction.create-paper,"");}
                     }

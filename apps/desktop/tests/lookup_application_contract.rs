@@ -129,6 +129,7 @@ fn unified_add_registers_personal_values_with_fetched_provenance_in_one_commit()
         notes: "Read for chapter 2".into(),
         reading_status: ReadingStatus::Reading,
         favorite: true,
+        tags: vec![],
     };
     let rejected = PaperId::new();
     assert!(
@@ -157,6 +158,64 @@ fn unified_add_registers_personal_values_with_fetched_provenance_in_one_commit()
             .source,
         MetadataSource::Crossref
     );
+    drop(app);
+    std::fs::remove_file(path).unwrap();
+}
+
+#[test]
+fn registration_creates_and_reuses_tags_in_the_same_commit() {
+    let path = std::env::temp_dir().join(format!("paper-lookup-tags-{}.sqlite", PaperId::new()));
+    let app = Application {
+        store: SqliteLibrary::open_local(&path).unwrap(),
+    };
+    let first = PaperId::new();
+    let input = lookup::LookupUserInput {
+        // The same tag in another spelling is one tag, not two.
+        tags: vec!["ML".into(), " ml ".into(), "graphs".into()],
+        ..Default::default()
+    };
+    app.register_lookup(first, &candidate(), "Smith2024", &input)
+        .unwrap();
+    let names: Vec<_> = app
+        .paper_tags(first)
+        .unwrap()
+        .into_iter()
+        .map(|t| t.name)
+        .collect();
+    assert_eq!(names.len(), 2);
+    assert!(names.contains(&"ML".to_string()) && names.contains(&"graphs".to_string()));
+
+    // A later registration reuses the existing tag instead of creating a duplicate.
+    let second = PaperId::new();
+    let input = lookup::LookupUserInput {
+        tags: vec!["ｍｌ".into()],
+        ..Default::default()
+    };
+    app.register_lookup(second, &candidate(), "Smith2024Graph", &input)
+        .unwrap();
+    let counts = app.tag_counts(false).unwrap();
+    assert_eq!(counts.len(), 2);
+    assert_eq!(
+        counts
+            .iter()
+            .find(|c| c.tag.name == "ML")
+            .unwrap()
+            .paper_count,
+        2
+    );
+
+    // An unusable name rejects the whole registration, leaving no paper behind.
+    let bad = PaperId::new();
+    let input = lookup::LookupUserInput {
+        tags: vec!["fine".into(), "  ".into()],
+        ..Default::default()
+    };
+    assert!(
+        app.register_lookup(bad, &candidate(), "Other2024", &input)
+            .is_err()
+    );
+    assert!(app.store.get(bad).unwrap().is_none());
+    assert_eq!(app.tag_counts(true).unwrap().len(), 2);
     drop(app);
     std::fs::remove_file(path).unwrap();
 }

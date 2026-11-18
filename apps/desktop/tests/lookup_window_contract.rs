@@ -129,9 +129,20 @@ fn lookup_window_covers_preview_confirmation_errors_existing_updates_and_key_pro
     window.set_lookup_notes("from lookup".into());
     window.set_lookup_reading_status(2);
     window.set_lookup_favorite(true);
+    window.invoke_lookup_tag_add(" ML ".into());
+    window.invoke_lookup_tag_add("ｍｌ".into());
+    window.invoke_lookup_tag_add("graphs".into());
+    assert_eq!(window.get_lookup_tags().row_count(), 2, "same name once");
+    let graphs = window.get_lookup_tags().row_data(1).unwrap().id;
+    window.invoke_lookup_tag_remove(graphs);
+    assert_eq!(window.get_lookup_tags().row_count(), 1);
+    window.invoke_lookup_tag_add("graphs".into());
     window.invoke_confirm_lookup();
     wait(&window);
     assert!(!window.get_lookup_open(), "{}", window.get_status());
+    assert_eq!(window.get_lookup_tags().row_count(), 0, "cleared after use");
+    let tags: Vec<_> = window.get_paper_tag_rows().iter().map(|r| r.name).collect();
+    assert_eq!(tags, ["graphs", "ML"], "listed by name");
     assert_eq!(window.get_total(), 1);
     assert_eq!(window.get_citation_key(), "Smith2024");
     assert_eq!(

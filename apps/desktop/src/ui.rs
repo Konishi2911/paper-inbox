@@ -2,7 +2,9 @@ use crate::export::{self, PreparedExport};
 use crate::{
     AttachmentRow, AuthorAction, AuthorRow, DetailView, LinkTarget, LookupField, MainWindow,
     NavigationAction, PaperRow, TagRow,
-    application::{Application, AuthorInput, PaperForm, QuickChange, tag_suggestions},
+    application::{
+        Application, AuthorInput, PaperForm, QuickChange, tag_name_message, tag_suggestions,
+    },
     attachment::AttachmentFiles,
     config::Config,
     lookup::{LookupPreview, LookupUserInput},
@@ -1083,6 +1085,11 @@ pub fn attach_with_providers(
                             _ => ReadingStatus::Unread,
                         },
                         favorite: ui.get_lookup_favorite(),
+                        tags: ui
+                            .get_lookup_tags()
+                            .iter()
+                            .map(|r| r.name.to_string())
+                            .collect(),
                     },
                 ),
             );
@@ -1185,6 +1192,77 @@ pub fn attach_with_providers(
                 Ok(id) => dispatch(&ui, &tx, Request::RemoveTag(TagId::from_uuid(id))),
                 Err(_) => ui.set_status("タグ ID を読み取れません。".into()),
             }
+        }
+    });
+    // Tags of the add screen are only a list of names until the paper is registered, so
+    // they are kept on the screen (row id = folded name) and sent with the confirmation.
+    let weak = ui.as_weak();
+    ui.on_lookup_tag_add(move |name| {
+        if let Some(ui) = weak.upgrade() {
+            match normalize_tag_name(&name) {
+                Ok((display, key)) => {
+                    let mut rows: Vec<TagRow> = ui.get_lookup_tags().iter().collect();
+                    if rows.iter().any(|r| r.id == key.as_str()) {
+                        ui.set_status(format!("タグ「{display}」はすでに指定しています。").into());
+                    } else {
+                        rows.push(TagRow {
+                            id: key.into(),
+                            name: display.into(),
+                            count: 0,
+                            selected: false,
+                        });
+                        ui.set_lookup_tags(ModelRc::new(VecModel::from(rows)));
+                        ui.set_lookup_dirty(true);
+                    }
+                    ui.set_tag_suggestions(ModelRc::new(VecModel::from(Vec::<TagRow>::new())));
+                }
+                Err(e) => ui.set_status(tag_name_message(e).into()),
+            }
+        }
+    });
+    let weak = ui.as_weak();
+    ui.on_lookup_tag_remove(move |id| {
+        if let Some(ui) = weak.upgrade() {
+            let rows: Vec<TagRow> = ui.get_lookup_tags().iter().filter(|r| r.id != id).collect();
+            ui.set_lookup_tags(ModelRc::new(VecModel::from(rows)));
+        }
+    });
+    let weak = ui.as_weak();
+    ui.on_lookup_tag_input_changed(move |typed| {
+        if let Some(ui) = weak.upgrade() {
+            let chosen: Vec<slint::SharedString> =
+                ui.get_lookup_tags().iter().map(|r| r.id).collect();
+            let mut all = Vec::new();
+            let mut taken = Vec::new();
+            for r in ui.get_tag_rows().iter() {
+                let Ok(uuid) = uuid::Uuid::parse_str(&r.id) else {
+                    continue;
+                };
+                let tag = Tag {
+                    id: TagId::from_uuid(uuid),
+                    name: r.name.to_string(),
+                };
+                if tag
+                    .key()
+                    .is_ok_and(|k| chosen.iter().any(|c| c.as_str() == k))
+                {
+                    taken.push(tag.id);
+                }
+                all.push(TagCount {
+                    tag,
+                    paper_count: 0,
+                });
+            }
+            let rows: Vec<TagRow> = tag_suggestions(&all, &taken, &typed, 6)
+                .into_iter()
+                .map(|t| TagRow {
+                    id: t.id.to_string().into(),
+                    name: t.name.into(),
+                    count: 0,
+                    selected: false,
+                })
+                .collect();
+            ui.set_tag_suggestions(ModelRc::new(VecModel::from(rows)));
         }
     });
     let weak = ui.as_weak();
@@ -1619,10 +1697,12 @@ fn apply_reply(ui: &MainWindow, reply: Reply) {
         ui.set_lookup_notes("".into());
         ui.set_lookup_reading_status(0);
         ui.set_lookup_favorite(false);
+        ui.set_lookup_tags(ModelRc::default());
         ui.set_lookup_has_result(false);
         ui.set_lookup_dirty(false);
     }
     if reply.lookup_open == Some(false) {
+        ui.set_lookup_tags(ModelRc::default());
         ui.set_lookup_dirty(false);
         ui.set_lookup_has_result(false);
     }

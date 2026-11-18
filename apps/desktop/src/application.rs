@@ -515,7 +515,7 @@ pub struct TagAssignment {
     pub created: bool,
 }
 
-fn tag_name_message(error: TagNameError) -> &'static str {
+pub(crate) fn tag_name_message(error: TagNameError) -> &'static str {
     match error {
         TagNameError::Empty => "タグ名を入力してください。",
         TagNameError::TooLong => "タグ名は64文字までです。",

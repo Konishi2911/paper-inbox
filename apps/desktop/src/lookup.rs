@@ -1,5 +1,7 @@
-use crate::application::{AppError, Application, PaperForm};
-use paper_core::{command::LibraryCommand, model::*, service::suggest_citation_key};
+use crate::application::{AppError, Application, PaperForm, tag_name_message};
+use paper_core::{
+    command::LibraryCommand, model::*, ports::PaperRepository, service::suggest_citation_key,
+};
 
 /// Personal values entered on the unified add screen. They are not
 /// bibliographic data, so registering them keeps the fetched provenance intact.
@@ -8,6 +10,8 @@ pub struct LookupUserInput {
     pub notes: String,
     pub reading_status: ReadingStatus,
     pub favorite: bool,
+    /// Tag names to give the new paper. Existing tags are reused by their folded name.
+    pub tags: Vec<String>,
 }
 
 /// Structured, read-only presentation of a fetched candidate.
@@ -64,6 +68,37 @@ impl Application {
             commands.push(LibraryCommand::SetFavorite {
                 paper_id: id,
                 favorite: true,
+            });
+        }
+        // Tags are resolved before anything is written, so one unusable name rejects the
+        // whole registration instead of leaving a paper without its tags.
+        let existing = self.store.tags(true)?;
+        let mut seen = std::collections::HashSet::new();
+        for name in &input.tags {
+            let (display, tag_key) = normalize_tag_name(name)
+                .map_err(|e| AppError::Input(tag_name_message(e).to_owned()))?;
+            if !seen.insert(tag_key.clone()) {
+                continue;
+            }
+            let found = existing
+                .iter()
+                .map(|c| &c.tag)
+                .find(|t| t.key().ok().as_deref() == Some(tag_key.as_str()));
+            let tag_id = match found {
+                Some(tag) => tag.id,
+                None => {
+                    let tag = Tag {
+                        id: TagId::new(),
+                        name: display,
+                    };
+                    let tag_id = tag.id;
+                    commands.push(LibraryCommand::CreateTag { tag });
+                    tag_id
+                }
+            };
+            commands.push(LibraryCommand::AddTag {
+                paper_id: id,
+                tag_id,
             });
         }
         self.store
