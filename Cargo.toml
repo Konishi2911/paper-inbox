@@ -20,3 +20,9 @@ thiserror = "2"
 rusqlite = { version = "0.37", features = ["bundled"] }
 slint = { version = "1", features = ["unstable-winit-030"] }
 
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = "symbols"
+panic = "abort"

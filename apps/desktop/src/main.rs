@@ -1,3 +1,6 @@
+// Release builds on Windows run as a GUI app, so no console window opens behind it.
+#![cfg_attr(all(not(debug_assertions), windows), windows_subsystem = "windows")]
+
 use paper_desktop::{MainWindow, config::Config, ui};
 use slint::ComponentHandle;
 fn main() -> Result<(), Box<dyn std::error::Error>> {
