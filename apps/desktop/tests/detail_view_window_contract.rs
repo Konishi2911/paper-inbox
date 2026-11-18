@@ -122,6 +122,12 @@ fn enum_transitions_restore_nested_drafts_and_do_not_leave_the_source_on_failed_
         Box::new(|_| Err(paper_metadata::LookupError::Network)),
     );
     wait(&w);
+    // The app opens on the neutral screen; manual entry is an explicit choice.
+    screen(&w, DetailView::Empty);
+    // An empty library is welcomed with the way to add the first paper.
+    element(&w, "文献を追加する");
+    click(&w, "識別子なしで手動入力する");
+    wait(&w);
     screen(&w, DetailView::PaperEditor);
     w.set_citation_key("View2026".into());
     element(&w, "文献タイトル").set_accessible_value("Saved");

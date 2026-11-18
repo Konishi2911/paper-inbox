@@ -9,6 +9,7 @@ import { VerticalBox, HorizontalBox } from "std-widgets.slint";
 import { Theme } from "theme.slint";
 import { PaperList } from "components/paper-list.slint";
 import { Sidebar } from "components/sidebar.slint";
+import { EmptyState } from "components/empty-state.slint";
 import { Splitter } from "components/splitter.slint";
 import { PaperDetail } from "components/paper-detail.slint";
 import { PaperEditor } from "components/paper-editor.slint";
@@ -517,7 +518,12 @@ export component MainWindow inherits Window {
                         version-rows : root.version-rows;
                     }
                     if root.detail-view==DetailView.empty || root.detail-view==DetailView.paper-detail || root.detail-view==DetailView.paper-editor : VerticalBox {
-                        if root.detail-view==DetailView.empty : Text { text:"中央の一覧から文献を選択してください。新しい文献は左の「文献を追加」から登録できます。";wrap:word-wrap;color:Theme.text-secondary; }
+                        if root.detail-view==DetailView.empty : EmptyState {
+                            library-empty: root.total == 0 && root.search-text == "" && !root.show-deleted;
+                            operable: root.operable;
+                            add-requested => {root.request-navigation(NavigationAction.import-paper,"");}
+                            manual-requested => {root.request-navigation(NavigationAction.create-paper,"");}
+                        }
                         if root.detail-view==DetailView.paper-detail : PaperDetail {
                             vertical-stretch:1;
 

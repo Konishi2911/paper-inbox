@@ -41,6 +41,9 @@ fn real_window_callbacks_cover_registration_validation_edit_restart_and_trash() 
     wait(&window);
     assert!(window.get_ready());
     assert!(!window.get_busy());
+    // The app opens on the neutral screen; manual entry is an explicit navigation.
+    window.invoke_request_navigation(NavigationAction::CreatePaper, "".into());
+    wait(&window);
     window.set_citation_key("Window2026".into());
     window.set_paper_title("Window test".into());
     window.set_year("2026".into());

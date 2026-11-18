@@ -90,6 +90,9 @@ fn read_edit_cancel_save_errors_author_indices_and_new_navigation_keep_their_con
         },
     );
     wait(&w);
+    // The app opens on the neutral screen; manual entry is an explicit navigation.
+    w.invoke_request_navigation(NavigationAction::CreatePaper, "".into());
+    wait(&w);
     assert!(w.get_edit_mode());
     assert!(!w.get_saved_paper());
     w.set_citation_key("Step8".into());

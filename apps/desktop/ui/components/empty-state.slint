@@ -1,0 +1,54 @@
+import { VerticalBox, HorizontalBox } from "std-widgets.slint";
+import { Theme } from "../theme.slint";
+import { AppButton } from "app-button.slint";
+
+// The detail pane when nothing is open: a welcome for an empty library, a short hint
+// otherwise. Both lead to the add screen, which is where every paper starts.
+export component EmptyState inherits VerticalBox {
+    in property <bool> library-empty;
+    in property <bool> operable: true;
+    callback add-requested();
+    callback manual-requested();
+
+    padding: 24px;
+    spacing: 12px;
+    alignment: start;
+
+    Text {
+        text: root.library-empty ? "最初の文献を追加しましょう" : "文献を選択してください";
+        font-size: 20px;
+        font-weight: 700;
+        color: Theme.text-primary;
+        wrap: word-wrap;
+    }
+    Text {
+        text: root.library-empty
+            ? "DOI・arXiv ID・URL を貼り付けて Enter を押すと、書誌情報を取得して登録できます。PDF をこの画面へドラッグ＆ドロップしても、PDF の中の識別子を探して追加を始められます。"
+            : "中央の一覧から文献を選ぶと、ここに詳細が表示されます。新しい文献は「文献を追加」から登録できます。PDF をドロップしても追加を始められます。";
+        wrap: word-wrap;
+        color: Theme.text-secondary;
+    }
+    HorizontalBox {
+        padding: 0px;
+        spacing: 8px;
+        alignment: start;
+        AppButton {
+            accessible-label: "文献を追加する";
+            text: "文献を追加";
+            kind: root.library-empty ? "primary" : "outline";
+            enabled: root.operable;
+            clicked => {
+                root.add-requested();
+            }
+        }
+        if root.library-empty : AppButton {
+            accessible-label: "識別子なしで手動入力する";
+            text: "手動で入力";
+            kind: "outline";
+            enabled: root.operable;
+            clicked => {
+                root.manual-requested();
+            }
+        }
+    }
+}

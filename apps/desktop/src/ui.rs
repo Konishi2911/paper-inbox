@@ -207,13 +207,8 @@ impl Worker {
                     match self.app.as_ref().unwrap().list(&self.query) {
                         Ok(list) => Reply {
                             list: Some(list),
-                            editor: Some(EditorView {
-                                form: PaperForm::default(),
-                                id: None,
-                                deleted: false,
-                                identifier_warning: String::new(),
-                                bibtex: String::new(),
-                            }),
+                            // The neutral screen (a welcome or a hint) is shown first; a blank
+                            // form is opened only when the user asks for manual entry.
                             ready: Some(true),
                             close_metadata: true,
                             message: format!("準備ができました。{files_note}"),
