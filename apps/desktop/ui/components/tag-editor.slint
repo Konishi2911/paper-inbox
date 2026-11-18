@@ -1,0 +1,100 @@
+import { VerticalBox, HorizontalBox, Button, LineEdit, ScrollView } from "std-widgets.slint";
+import { TagRow } from "../types.slint";
+import { Theme } from "../theme.slint";
+
+// Tags of the paper on screen. A tag is added by typing a name and pressing Enter (an
+// existing tag with the same name is reused), or by clicking a suggestion; it is removed
+// with the x on its chip. Both save at once, so they wait while a note draft exists.
+export component TagEditor inherits VerticalBox {
+    in property <[TagRow]> tags;
+    in property <[TagRow]> suggestions;
+    in property <bool> operable: true;
+    callback add-requested(string);
+    callback remove-requested(string);
+    callback input-changed(string);
+
+    private property <string> draft;
+
+    padding: 0px;
+    spacing: 6px;
+
+    HorizontalBox {
+        padding: 0px;
+        spacing: 8px;
+        Text {
+            text: "タグ";
+            font-size: 16px;
+            font-weight: 600;
+            vertical-alignment: center;
+            color: Theme.text-primary;
+        }
+        input := LineEdit {
+            accessible-label: "タグを追加";
+            enabled: root.operable;
+            placeholder-text: "タグ名を入力して Enter";
+            text <=> root.draft;
+            edited(text) => {
+                root.input-changed(text);
+            }
+            accepted(text) => {
+                if (text != "") {
+                    root.add-requested(text);
+                    root.draft = "";
+                }
+            }
+        }
+    }
+    if root.tags.length > 0 : ScrollView {
+        height: 40px;
+        HorizontalLayout {
+            spacing: 6px;
+            alignment: start;
+            for tag in root.tags : Rectangle {
+                background: Theme.selection;
+                border-radius: 4px;
+                height: 28px;
+                HorizontalLayout {
+                    padding-left: 8px;
+                    padding-right: 4px;
+                    spacing: 4px;
+                    Text {
+                        text: tag.name;
+                        vertical-alignment: center;
+                        color: Theme.text-primary;
+                    }
+                    Button {
+                        accessible-label: tag.name + "を外す";
+                        text: "×";
+                        width: 24px;
+                        enabled: root.operable;
+                        clicked => {
+                            root.remove-requested(tag.id);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    if root.suggestions.length > 0 : HorizontalBox {
+        padding: 0px;
+        spacing: 6px;
+        Text {
+            text: "候補:";
+            vertical-alignment: center;
+            color: Theme.text-secondary;
+            font-size: 12px;
+        }
+        for s in root.suggestions : Button {
+            accessible-label: s.name + "を付ける";
+            text: s.name;
+            enabled: root.operable;
+            clicked => {
+                root.add-requested(s.name);
+                root.draft = "";
+            }
+        }
+        Rectangle {
+            horizontal-stretch: 1;
+        }
+    }
+}

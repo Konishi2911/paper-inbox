@@ -12,9 +12,9 @@ import { Sidebar } from "components/sidebar.slint";
 import { Splitter } from "components/splitter.slint";
 import { PaperDetail } from "components/paper-detail.slint";
 import { PaperEditor } from "components/paper-editor.slint";
-import { AttachmentRow, DiffInputField, DiffResolution, DiffFilter, DiffBulkAction, DetailView, AuthorAction, NavigationAction, AuthorRow, PaperRow, LookupField, LinkTarget, CandidateRow, ProposalRow, VersionRow } from "types.slint";
+import { AttachmentRow, TagRow, DiffInputField, DiffResolution, DiffFilter, DiffBulkAction, DetailView, AuthorAction, NavigationAction, AuthorRow, PaperRow, LookupField, LinkTarget, CandidateRow, ProposalRow, VersionRow } from "types.slint";
 
-export { AttachmentRow, DiffInputField, DiffResolution, DiffFilter, DiffBulkAction, DetailView, AuthorAction, NavigationAction, AuthorRow, PaperRow, LookupField, LinkTarget, CandidateRow, ProposalRow, VersionRow } from "types.slint";
+export { AttachmentRow, TagRow, DiffInputField, DiffResolution, DiffFilter, DiffBulkAction, DetailView, AuthorAction, NavigationAction, AuthorRow, PaperRow, LookupField, LinkTarget, CandidateRow, ProposalRow, VersionRow } from "types.slint";
 
 export component MainWindow inherits Window {
     title:"Paper Inbox";
@@ -35,6 +35,14 @@ export component MainWindow inherits Window {
     // PDFs of the paper on screen and the unused-file summary, both set by Rust.
     in-out property <[AttachmentRow]> attachment-rows;
     in-out property <string> primary-attachment;
+    in-out property <[TagRow]> tag-rows;
+    in-out property <[TagRow]> paper-tag-rows;
+    in-out property <[TagRow]> tag-suggestions;
+    in-out property <[string]> filter-tag-ids;
+    callback add-tag(string);
+    callback remove-tag(string);
+    callback tag-input-changed(string);
+    callback toggle-tag-filter(string);
     in-out property <string> identifiers-line;
     in-out property <int> cleanup-count:0;
     in-out property <string> cleanup-size;
@@ -302,6 +310,7 @@ export component MainWindow inherits Window {
 
                 library-requested(deleted) => {
                     root.show-deleted = deleted;
+                    root.filter-tag-ids = [];
                     root.search-text = "";
                     root.limit = 50;
                     root.search();
@@ -309,6 +318,8 @@ export component MainWindow inherits Window {
 
                 export-requested => { root.toggle-export(); }
                 cleanup-requested => { root.request-navigation(NavigationAction.attachment-cleanup,""); }
+                tag-rows: root.tag-rows;
+                tag-toggled(id) => { root.toggle-tag-filter(id); }
                 about-requested => { root.about-open = true; }
                 reconnect-requested => { root.request-navigation(NavigationAction.reconnect,""); }
             }
@@ -517,6 +528,11 @@ export component MainWindow inherits Window {
                             attachment-rows: root.attachment-rows;
                             primary-attachment: root.primary-attachment;
                             identifiers-line: root.identifiers-line;
+                            tag-rows: root.paper-tag-rows;
+                            tag-suggestions: root.tag-suggestions;
+                            tag-add-requested(name) => { root.add-tag(name); }
+                            tag-remove-requested(id) => { root.remove-tag(id); }
+                            tag-input-changed(text) => { root.tag-input-changed(text); }
                             copied(what) => { root.status = what + "をコピーしました。"; }
                             attach-requested => { root.attach-pdf(); }
                             attachment-open-requested(id) => { root.open-attachment(id); }

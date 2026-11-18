@@ -26,6 +26,9 @@ export struct PaperRow { selected:bool, id:string, title:string, authors:string,
 
 export struct AttachmentRow { id:string, name:string, details:string, missing:bool }
 
+// A tag in the sidebar (count, selected as a filter) or on a paper (count 0, not selected).
+export struct TagRow { id:string, name:string, count:int, selected:bool }
+
 export struct LookupField { label:string, value:string }
 
 export struct CandidateRow { id:string, label:string, details:string, held:bool }

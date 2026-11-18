@@ -9,9 +9,10 @@ import {
 } from "std-widgets.slint";
 
 import { Theme } from "../theme.slint";
-import { LinkTarget, AttachmentRow } from "../types.slint";
+import { LinkTarget, AttachmentRow, TagRow } from "../types.slint";
 import { AttachmentList } from "attachment-list.slint";
 import { DetailActions } from "detail-actions.slint";
+import { TagEditor } from "tag-editor.slint";
 
 // Read-only view of the saved paper. Personal values (reading status,
 // favorite, archive, notes) are changed in place; the parent saves them.
@@ -44,8 +45,13 @@ export component PaperDetail inherits Rectangle {
     in property <string> primary-attachment;
     // DOI, arXiv ID and URL on one muted line, selectable for manual copying.
     in property <string> identifiers-line;
+    in property <[TagRow]> tag-rows;
+    in property <[TagRow]> tag-suggestions;
 
     callback attach-requested();
+    callback tag-add-requested(string);
+    callback tag-remove-requested(string);
+    callback tag-input-changed(string);
     callback attachment-open-requested(string);
     callback attachment-detach-requested(string);
     callback edit-requested();
@@ -209,6 +215,25 @@ export component PaperDetail inherits Rectangle {
                     }
                 }
 
+                Rectangle {
+                    height: 1px;
+                    background: Theme.divider;
+                }
+
+                TagEditor {
+                    tags: root.tag-rows;
+                    suggestions: root.tag-suggestions;
+                    operable: root.quick-operable;
+                    add-requested(name) => {
+                        root.tag-add-requested(name);
+                    }
+                    remove-requested(id) => {
+                        root.tag-remove-requested(id);
+                    }
+                    input-changed(text) => {
+                        root.tag-input-changed(text);
+                    }
+                }
                 Rectangle {
                     height: 1px;
                     background: Theme.divider;

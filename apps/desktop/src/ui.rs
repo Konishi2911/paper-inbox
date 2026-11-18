@@ -1,8 +1,8 @@
 use crate::export::{self, PreparedExport};
 use crate::{
     AttachmentRow, AuthorAction, AuthorRow, DetailView, LinkTarget, LookupField, MainWindow,
-    NavigationAction, PaperRow,
-    application::{Application, AuthorInput, PaperForm, QuickChange},
+    NavigationAction, PaperRow, TagRow,
+    application::{Application, AuthorInput, PaperForm, QuickChange, tag_suggestions},
     attachment::AttachmentFiles,
     config::Config,
     lookup::{LookupPreview, LookupUserInput},
@@ -29,6 +29,8 @@ enum Request {
     Open(PaperId),
     Save(PaperForm),
     Quick(QuickChange),
+    AddTag(String),
+    RemoveTag(TagId),
     Delete(bool),
     ReviewMetadata(PaperId),
     SubmitCandidate(crate::metadata::CandidateForm),
@@ -78,6 +80,10 @@ struct Reply {
     form_error: Option<String>,
     /// Attachment rows of the paper in `editor`; sent together with every editor reload.
     attachments: Option<Vec<AttachmentView>>,
+    /// Tags of the paper in `editor`, sent with every editor reload.
+    paper_tags: Option<Vec<Tag>>,
+    /// Every tag with its count, sent with every list reload.
+    tag_counts: Option<Vec<TagCount>>,
     /// Unused file count and total bytes; opens the cleanup screen.
     cleanup: Option<(usize, u64)>,
 }
@@ -112,6 +118,7 @@ impl Worker {
     fn handle(&mut self, request: Request) -> Reply {
         let mut reply = self.handle_request(request);
         self.fill_attachments(&mut reply);
+        self.fill_tags(&mut reply);
         reply
     }
     /// Every editor reload carries the paper's PDFs, so the list never lags behind.
@@ -139,6 +146,29 @@ impl Worker {
             }
         }
         reply.attachments = Some(rows);
+    }
+    /// Every editor reload carries the paper's tags and every list reload the tag counts, so the
+    /// detail, the sidebar and completion never disagree with the stored state.
+    fn fill_tags(&self, reply: &mut Reply) {
+        let Some(app) = &self.app else {
+            return;
+        };
+        if let Some(id) = reply.editor.as_ref().and_then(|e| e.id) {
+            match app.paper_tags(id) {
+                Ok(tags) => reply.paper_tags = Some(tags),
+                Err(e) => reply
+                    .message
+                    .push_str(&format!(" タグを読み込めません: {e}")),
+            }
+        }
+        if reply.list.is_some() || reply.editor.is_some() {
+            match app.tag_counts(self.query.filter.include_archived) {
+                Ok(counts) => reply.tag_counts = Some(counts),
+                Err(e) => reply
+                    .message
+                    .push_str(&format!(" タグの一覧を読み込めません: {e}")),
+            }
+        }
     }
     fn handle_request(&mut self, request: Request) -> Reply {
         if matches!(request, Request::Initialize) {
@@ -468,6 +498,40 @@ impl Worker {
                         reply.message = format!("{e} 表示を保存済みの内容に戻しました。");
                         reply
                     }
+                }
+            }
+            Request::AddTag(name) => {
+                let Some(state) = self.editing.clone() else {
+                    return Reply {
+                        message: "タグを付ける文献を選択してください。".into(),
+                        ..Default::default()
+                    };
+                };
+                let id = state.paper.id();
+                match app.add_tag_by_name(&state, &name) {
+                    Ok(done) => {
+                        self.after_save(id, &format!("タグ「{}」を付けました。", done.tag.name))
+                    }
+                    Err(e) => Reply {
+                        message: e.to_string(),
+                        ..Default::default()
+                    },
+                }
+            }
+            Request::RemoveTag(tag_id) => {
+                let Some(state) = self.editing.clone() else {
+                    return Reply {
+                        message: "文献を選択してください。".into(),
+                        ..Default::default()
+                    };
+                };
+                let id = state.paper.id();
+                match app.remove_tag(&state, tag_id) {
+                    Ok(()) => self.after_save(id, "タグを外しました。"),
+                    Err(e) => Reply {
+                        message: e.to_string(),
+                        ..Default::default()
+                    },
                 }
             }
             Request::Delete(deleted) => {
@@ -1108,6 +1172,73 @@ pub fn attach_with_providers(
     });
     let tx = sender.clone();
     let weak = ui.as_weak();
+    ui.on_add_tag(move |name| {
+        if let Some(ui) = weak.upgrade() {
+            dispatch(&ui, &tx, Request::AddTag(name.to_string()));
+        }
+    });
+    let tx = sender.clone();
+    let weak = ui.as_weak();
+    ui.on_remove_tag(move |id| {
+        if let Some(ui) = weak.upgrade() {
+            match uuid::Uuid::parse_str(&id) {
+                Ok(id) => dispatch(&ui, &tx, Request::RemoveTag(TagId::from_uuid(id))),
+                Err(_) => ui.set_status("タグ ID を読み取れません。".into()),
+            }
+        }
+    });
+    let weak = ui.as_weak();
+    ui.on_tag_input_changed(move |typed| {
+        if let Some(ui) = weak.upgrade() {
+            // Completion works on what is already on screen, so typing never waits for the worker.
+            let all: Vec<TagCount> = ui
+                .get_tag_rows()
+                .iter()
+                .filter_map(|r| {
+                    Some(TagCount {
+                        tag: Tag {
+                            id: TagId::from_uuid(uuid::Uuid::parse_str(&r.id).ok()?),
+                            name: r.name.to_string(),
+                        },
+                        paper_count: 0,
+                    })
+                })
+                .collect();
+            let taken: Vec<TagId> = ui
+                .get_paper_tag_rows()
+                .iter()
+                .filter_map(|r| uuid::Uuid::parse_str(&r.id).ok().map(TagId::from_uuid))
+                .collect();
+            let rows: Vec<TagRow> = tag_suggestions(&all, &taken, &typed, 6)
+                .into_iter()
+                .map(|t| TagRow {
+                    id: t.id.to_string().into(),
+                    name: t.name.into(),
+                    count: 0,
+                    selected: false,
+                })
+                .collect();
+            ui.set_tag_suggestions(ModelRc::new(VecModel::from(rows)));
+        }
+    });
+    let tx = sender.clone();
+    let weak = ui.as_weak();
+    ui.on_toggle_tag_filter(move |id| {
+        if let Some(ui) = weak.upgrade() {
+            let mut chosen: Vec<slint::SharedString> = ui.get_filter_tag_ids().iter().collect();
+            match chosen.iter().position(|c| *c == id) {
+                Some(at) => {
+                    chosen.remove(at);
+                }
+                None => chosen.push(id),
+            }
+            ui.set_filter_tag_ids(ModelRc::new(VecModel::from(chosen)));
+            ui.set_limit(50);
+            dispatch(&ui, &tx, Request::List(query_from_ui(&ui)));
+        }
+    });
+    let tx = sender.clone();
+    let weak = ui.as_weak();
     ui.on_detach_attachment(move |id| {
         if let Some(ui) = weak.upgrade() {
             match uuid::Uuid::parse_str(&id) {
@@ -1441,6 +1572,12 @@ fn query_from_ui(ui: &MainWindow) -> PaperQuery {
         text: Some(ui.get_search_text().into()),
         filter: PaperFilter {
             include_archived: ui.get_show_deleted() || ui.get_include_archived(),
+            tags: ui
+                .get_filter_tag_ids()
+                .iter()
+                .filter_map(|id| uuid::Uuid::parse_str(&id).ok().map(TagId::from_uuid))
+                .collect(),
+            tag_match: TagMatch::All,
             reading_status: ui.get_filter_unread().then_some(ReadingStatus::Unread),
             favorite: ui.get_filter_favorite().then_some(true),
             has_attachment: ui.get_filter_pdf().then_some(true),
@@ -1615,6 +1752,33 @@ fn apply_reply(ui: &MainWindow, reply: Reply) {
                 .unwrap_or_default(),
         );
         ui.set_attachment_rows(ModelRc::new(VecModel::from(rows)));
+    }
+    if let Some(tags) = reply.paper_tags {
+        ui.set_paper_tag_rows(ModelRc::new(VecModel::from(
+            tags.into_iter()
+                .map(|t| TagRow {
+                    id: t.id.to_string().into(),
+                    name: t.name.into(),
+                    count: 0,
+                    selected: false,
+                })
+                .collect::<Vec<_>>(),
+        )));
+        ui.set_tag_suggestions(ModelRc::new(VecModel::from(Vec::<TagRow>::new())));
+    }
+    if let Some(counts) = reply.tag_counts {
+        let chosen = ui.get_filter_tag_ids();
+        ui.set_tag_rows(ModelRc::new(VecModel::from(
+            counts
+                .into_iter()
+                .map(|c| TagRow {
+                    selected: chosen.iter().any(|id| id.as_str() == c.tag.id.to_string()),
+                    id: c.tag.id.to_string().into(),
+                    name: c.tag.name.into(),
+                    count: c.paper_count.min(i32::MAX as usize) as i32,
+                })
+                .collect::<Vec<_>>(),
+        )));
     }
     if let Some((count, bytes)) = reply.cleanup {
         ui.set_cleanup_count(count.min(i32::MAX as usize) as i32);

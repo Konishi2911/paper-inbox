@@ -1,9 +1,11 @@
 import {
     VerticalBox,
-    Button
+    Button,
+    ScrollView
 } from "std-widgets.slint";
 
 import { Theme } from "../theme.slint";
+import { TagRow } from "../types.slint";
 
 export component Sidebar inherits Rectangle {
     // Input properties
@@ -14,6 +16,8 @@ export component Sidebar inherits Rectangle {
 
     in property <int> selected-count;
     in property <string> database-path;
+    in property <[TagRow]> tag-rows;
+    callback tag-toggled(string);
 
     // Callbacks
     // A single entry point: the add screen offers identifier lookup first
@@ -127,10 +131,36 @@ export component Sidebar inherits Rectangle {
             }
         }
 
-        // Flexible spacer
-        Rectangle {
+        // Tags: choosing some narrows the list to papers that carry all of them. Tags nobody
+        // carries are hidden unless they are chosen.
+        ScrollView {
             vertical-stretch: 1;
-            background: transparent;
+            VerticalBox {
+                padding: 0px;
+                spacing: 4px;
+                alignment: start;
+                if !root.collapsed && root.tag-rows.length > 0 : Text {
+                    text: "タグ";
+                    color: Theme.text-muted;
+                    font-weight: 600;
+                }
+                if !root.collapsed : VerticalBox {
+                    padding: 0px;
+                    spacing: 4px;
+                    for tag in root.tag-rows : VerticalBox {
+                        padding: 0px;
+                        if tag.count > 0 || tag.selected : Button {
+                            accessible-label: "タグ " + tag.name + (tag.selected ? "の絞り込みを解除" : "で絞り込む");
+                            text: tag.name + " (" + tag.count + ")";
+                            primary: tag.selected;
+                            enabled: root.operable;
+                            clicked => {
+                                root.tag-toggled(tag.id);
+                            }
+                        }
+                    }
+                }
+            }
         }
 
         // Database information
