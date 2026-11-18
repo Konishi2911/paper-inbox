@@ -36,7 +36,7 @@ pub fn find_identifiers(info: &[String], pages: &[String]) -> Vec<FoundIdentifie
         let penalty = -5 * i32::try_from(index).unwrap_or(i32::MAX / 10);
         collect(own, FoundIn::PageText { page }, penalty, &mut found);
     }
-    found.sort_by(|a, b| b.score.cmp(&a.score));
+    found.sort_by_key(|f| std::cmp::Reverse(f.score));
     found
 }
 
