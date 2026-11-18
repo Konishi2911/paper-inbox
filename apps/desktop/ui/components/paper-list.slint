@@ -50,8 +50,10 @@ export component PaperList inherits Rectangle {
             Text {text:root.show-deleted ? "削除済み" : "すべての文献";font-size:20px;font-weight:700;color:Theme.text-primary;vertical-alignment:center;}
             Text {text:root.total==root.papers.length ? root.total+"件" : root.papers.length+" / "+root.total+"件";color:Theme.text-secondary;vertical-alignment:center;}
             Rectangle {horizontal-stretch:1;}
+            ComboBox {accessible-label:"並び順";width:150px;enabled:root.operable;model:["追加日の新しい順","タイトル順","出版年の新しい順"];current-index<=>root.sort-index;selected(index)=>{root.limit=50;root.search();}}
         }
         HorizontalBox {
+            padding:0px;spacing:8px;
             LineEdit {accessible-label:"文献を検索";text<=>root.search-text;placeholder-text:"タイトル・著者・引用キーを検索";accepted=>{typing.running=false;root.limit=50;root.search();} edited=>{typing.running=false;typing.running=true;}}
             AppButton {enabled:root.operable;text:"検索";clicked=>{root.limit=50;root.search();}}
         }
@@ -60,10 +62,9 @@ export component PaperList inherits Rectangle {
             Chip {accessible-label:"未読だけ表示";text:"未読";on:root.filter-unread;enabled:root.operable;clicked=>{root.filter-unread=!root.filter-unread;root.limit=50;root.search();}}
             Chip {accessible-label:"お気に入りだけ表示";text:"★ お気に入り";on:root.filter-favorite;enabled:root.operable;clicked=>{root.filter-favorite=!root.filter-favorite;root.limit=50;root.search();}}
             Chip {accessible-label:"PDFありだけ表示";text:"PDFあり";on:root.filter-pdf;enabled:root.operable;clicked=>{root.filter-pdf=!root.filter-pdf;root.limit=50;root.search();}}
+            Chip {accessible-label:"アーカイブを含める";text:"アーカイブ";on:root.include-archived;enabled:root.operable && !root.show-deleted;clicked=>{root.include-archived=!root.include-archived;root.limit=50;root.search();}}
             Rectangle {horizontal-stretch:1;}
         }
-        CheckBox {enabled:root.operable && !root.show-deleted;text:"アーカイブを含める";checked<=>root.include-archived;toggled=>{root.limit=50;root.search();}}
-        ComboBox {enabled:root.operable;model:["追加日の新しい順","タイトル順","出版年の新しい順"];current-index<=>root.sort-index;selected(index)=>{root.limit=50;root.search();}}
         scroll := ScrollView {
             // Continuous scrolling: nearing the end asks for the next batch.
             changed content-y => { root.maybe-load-more(); }

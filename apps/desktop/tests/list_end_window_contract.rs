@@ -32,6 +32,29 @@ fn the_last_card_is_fully_reachable_even_when_titles_are_long() {
             .collect();
         w.set_papers(ModelRc::new(VecModel::from(rows)));
         w.set_total(9);
+        // The filters take few rows, so the cards start high and several fit at the minimum size.
+        let first = ElementHandle::find_by_accessible_label(&w, "文献を開く: Paper 1")
+            .next()
+            .expect("second card")
+            .absolute_position()
+            .y;
+        assert!(
+            first <= 330.,
+            "{width}x{height}: the cards start too low ({first})"
+        );
+        for label in ["並び順", "アーカイブを含める"] {
+            let control = ElementHandle::find_by_accessible_label(&w, label)
+                .next()
+                .unwrap_or_else(|| panic!("{label}"));
+            let list = ElementHandle::find_by_element_id(&w, "PaperList::scroll")
+                .next()
+                .unwrap();
+            assert!(
+                control.absolute_position().x + control.size().width
+                    <= list.absolute_position().x + list.size().width + 16.,
+                "{label} fits the list width"
+            );
+        }
         let position = slint::LogicalPosition::new(300., 450.);
         w.window()
             .dispatch_event(WindowEvent::PointerMoved { position });

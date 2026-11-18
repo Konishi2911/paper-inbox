@@ -309,10 +309,10 @@ export component MainWindow inherits Window {
     VerticalBox {
         padding:0px; spacing:0px;
         HorizontalBox {
-            padding:14px;spacing:12px;
+            padding-left:14px;padding-right:14px;padding-top:8px;padding-bottom:8px;spacing:12px;
             AppButton {kind:"ghost";enabled:!root.about-open;accessible-label:root.sidebar-collapsed ? "メニューを展開" : "メニューを折りたたむ";text:root.sidebar-collapsed ? "☰" : "‹";width:38px;clicked=>{root.sidebar-collapsed=!root.sidebar-collapsed;}}
-            Text {text:"Paper Inbox";font-size:22px;font-weight:700;color:Theme.text-primary;}
-            Text {text:root.busy ? "処理中…" : "文献ライブラリ";horizontal-alignment:right;color:Theme.text-secondary;}
+            Text {text:"Paper Inbox";font-size:20px;vertical-alignment:center;font-weight:700;color:Theme.text-primary;}
+            Text {text:root.busy ? "処理中…" : "";horizontal-alignment:right;vertical-alignment:center;color:Theme.text-secondary;}
         }
         HorizontalBox {
             spacing:0px;vertical-stretch:1;
