@@ -48,6 +48,7 @@ export component PaperList inherits Rectangle {
             padding:0px;spacing:8px;
             Text {text:root.show-deleted ? "削除済み" : "すべての文献";font-size:20px;font-weight:700;color:Theme.text-primary;vertical-alignment:center;}
             Text {text:root.total==root.papers.length ? root.total+"件" : root.papers.length+" / "+root.total+"件";color:Theme.text-secondary;vertical-alignment:center;}
+            Rectangle {horizontal-stretch:1;}
         }
         HorizontalBox {
             LineEdit {accessible-label:"文献を検索";text<=>root.search-text;placeholder-text:"タイトル・著者・引用キーを検索";accepted=>{typing.running=false;root.limit=50;root.search();} edited=>{typing.running=false;typing.running=true;}}

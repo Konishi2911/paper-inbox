@@ -72,10 +72,10 @@ export component PaperDetail inherits Rectangle {
         // Toolbar: frequent personal actions on the left, editing on the right.
         HorizontalBox {
             padding: 0px;
-            spacing: 8px;
+            spacing: 6px;
             ComboBox {
                 accessible-label: "読書状態";
-                width: 104px;
+                width: 92px;
                 enabled: root.quick-operable;
                 model: ["未読", "読書中", "既読"];
                 current-index <=> root.reading-status;
@@ -86,7 +86,7 @@ export component PaperDetail inherits Rectangle {
             Button {
                 accessible-label: root.favorite ? "お気に入りから外す" : "お気に入りに追加";
                 text: root.favorite ? "★" : "☆";
-                width: 40px;
+                width: 36px;
                 enabled: root.quick-operable;
                 clicked => {
                     root.favorite-toggled();
