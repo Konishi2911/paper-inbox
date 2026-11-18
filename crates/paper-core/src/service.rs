@@ -1,4 +1,5 @@
 mod bibtex;
+mod identifier_extraction;
 mod identity;
 mod merge;
 mod update;
@@ -24,6 +25,7 @@ pub use candidates::{
 
 mod citation_keys;
 pub use citation_keys::suggest_citation_key;
+pub use identifier_extraction::{FoundIdentifier, FoundIn, find_identifiers};
 
 mod field_diff;
 pub use field_diff::{FieldChangeKind, FieldDiffError, compare_field_values};
