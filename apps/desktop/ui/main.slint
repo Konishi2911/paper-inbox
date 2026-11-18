@@ -232,6 +232,18 @@ export component MainWindow inherits Window {
         root.detail-view == DetailView.paper-detail
         && root.editable
         && !root.dirty;
+    // On the empty screen, or on the add screen, a dropped PDF is attached to the paper that is
+    // registered next.
+    out property <bool> can-drop-new:
+        (root.detail-view == DetailView.empty
+            || (root.detail-view == DetailView.paper-editor && root.editing-id == "")
+            || (root.detail-view == DetailView.import && root.lookup-new))
+        && root.ready
+        && !root.confirm-discard
+        && !root.about-open
+        && !root.dirty;
+    in-out property <string> lookup-pdf;
+    in-out property <string> lookup-pdf-name;
     callback file-dropped(string);
 
     in-out property <bool> confirm-discard:false;
@@ -428,6 +440,8 @@ export component MainWindow inherits Window {
                         lookup-reading-status <=> root.lookup-reading-status;
                         lookup-favorite <=> root.lookup-favorite;
                         lookup-new : root.lookup-new;
+                        lookup-pdf-name : root.lookup-pdf-name;
+                        pdf-clear => { root.lookup-pdf = ""; root.lookup-pdf-name = ""; }
                         lookup-tags : root.lookup-tags;
                         tag-suggestions : root.tag-suggestions;
                         tag-add-requested(name) => { root.lookup-tag-add(name); }
@@ -629,7 +643,7 @@ export component MainWindow inherits Window {
             x:16px;y:16px;width:parent.width - 32px;height:parent.height - 32px;
             border-radius:12px;
             border-width:3px;
-            border-color:root.can-drop-attach ? Theme.accent : Theme.text-muted;
+            border-color:(root.can-drop-attach || root.can-drop-new) ? Theme.accent : Theme.text-muted;
             Text {
                 x:(parent.width - self.width) / 2;
                 y:(parent.height - self.height) / 2;
@@ -639,7 +653,9 @@ export component MainWindow inherits Window {
                 color:Theme.on-accent;
                 text:root.can-drop-attach
                     ? "ここにドロップして、開いている文献にPDFを添付"
-                    : "ここでは添付できません（添付する文献を開いてください）";
+                    : root.can-drop-new
+                    ? "ここにドロップして、このPDFを添えて文献を追加"
+                    : "ここでは使えません（添付する文献か追加画面を開いてください）";
             }
         }
     }

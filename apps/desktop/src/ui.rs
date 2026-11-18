@@ -22,7 +22,9 @@ use std::{
 enum Request {
     BeginLookup(bool),
     FetchLookup(String),
-    ConfirmLookup(String, String, LookupUserInput),
+    ConfirmLookup(String, String, LookupUserInput, Option<PathBuf>),
+    /// Opens the add screen with a dropped PDF to attach once the paper is registered.
+    BeginLookupWithPdf(PathBuf),
     CancelLookup,
     SuggestKey(PaperForm),
     Initialize,
@@ -77,6 +79,8 @@ struct Reply {
     close_candidate: bool,
     lookup_open: Option<bool>,
     lookup_new: Option<bool>,
+    /// A dropped PDF waiting on the add screen: its path and file name.
+    lookup_pdf: Option<(String, String)>,
     lookup_preview: Option<(LookupPreview, String)>,
     key_suggestion: Option<String>,
     form_error: Option<String>,
@@ -257,6 +261,16 @@ impl Worker {
                     ..Default::default()
                 }
             }
+            Request::BeginLookupWithPdf(path) => {
+                let mut reply = self.handle_request(Request::BeginLookup(true));
+                let name = path
+                    .file_name()
+                    .map(|n| n.to_string_lossy().into_owned())
+                    .unwrap_or_default();
+                reply.lookup_pdf = Some((path.to_string_lossy().into_owned(), name));
+                reply.message = "PDFを添付して登録します。識別子を入力してください。".into();
+                reply
+            }
             Request::FetchLookup(input) => {
                 self.pending_lookup = None;
                 let fetched = paper_metadata::parse_identifier(&input)
@@ -305,7 +319,7 @@ impl Worker {
                     },
                 }
             }
-            Request::ConfirmLookup(input, key, user_input) => {
+            Request::ConfirmLookup(input, key, user_input, pdf) => {
                 let Some(pending) = &self.pending_lookup else {
                     return Reply {
                         message: "書誌情報を再取得してください。".into(),
@@ -327,7 +341,20 @@ impl Worker {
                     ) {
                         Ok(id) => {
                             self.pending_lookup = None;
-                            let mut reply = self.after_save(id, "取得した書誌情報を登録しました。");
+                            // The paper is already saved; a PDF that cannot be attached is
+                            // reported but never undoes the registration.
+                            let mut message = String::from("取得した書誌情報を登録しました。");
+                            if let (Some(path), Some(files)) = (pdf, self.files.as_ref()) {
+                                match files.attach(&app.store, id, &path) {
+                                    Ok(a) => {
+                                        message.push_str(&format!(" PDFを添付しました: {}", a.filename));
+                                    }
+                                    Err(e) => message.push_str(&format!(
+                                        " ただしPDFは添付できませんでした（詳細画面から添付できます）: {e}"
+                                    )),
+                                }
+                            }
+                            let mut reply = self.after_save(id, &message);
                             reply.lookup_open = Some(false);
                             reply.close_metadata = true;
                             reply
@@ -1128,6 +1155,9 @@ pub fn attach_with_providers(
                             .map(|r| r.name.to_string())
                             .collect(),
                     },
+                    Some(ui.get_lookup_pdf())
+                        .filter(|p| !p.is_empty())
+                        .map(|p| PathBuf::from(p.as_str())),
                 ),
             );
         }
@@ -1213,8 +1243,23 @@ pub fn attach_with_providers(
                 Ok(path) if ui.get_can_drop_attach() => {
                     dispatch(&ui, &tx, Request::AttachPdf(path));
                 }
+                Ok(path) if ui.get_can_drop_new() => {
+                    if ui.get_lookup_open() {
+                        // The add screen is already open: only the PDF to attach changes.
+                        let name = path
+                            .file_name()
+                            .map(|n| n.to_string_lossy().into_owned())
+                            .unwrap_or_default();
+                        ui.set_lookup_pdf(path.to_string_lossy().as_ref().into());
+                        ui.set_lookup_pdf_name(name.into());
+                        ui.set_lookup_dirty(true);
+                        ui.set_status("登録時にこのPDFを添付します。".into());
+                    } else {
+                        dispatch(&ui, &tx, Request::BeginLookupWithPdf(path));
+                    }
+                }
                 Ok(_) => ui.set_status(
-                    "PDFを添付する文献を開き、編集中の内容を保存してからドロップしてください。"
+                    "PDFを添付する文献を開くか、追加画面を開いてからドロップしてください（編集中は保存してから）。"
                         .into(),
                 ),
             }
@@ -1756,11 +1801,20 @@ fn apply_reply(ui: &MainWindow, reply: Reply) {
         ui.set_lookup_reading_status(0);
         ui.set_lookup_favorite(false);
         ui.set_lookup_tags(ModelRc::default());
+        ui.set_lookup_pdf("".into());
+        ui.set_lookup_pdf_name("".into());
         ui.set_lookup_has_result(false);
         ui.set_lookup_dirty(false);
     }
+    if let Some((path, name)) = reply.lookup_pdf {
+        ui.set_lookup_pdf(path.into());
+        ui.set_lookup_pdf_name(name.into());
+        ui.set_lookup_dirty(true);
+    }
     if reply.lookup_open == Some(false) {
         ui.set_lookup_tags(ModelRc::default());
+        ui.set_lookup_pdf("".into());
+        ui.set_lookup_pdf_name("".into());
         ui.set_lookup_dirty(false);
         ui.set_lookup_has_result(false);
     }

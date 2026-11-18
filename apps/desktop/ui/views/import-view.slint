@@ -26,6 +26,8 @@ export component ImportView inherits VerticalBox {
     in-out property <int> lookup-reading-status;
     in-out property <bool> lookup-favorite;
     in property <bool> lookup-new;
+    in property <string> lookup-pdf-name;
+    callback pdf-clear();
     in property <[TagRow]> lookup-tags;
     in property <[TagRow]> tag-suggestions;
     callback tag-add-requested(string);
@@ -79,6 +81,29 @@ export component ImportView inherits VerticalBox {
         wrap: word-wrap;
         font-size: 12px;
         color: Theme.text-secondary;
+    }
+
+    // A PDF dropped onto the window; it is attached when the paper is registered.
+    if root.lookup-new && root.lookup-pdf-name != "" : HorizontalBox {
+        padding: 0px;
+        spacing: 8px;
+        Text {
+            text: "登録時に添付するPDF: " + root.lookup-pdf-name;
+            vertical-alignment: center;
+            overflow: elide;
+            horizontal-stretch: 1;
+            color: Theme.text-primary;
+        }
+        AppButton {
+            accessible-label: "添付するPDFを取り消す";
+            text: "取り消し";
+            kind: "outline";
+            small: true;
+            enabled: root.interactive;
+            clicked => {
+                root.pdf-clear();
+            }
+        }
     }
 
     ScrollView {
