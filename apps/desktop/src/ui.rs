@@ -25,6 +25,9 @@ enum Request {
     ConfirmLookup(String, String, LookupUserInput, Option<PathBuf>),
     /// Opens the add screen with a dropped PDF to attach once the paper is registered.
     BeginLookupWithPdf(PathBuf),
+    /// A PDF chosen or dropped while the add screen is open; the flag says whether a found
+    /// identifier may fill the (empty) identifier field.
+    ScanLookupPdf(PathBuf, bool),
     CancelLookup,
     SuggestKey(PaperForm),
     Initialize,
@@ -81,6 +84,9 @@ struct Reply {
     lookup_new: Option<bool>,
     /// A dropped PDF waiting on the add screen: its path and file name.
     lookup_pdf: Option<(String, String)>,
+    /// Identifier found in that PDF, put into the identifier field; and every candidate found.
+    lookup_identifier: Option<String>,
+    lookup_candidates: Option<Vec<String>>,
     lookup_preview: Option<(LookupPreview, String)>,
     key_suggestion: Option<String>,
     form_error: Option<String>,
@@ -262,15 +268,10 @@ impl Worker {
                 }
             }
             Request::BeginLookupWithPdf(path) => {
-                let mut reply = self.handle_request(Request::BeginLookup(true));
-                let name = path
-                    .file_name()
-                    .map(|n| n.to_string_lossy().into_owned())
-                    .unwrap_or_default();
-                reply.lookup_pdf = Some((path.to_string_lossy().into_owned(), name));
-                reply.message = "PDFを添付して登録します。識別子を入力してください。".into();
-                reply
+                let opened = self.handle_request(Request::BeginLookup(true));
+                pdf_lookup_reply(opened, &path, true)
             }
+            Request::ScanLookupPdf(path, fill) => pdf_lookup_reply(Reply::default(), &path, fill),
             Request::FetchLookup(input) => {
                 self.pending_lookup = None;
                 let fetched = paper_metadata::parse_identifier(&input)
@@ -1220,6 +1221,22 @@ pub fn attach_with_providers(
             dispatch(&ui, &tx, Request::Quick(QuickChange::Notes(notes)));
         }
     });
+    let file_picker: std::rc::Rc<FilePicker> = std::rc::Rc::new(file_picker);
+    let picker = file_picker.clone();
+    let tx = sender.clone();
+    let weak = ui.as_weak();
+    ui.on_pick_lookup_pdf(move || {
+        if let Some(ui) = weak.upgrade() {
+            match picker() {
+                Some(path) => {
+                    let fill = ui.get_lookup_identifier().is_empty();
+                    ui.set_lookup_dirty(true);
+                    dispatch(&ui, &tx, Request::ScanLookupPdf(path, fill));
+                }
+                None => ui.set_status("PDFの選択をやめました。".into()),
+            }
+        }
+    });
     let tx = sender.clone();
     let weak = ui.as_weak();
     ui.on_attach_pdf(move || {
@@ -1245,15 +1262,11 @@ pub fn attach_with_providers(
                 }
                 Ok(path) if ui.get_can_drop_new() => {
                     if ui.get_lookup_open() {
-                        // The add screen is already open: only the PDF to attach changes.
-                        let name = path
-                            .file_name()
-                            .map(|n| n.to_string_lossy().into_owned())
-                            .unwrap_or_default();
-                        ui.set_lookup_pdf(path.to_string_lossy().as_ref().into());
-                        ui.set_lookup_pdf_name(name.into());
+                        // The add screen is already open: the PDF to attach changes, and an
+                        // identifier is looked for in it.
+                        let fill = ui.get_lookup_identifier().is_empty();
                         ui.set_lookup_dirty(true);
-                        ui.set_status("登録時にこのPDFを添付します。".into());
+                        dispatch(&ui, &tx, Request::ScanLookupPdf(path, fill));
                     } else {
                         dispatch(&ui, &tx, Request::BeginLookupWithPdf(path));
                     }
@@ -1802,6 +1815,7 @@ fn apply_reply(ui: &MainWindow, reply: Reply) {
         ui.set_lookup_favorite(false);
         ui.set_lookup_tags(ModelRc::default());
         ui.set_lookup_pdf("".into());
+        ui.set_lookup_candidates(ModelRc::default());
         ui.set_lookup_pdf_name("".into());
         ui.set_lookup_has_result(false);
         ui.set_lookup_dirty(false);
@@ -1811,8 +1825,17 @@ fn apply_reply(ui: &MainWindow, reply: Reply) {
         ui.set_lookup_pdf_name(name.into());
         ui.set_lookup_dirty(true);
     }
+    if let Some(candidates) = reply.lookup_candidates {
+        let rows: Vec<slint::SharedString> = candidates.into_iter().map(Into::into).collect();
+        ui.set_lookup_candidates(ModelRc::new(VecModel::from(rows)));
+    }
+    if let Some(identifier) = reply.lookup_identifier {
+        ui.set_lookup_identifier(identifier.into());
+        ui.set_lookup_has_result(false);
+    }
     if reply.lookup_open == Some(false) {
         ui.set_lookup_tags(ModelRc::default());
+        ui.set_lookup_candidates(ModelRc::default());
         ui.set_lookup_pdf("".into());
         ui.set_lookup_pdf_name("".into());
         ui.set_lookup_dirty(false);
@@ -2097,6 +2120,54 @@ fn warning_messages(prepared: &PreparedExport) -> String {
         })
         .collect::<Vec<_>>()
         .join("\n")
+}
+
+/// The reply that puts a PDF on the add screen: it waits to be attached on registration, and the
+/// identifiers found in it are offered (and the best one filled in when `fill`). An unreadable PDF
+/// is still kept for attaching, since attaching has its own check.
+fn pdf_lookup_reply(mut reply: Reply, path: &std::path::Path, fill: bool) -> Reply {
+    let name = path
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    reply.lookup_pdf = Some((path.to_string_lossy().into_owned(), name));
+    reply.message = match crate::pdf_identifier::scan_pdf(path) {
+        Ok(found) if found.is_empty() => {
+            "PDFから識別子は見つかりませんでした。識別子を入力してください。登録時にこのPDFを添付します。"
+                .into()
+        }
+        Ok(found) => {
+            let texts: Vec<String> = found
+                .iter()
+                .take(5)
+                .map(|f| match &f.identifier {
+                    PaperIdentifier::Doi(d) => d.as_str().to_owned(),
+                    PaperIdentifier::Arxiv(a) => format!("arXiv:{}", a.as_str()),
+                    PaperIdentifier::Url(u) => u.clone(),
+                })
+                .collect();
+            let place = match found[0].found_in {
+                paper_core::service::FoundIn::DocumentInfo => "PDFの情報".to_owned(),
+                paper_core::service::FoundIn::PageText { page } => format!("{page}ページ目"),
+            };
+            let others = if texts.len() > 1 {
+                format!("（ほかに{}件の候補があります）", texts.len() - 1)
+            } else {
+                String::new()
+            };
+            if fill {
+                reply.lookup_identifier = Some(texts[0].clone());
+            }
+            let message = format!(
+                "{place}から識別子を見つけました: {}{others}。確かめて Enter で書誌情報を取得します。",
+                texts[0]
+            );
+            reply.lookup_candidates = Some(texts);
+            message
+        }
+        Err(e) => format!("{e} 登録時にこのPDFを添付します。"),
+    };
+    reply
 }
 
 #[cfg(test)]

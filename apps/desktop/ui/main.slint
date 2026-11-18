@@ -244,6 +244,9 @@ export component MainWindow inherits Window {
         && !root.dirty;
     in-out property <string> lookup-pdf;
     in-out property <string> lookup-pdf-name;
+    // Identifiers found in that PDF, offered below the identifier field.
+    in-out property <[string]> lookup-candidates;
+    callback pick-lookup-pdf();
     callback file-dropped(string);
 
     in-out property <bool> confirm-discard:false;
@@ -441,6 +444,8 @@ export component MainWindow inherits Window {
                         lookup-favorite <=> root.lookup-favorite;
                         lookup-new : root.lookup-new;
                         lookup-pdf-name : root.lookup-pdf-name;
+                        lookup-candidates : root.lookup-candidates;
+                        pick-pdf-requested => { root.pick-lookup-pdf(); }
                         pdf-clear => { root.lookup-pdf = ""; root.lookup-pdf-name = ""; }
                         lookup-tags : root.lookup-tags;
                         tag-suggestions : root.tag-suggestions;

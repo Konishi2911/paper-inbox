@@ -28,6 +28,8 @@ export component ImportView inherits VerticalBox {
     in property <bool> lookup-new;
     in property <string> lookup-pdf-name;
     callback pdf-clear();
+    in property <[string]> lookup-candidates;
+    callback pick-pdf-requested();
     in property <[TagRow]> lookup-tags;
     in property <[TagRow]> tag-suggestions;
     callback tag-add-requested(string);
@@ -103,6 +105,33 @@ export component ImportView inherits VerticalBox {
             clicked => {
                 root.pdf-clear();
             }
+        }
+    }
+
+    // Other identifiers found in the PDF; choosing one only fills the field.
+    if root.lookup-new && root.lookup-candidates.length > 1 : HorizontalBox {
+        padding: 0px;
+        spacing: 6px;
+        Text {
+            text: "PDFで見つかった候補:";
+            vertical-alignment: center;
+            color: Theme.text-secondary;
+            font-size: 12px;
+        }
+        for candidate in root.lookup-candidates : AppButton {
+            accessible-label: candidate + "を識別子にする";
+            text: candidate;
+            kind: "outline";
+            small: true;
+            enabled: root.interactive && candidate != root.lookup-identifier;
+            clicked => {
+                root.lookup-identifier = candidate;
+                root.lookup-dirty = true;
+                root.lookup-has-result = false;
+            }
+        }
+        Rectangle {
+            horizontal-stretch: 1;
         }
     }
 
@@ -259,6 +288,14 @@ export component ImportView inherits VerticalBox {
         }
         Rectangle {
             horizontal-stretch: 1;
+        }
+        if root.lookup-new : AppButton {
+            accessible-label: "PDFを選んで追加";
+            text: "PDFから追加";
+            enabled: root.interactive;
+            clicked => {
+                root.pick-pdf-requested();
+            }
         }
         if root.lookup-new : AppButton {
             accessible-label: "識別子なしで手動入力";
