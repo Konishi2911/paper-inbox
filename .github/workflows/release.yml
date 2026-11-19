@@ -1,9 +1,19 @@
 name: Release
 
-# Builds unsigned binaries for a version tag (v0.1.0, ...) and attaches them to a draft release.
+# Builds unsigned binaries. A version tag (v0.1.0, ...) attaches them to a draft release; any other
+# run only keeps them as downloadable artifacts, to try the packages.
 on:
   push:
     tags: ["v*"]
+  # Packaging is tried on a pull request only when something that goes into a package changes.
+  pull_request:
+    paths:
+      - ".github/workflows/release.yml"
+      - "packaging/**"
+      - "apps/desktop/assets/**"
+      - "apps/desktop/build.rs"
+  # Once this file is on the default branch, "Run workflow" in the Actions tab works as well.
+  workflow_dispatch:
 
 env:
   CARGO_TERM_COLOR: always
@@ -26,12 +36,21 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
+      - name: Version
+        shell: bash
+        run: |
+          if [ "$GITHUB_REF_TYPE" = tag ]; then
+            version="${GITHUB_REF_NAME#v}"
+          else
+            version="$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)-test"
+          fi
+          echo "VERSION=$version" >> "$GITHUB_ENV"
       - run: cargo build --release --locked -p paper-desktop
       - name: Package (Windows)
         if: runner.os == 'Windows'
         shell: bash
         run: |
-          dir="paper-inbox-${GITHUB_REF_NAME}-${{ matrix.name }}"
+          dir="paper-inbox-v${VERSION}-${{ matrix.name }}"
           mkdir "$dir"
           cp target/release/paper-desktop.exe "$dir/"
           cp LICENSE LICENSE-MIT LICENSE-APACHE README.md THIRD-PARTY-NOTICES.md "$dir/"
@@ -41,12 +60,12 @@ jobs:
         if: runner.os == 'macOS'
         shell: bash
         run: |
-          dir="paper-inbox-${GITHUB_REF_NAME}-${{ matrix.name }}"
+          dir="paper-inbox-v${VERSION}-${{ matrix.name }}"
           app="$dir/Paper Inbox.app"
           mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
           cp target/release/paper-desktop "$app/Contents/MacOS/"
           cp apps/desktop/assets/icons/icon.icns "$app/Contents/Resources/icon.icns"
-          sed "s/@VERSION@/${GITHUB_REF_NAME#v}/" packaging/macos/Info.plist > "$app/Contents/Info.plist"
+          sed "s/@VERSION@/${VERSION}/" packaging/macos/Info.plist > "$app/Contents/Info.plist"
           cp LICENSE LICENSE-MIT LICENSE-APACHE README.md THIRD-PARTY-NOTICES.md "$dir/"
           cp -r LICENSES "$dir/"
           # ditto keeps the bundle's permissions; the app is unsigned (see README).
@@ -55,8 +74,11 @@ jobs:
         with:
           name: ${{ matrix.name }}
           path: paper-inbox-*.zip
+          retention-days: 14
 
   publish:
+    # Only a version tag publishes; a manual run stops after the artifacts above.
+    if: github.ref_type == 'tag'
     needs: build
     runs-on: ubuntu-latest
     steps:
