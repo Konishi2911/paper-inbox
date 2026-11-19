@@ -79,25 +79,26 @@ impl AttachmentFiles {
         retention: std::time::Duration,
     ) -> Result<Self, AppError> {
         sweep_stale_copies(open_dir, retention);
+        // Opening the store deletes interrupted writes, so it waits for any attach that another
+        // running instance is in the middle of.
+        fs::create_dir_all(files_dir)
+            .map_err(|e| AppError::Storage(format!("保存先フォルダーを作成できません: {e}")))?;
+        let lock_path = files_dir.join(".lock");
+        let blobs = {
+            let _lock = lock_file(&lock_path)?;
+            FileBlobStore::open(files_dir)?
+        };
         Ok(Self {
-            blobs: FileBlobStore::open(files_dir)?,
+            blobs,
             open_dir: open_dir.to_owned(),
-            lock_path: files_dir.join(".lock"),
+            lock_path,
         })
     }
 
     /// Takes the exclusive store lock, waiting while another instance holds it. The lock is
     /// released when the returned file is dropped, or when the process ends.
     fn lock(&self) -> Result<fs::File, AppError> {
-        let file = fs::OpenOptions::new()
-            .create(true)
-            .write(true)
-            .truncate(false)
-            .open(&self.lock_path)
-            .map_err(|e| AppError::Storage(format!("ロックファイルを開けません: {e}")))?;
-        file.lock()
-            .map_err(|e| AppError::Storage(format!("ファイルストアをロックできません: {e}")))?;
-        Ok(file)
+        lock_file(&self.lock_path)
     }
 
     /// Imports a PDF chosen by the user and attaches it to the paper.
@@ -267,6 +268,19 @@ impl AttachmentFiles {
     }
 }
 
+/// Opens (creating if needed) the lock file and takes an exclusive lock on it.
+fn lock_file(path: &Path) -> Result<fs::File, AppError> {
+    let file = fs::OpenOptions::new()
+        .create(true)
+        .write(true)
+        .truncate(false)
+        .open(path)
+        .map_err(|e| AppError::Storage(format!("ロックファイルを開けません: {e}")))?;
+    file.lock()
+        .map_err(|e| AppError::Storage(format!("ファイルストアをロックできません: {e}")))?;
+    Ok(file)
+}
+
 /// Copies handed to a viewer are kept for a day so that another running instance or a
 /// viewer that is still open never loses its file; older ones are deleted.
 const STALE_AFTER: std::time::Duration = std::time::Duration::from_secs(24 * 60 * 60);
@@ -403,6 +417,40 @@ mod tests {
         drop(held);
         assert!(probe.try_lock().is_ok(), "released with the guard");
         drop(probe);
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    /// Opening the store removes interrupted writes, so it has to wait for an attach that
+    /// another running instance is in the middle of instead of deleting its temporary file.
+    #[test]
+    fn opening_the_store_waits_for_an_attach_in_another_instance() {
+        let root = std::env::temp_dir().join(format!(
+            "paper-open-lock-{}",
+            paper_core::model::PaperId::new()
+        ));
+        let files = root.join("library-files");
+        let open = root.join("open");
+        let first = AttachmentFiles::open(&files, &open).unwrap();
+        let held = first.lock().unwrap();
+        let (sender, receiver) = std::sync::mpsc::channel();
+        let (files2, open2) = (files.clone(), open.clone());
+        let worker = std::thread::spawn(move || {
+            let opened = AttachmentFiles::open(&files2, &open2).is_ok();
+            sender.send(opened).unwrap();
+        });
+        assert!(
+            receiver
+                .recv_timeout(std::time::Duration::from_millis(300))
+                .is_err(),
+            "the second open waits while the first holds the lock"
+        );
+        drop(held);
+        assert!(
+            receiver
+                .recv_timeout(std::time::Duration::from_secs(10))
+                .unwrap()
+        );
+        worker.join().unwrap();
         let _ = std::fs::remove_dir_all(root);
     }
 }
