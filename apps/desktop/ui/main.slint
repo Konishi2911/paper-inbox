@@ -260,6 +260,17 @@ export component MainWindow inherits Window {
     property <NavigationAction> pending-action;
     property <string> pending-id;
     callback select-paper(string,bool);
+    // Multi-selection of papers in the list. The ids and the anchor row of a Shift range are
+    // kept by Rust; the list only shows them.
+    in-out property <string> selection-anchor;
+    callback row-modified-click(string,bool,bool);
+    callback select-all();
+    callback clear-selection();
+    callback bulk-reading-status(int);
+    callback bulk-favorite(bool);
+    callback bulk-archive(bool);
+    callback bulk-tag(string);
+    callback bulk-delete(bool);
     callback prepare-export();
     callback confirm-export();
     callback cancel-export();
@@ -345,6 +356,7 @@ export component MainWindow inherits Window {
                 add-requested => {root.request-navigation(NavigationAction.import-paper,"");}
 
                 library-requested(deleted) => {
+                    root.clear-selection();
                     root.show-deleted = deleted;
                     root.filter-tag-ids = [];
                     root.search-text = "";
@@ -355,7 +367,7 @@ export component MainWindow inherits Window {
                 export-requested => { root.toggle-export(); }
                 cleanup-requested => { root.request-navigation(NavigationAction.attachment-cleanup,""); }
                 tag-rows: root.tag-rows;
-                tag-toggled(id) => { root.toggle-tag-filter(id); }
+                tag-toggled(id) => { root.clear-selection(); root.toggle-tag-filter(id); }
                 about-requested => { root.about-open = true; }
                 reconnect-requested => { root.request-navigation(NavigationAction.reconnect,""); }
             }
@@ -371,12 +383,33 @@ export component MainWindow inherits Window {
                 filter-pdf <=> root.filter-pdf;
                 limit <=> root.limit;
                 load-more()=>{root.limit += 50; root.search();}
-                opened(arg0)=>{root.open-paper(arg0);}
+                // Opening a paper by a plain click ends a multi-selection, except while choosing
+                // papers for BibTeX output, where the checked papers are the selection.
+                opened(arg0)=>{
+                    if (root.detail-view != DetailView.export-settings && root.detail-view != DetailView.export-preview) {
+                        root.clear-selection();
+                    }
+                    root.open-paper(arg0);
+                }
                 operable : root.operable;
                 papers : root.papers;
-                search()=>{root.search();}
+                // Every search the list asks for is a change of what it shows (text, sort or
+                // filter), which drops the selection. Loading the next batch is not one.
+                search()=>{root.clear-selection(); root.search();}
                 search-text <=> root.search-text;
                 select-paper(arg0,arg1)=>{root.select-paper(arg0,arg1);}
+                selected-count : root.selected-count;
+                row-modified-click(id,ctrl,shift)=>{root.row-modified-click(id,ctrl,shift);}
+                select-all()=>{root.select-all();}
+                clear-selection()=>{root.clear-selection();}
+                bulk-reading-status(status)=>{root.bulk-reading-status(status);}
+                bulk-favorite(on)=>{root.bulk-favorite(on);}
+                bulk-archive(on)=>{root.bulk-archive(on);}
+                bulk-tag(name)=>{root.bulk-tag(name);}
+                bulk-delete(on)=>{root.bulk-delete(on);}
+                bulk-bibtex()=>{
+                    if (root.detail-view != DetailView.export-settings) { root.toggle-export(); }
+                }
                 show-deleted : root.show-deleted;
                 sort-index <=> root.sort-index;
                 total : root.total;

@@ -3,7 +3,8 @@ use crate::{
     AttachmentRow, AuthorAction, AuthorRow, DetailView, LinkTarget, LookupField, MainWindow,
     NavigationAction, PaperRow, TagRow,
     application::{
-        Application, AuthorInput, PaperForm, QuickChange, tag_name_message, tag_suggestions,
+        Application, AuthorInput, BulkChange, BulkOutcome, PaperForm, QuickChange,
+        tag_name_message, tag_suggestions,
     },
     attachment::AttachmentFiles,
     config::Config,
@@ -39,6 +40,8 @@ enum Request {
     AddTag(String),
     RemoveTag(TagId),
     Delete(bool),
+    /// One change to every selected paper, in a single transaction.
+    Bulk(Vec<PaperId>, BulkChange),
     ReviewMetadata(PaperId),
     SubmitCandidate(crate::metadata::CandidateForm),
     AssociateCandidate(CandidateId),
@@ -100,6 +103,8 @@ struct Reply {
     tag_counts: Option<Vec<TagCount>>,
     /// Unused file count and total bytes; opens the cleanup screen.
     cleanup: Option<(usize, u64)>,
+    /// A bulk change was applied, so the selection that chose its papers is over.
+    clear_selection: bool,
 }
 struct AttachmentView {
     id: String,
@@ -592,6 +597,41 @@ impl Worker {
                     },
                 }
             }
+            Request::Bulk(ids, change) => {
+                let editing = self.editing.as_ref().map(|s| s.paper.id());
+                let label = bulk_label(&change);
+                match app.bulk_update(&ids, change) {
+                    Ok(outcome) => {
+                        let text = bulk_message(label, outcome);
+                        // The open paper is reloaded when it was part of the change, so the
+                        // detail and the next edit use what is stored now.
+                        let mut reply = match editing.filter(|id| ids.contains(id)) {
+                            Some(id) => self.after_save(id, &text),
+                            None => {
+                                let list = app.list(&self.query);
+                                let mut reply = Reply {
+                                    message: text,
+                                    ..Default::default()
+                                };
+                                match list {
+                                    Ok(list) => reply.list = Some(list),
+                                    Err(e) => reply
+                                        .message
+                                        .push_str(&format!(" 一覧の更新に失敗しました: {e}")),
+                                }
+                                reply
+                            }
+                        };
+                        reply.clear_selection = true;
+                        reply
+                    }
+                    // Nothing was changed, and the selection stays so it can be corrected.
+                    Err(e) => Reply {
+                        message: format!("{label}は行われませんでした。{e}"),
+                        ..Default::default()
+                    },
+                }
+            }
             Request::ReviewMetadata(id) => match app.metadata_review(id) {
                 Ok(review) => {
                     self.editing = Some(review.state.clone());
@@ -934,6 +974,110 @@ impl Worker {
         }
         reply
     }
+}
+/// Sends one change for the selected papers. The open paper is left alone while it has
+/// unsaved edits, because the change reloads it.
+fn dispatch_bulk(ui: &MainWindow, tx: &Sender<Request>, change: BulkChange) {
+    let ids = ui
+        .get_selected_ids()
+        .iter()
+        .map(|s| uuid::Uuid::parse_str(&s).map(PaperId::from_uuid))
+        .collect::<Result<Vec<_>, _>>();
+    let ids = match ids {
+        Ok(ids) if !ids.is_empty() => ids,
+        Ok(_) => {
+            ui.set_status("文献が選ばれていません。".into());
+            return;
+        }
+        Err(_) => {
+            ui.set_status("選択内容を確認してください。".into());
+            return;
+        }
+    };
+    let editing = ui.get_editing_id();
+    if ui.get_dirty() && ids.iter().any(|id| id.to_string() == editing.as_str()) {
+        ui.set_status(
+            "編集中の文献が含まれています。保存または破棄してから一括操作してください。".into(),
+        );
+        return;
+    }
+    dispatch(ui, tx, Request::Bulk(ids, change));
+}
+fn bulk_label(change: &BulkChange) -> &'static str {
+    match change {
+        BulkChange::ReadingStatus(_) => "読書状態の更新",
+        BulkChange::Favorite(true) => "お気に入りへの追加",
+        BulkChange::Favorite(false) => "お気に入りの解除",
+        BulkChange::Archived(true) => "アーカイブ",
+        BulkChange::Archived(false) => "アーカイブの解除",
+        BulkChange::AddTag(_) => "タグの付与",
+        BulkChange::Delete => "削除",
+        BulkChange::Restore => "復元",
+    }
+}
+fn bulk_message(label: &str, outcome: BulkOutcome) -> String {
+    if outcome.unchanged == 0 {
+        format!("{label}: {}件に適用しました。", outcome.changed)
+    } else {
+        format!(
+            "{label}: {}件に適用しました。{}件はすでに同じ状態でした。",
+            outcome.changed, outcome.unchanged
+        )
+    }
+}
+/// Shows exactly these papers as selected, in the count, the id list and every loaded row.
+fn set_selection(ui: &MainWindow, ids: Vec<slint::SharedString>) {
+    ui.set_selected_count(ids.len() as i32);
+    let model = ui.get_papers();
+    if let Some(rows) = model.as_any().downcast_ref::<VecModel<PaperRow>>() {
+        for i in 0..rows.row_count() {
+            if let Some(mut row) = rows.row_data(i) {
+                let on = ids.contains(&row.id);
+                if row.selected != on {
+                    row.selected = on;
+                    rows.set_row_data(i, row);
+                }
+            }
+        }
+    }
+    ui.set_selected_ids(ModelRc::new(VecModel::from(ids)));
+}
+/// The selection after a click on `id` with the given keys held. Shift selects the rows between
+/// the anchor and `id` (with Ctrl, in addition to what is selected); Ctrl toggles `id`.
+/// `rows` is the order of the loaded rows. The new anchor is returned with the selection.
+fn clicked_selection(
+    rows: &[slint::SharedString],
+    selected: &[slint::SharedString],
+    anchor: &str,
+    id: &slint::SharedString,
+    ctrl: bool,
+    shift: bool,
+) -> (Vec<slint::SharedString>, slint::SharedString) {
+    let position = |target: &str| rows.iter().position(|r| r.as_str() == target);
+    if shift && let (Some(from), Some(to)) = (position(anchor), position(id.as_str())) {
+        let range = rows[from.min(to)..=from.max(to)].to_vec();
+        let mut next = if ctrl { selected.to_vec() } else { vec![] };
+        for row in range {
+            if !next.contains(&row) {
+                next.push(row);
+            }
+        }
+        // The anchor stays, so the range can be extended or shrunk from the same row.
+        return (next, anchor.into());
+    }
+    if shift {
+        // No usable anchor: the clicked row alone becomes the selection and the anchor.
+        return (vec![id.clone()], id.clone());
+    }
+    let mut next = selected.to_vec();
+    match next.iter().position(|s| s == id) {
+        Some(at) if ctrl => {
+            next.remove(at);
+        }
+        Some(_) => {}
+        None => next.push(id.clone()),
+    }
+    (next, id.clone())
 }
 fn view(state: &PaperEditState) -> EditorView {
     EditorView {
@@ -1490,22 +1634,87 @@ pub fn attach_with_providers(
                 if !ids.contains(&id) {
                     ids.push(id.clone());
                 }
+                ui.set_selection_anchor(id);
             } else {
                 ids.retain(|v| v != &id);
             }
-            ui.set_selected_count(ids.len() as i32);
-            ui.set_selected_ids(ModelRc::new(VecModel::from(ids)));
-            let model = ui.get_papers();
-            if let Some(rows) = model.as_any().downcast_ref::<VecModel<PaperRow>>() {
-                for i in 0..rows.row_count() {
-                    if let Some(mut row) = rows.row_data(i)
-                        && row.id == id
-                    {
-                        row.selected = selected;
-                        rows.set_row_data(i, row);
-                    }
-                }
-            }
+            set_selection(&ui, ids);
+        }
+    });
+    let weak = ui.as_weak();
+    ui.on_row_modified_click(move |id, ctrl, shift| {
+        if let Some(ui) = weak.upgrade() {
+            let rows: Vec<_> = ui.get_papers().iter().map(|p| p.id).collect();
+            let selected: Vec<_> = ui.get_selected_ids().iter().collect();
+            let (next, anchor) = clicked_selection(
+                &rows,
+                &selected,
+                ui.get_selection_anchor().as_str(),
+                &id,
+                ctrl,
+                shift,
+            );
+            ui.set_selection_anchor(anchor);
+            set_selection(&ui, next);
+        }
+    });
+    let weak = ui.as_weak();
+    ui.on_select_all(move || {
+        if let Some(ui) = weak.upgrade() {
+            let rows: Vec<_> = ui.get_papers().iter().map(|p| p.id).collect();
+            set_selection(&ui, rows);
+        }
+    });
+    let weak = ui.as_weak();
+    ui.on_clear_selection(move || {
+        if let Some(ui) = weak.upgrade() {
+            ui.set_selection_anchor("".into());
+            set_selection(&ui, vec![]);
+        }
+    });
+    let tx = sender.clone();
+    let weak = ui.as_weak();
+    ui.on_bulk_reading_status(move |status| {
+        if let Some(ui) = weak.upgrade() {
+            let status = match status {
+                0 => ReadingStatus::Unread,
+                1 => ReadingStatus::Reading,
+                _ => ReadingStatus::Read,
+            };
+            dispatch_bulk(&ui, &tx, BulkChange::ReadingStatus(status));
+        }
+    });
+    let tx = sender.clone();
+    let weak = ui.as_weak();
+    ui.on_bulk_favorite(move |on| {
+        if let Some(ui) = weak.upgrade() {
+            dispatch_bulk(&ui, &tx, BulkChange::Favorite(on));
+        }
+    });
+    let tx = sender.clone();
+    let weak = ui.as_weak();
+    ui.on_bulk_archive(move |on| {
+        if let Some(ui) = weak.upgrade() {
+            dispatch_bulk(&ui, &tx, BulkChange::Archived(on));
+        }
+    });
+    let tx = sender.clone();
+    let weak = ui.as_weak();
+    ui.on_bulk_tag(move |name| {
+        if let Some(ui) = weak.upgrade() {
+            dispatch_bulk(&ui, &tx, BulkChange::AddTag(name.into()));
+        }
+    });
+    let tx = sender.clone();
+    let weak = ui.as_weak();
+    ui.on_bulk_delete(move |deleted| {
+        if let Some(ui) = weak.upgrade() {
+            let change = if deleted {
+                BulkChange::Delete
+            } else {
+                BulkChange::Restore
+            };
+            dispatch_bulk(&ui, &tx, change);
         }
     });
     let tx = sender.clone();
@@ -1812,6 +2021,11 @@ fn query_from_ui(ui: &MainWindow) -> PaperQuery {
 }
 fn apply_reply(ui: &MainWindow, reply: Reply) {
     let mut next_view = None;
+    // Before the list is rebuilt, so its rows are made without the old selection.
+    if reply.clear_selection {
+        ui.set_selection_anchor("".into());
+        set_selection(ui, vec![]);
+    }
     if let Some(new) = reply.lookup_new {
         ui.set_lookup_new(new);
         if new {

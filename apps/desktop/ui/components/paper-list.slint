@@ -19,6 +19,21 @@ export component PaperList inherits Rectangle {
     callback search();
     in-out property <string> search-text;
     callback select-paper(string,bool);
+    // Selection. The parent owns the selected ids; the rows only show them.
+    in property <int> selected-count;
+    // A Ctrl/Cmd and/or Shift click on a row: (id, ctrl, shift).
+    callback row-modified-click(string,bool,bool);
+    callback select-all();
+    callback clear-selection();
+    callback bulk-reading-status(int);
+    callback bulk-favorite(bool);
+    callback bulk-archive(bool);
+    callback bulk-tag(string);
+    callback bulk-bibtex();
+    callback bulk-delete(bool);
+    // Asked once before a bulk delete runs; cleared when the selection changes.
+    private property <bool> confirm-bulk-delete: false;
+    changed selected-count => { root.confirm-bulk-delete = false; }
     in property <bool> show-deleted;
     in-out property <int> sort-index;
     in property <int> total;
@@ -65,6 +80,70 @@ export component PaperList inherits Rectangle {
             Chip {accessible-label:"アーカイブを含める";text:"アーカイブ";on:root.include-archived;enabled:root.operable && !root.show-deleted;clicked=>{root.include-archived=!root.include-archived;root.limit=50;root.search();}}
             Rectangle {horizontal-stretch:1;}
         }
+        // Shown while papers are selected: what is selected, and what can be done to all of it.
+        if root.selected-count > 0 : Rectangle {
+            background:Theme.surface;border-radius:8px;border-width:1px;border-color:Theme.selection-border;
+            VerticalBox {
+                padding:8px;spacing:6px;
+                HorizontalLayout {
+                    spacing:8px;
+                    Text {text:root.selected-count+"件を選択中";font-weight:600;color:Theme.text-primary;vertical-alignment:center;horizontal-stretch:1;}
+                    AppButton {small:true;kind:"ghost";enabled:root.operable;text:"選択を解除";clicked=>{root.clear-selection();}}
+                }
+                if !root.show-deleted : HorizontalLayout {
+                    spacing:6px;
+                    AppButton {small:true;enabled:root.operable;text:"未読";clicked=>{root.bulk-reading-status(0);}}
+                    AppButton {small:true;enabled:root.operable;text:"読書中";clicked=>{root.bulk-reading-status(1);}}
+                    AppButton {small:true;enabled:root.operable;text:"読了";clicked=>{root.bulk-reading-status(2);}}
+                    AppButton {small:true;enabled:root.operable;text:"★ 付ける";clicked=>{root.bulk-favorite(true);}}
+                    AppButton {small:true;enabled:root.operable;text:"★ 外す";clicked=>{root.bulk-favorite(false);}}
+                    Rectangle {horizontal-stretch:1;}
+                }
+                if !root.show-deleted : HorizontalLayout {
+                    spacing:6px;
+                    AppButton {small:true;enabled:root.operable;text:"アーカイブ";clicked=>{root.bulk-archive(true);}}
+                    AppButton {small:true;enabled:root.operable;text:"アーカイブ解除";clicked=>{root.bulk-archive(false);}}
+                    AppButton {small:true;enabled:root.operable;text:"BibTeX";clicked=>{root.bulk-bibtex();}}
+                    Rectangle {horizontal-stretch:1;}
+                }
+                if !root.show-deleted : LineEdit {
+                    accessible-label:"選択した文献にタグを付ける";
+                    placeholder-text:"選択した文献にタグを付ける（Enterで確定）";
+                    enabled:root.operable;
+                    accepted(text) => {
+                        if (text != "") { root.bulk-tag(text); self.text = ""; }
+                    }
+                }
+                if !root.confirm-bulk-delete : HorizontalLayout {
+                    spacing:6px;
+                    Rectangle {horizontal-stretch:1;}
+                    if root.show-deleted : AppButton {small:true;enabled:root.operable;text:"選択した文献を復元";clicked=>{root.bulk-delete(false);}}
+                    if !root.show-deleted : AppButton {small:true;kind:"danger";enabled:root.operable;text:"削除";clicked=>{root.confirm-bulk-delete = true;}}
+                }
+                if root.confirm-bulk-delete : HorizontalLayout {
+                    spacing:6px;
+                    Text {text:root.selected-count+"件を削除しますか？（削除済みから復元できます）";color:Theme.danger-text;vertical-alignment:center;wrap:word-wrap;horizontal-stretch:1;}
+                    AppButton {small:true;kind:"danger";enabled:root.operable;text:"削除する";clicked=>{root.confirm-bulk-delete = false;root.bulk-delete(true);}}
+                    AppButton {small:true;kind:"ghost";enabled:root.operable;text:"キャンセル";clicked=>{root.confirm-bulk-delete = false;}}
+                }
+            }
+        }
+        list-keys := FocusScope {
+            vertical-stretch:1;
+            // Ctrl+A (Cmd+A) selects every row shown; Escape drops the selection. Other keys,
+            // and typing in the search box, are not taken.
+            key-pressed(event) => {
+                if ((event.modifiers.control || event.modifiers.meta) && root.operable
+                    && (event.text == "a" || event.text == "A" || event.text == "\u{1}")) {
+                    root.select-all();
+                    return accept;
+                }
+                if (event.text == Key.Escape && root.selected-count > 0) {
+                    root.clear-selection();
+                    return accept;
+                }
+                return reject;
+            }
         scroll := ScrollView {
             // Continuous scrolling: nearing the end asks for the next batch.
             changed content-y => { root.maybe-load-more(); }
@@ -86,11 +165,13 @@ export component PaperList inherits Rectangle {
                     operable: root.operable;
                     export-mode: root.export-settings-open;
 
-                    opened => {root.opened(row.id);}
+                    opened => {list-keys.focus();root.opened(row.id);}
+                    modified-click(ctrl, shift) => {list-keys.focus();root.row-modified-click(row.id, ctrl, shift);}
                     selection-changed(checked) => {root.select-paper(row.id, checked);}
                 }
                 if root.papers.length==0 : Text {text:root.search-text!="" ? "一致する文献がありません。検索語を変えてください。" : (root.show-deleted ? "削除済みの文献はありません。" : "文献がまだありません。左のメニューから登録しましょう。");wrap:word-wrap;color:Theme.text-secondary;}
             }
+        }
         }
     }
 }
