@@ -1702,7 +1702,10 @@ pub fn attach_with_providers(
     let weak = ui.as_weak();
     ui.window().on_close_requested(move || {
         if let Some(ui) = weak.upgrade()
-            && (ui.get_dirty() || ui.get_candidate_dirty() || ui.get_lookup_dirty())
+            && (ui.get_dirty()
+                || ui.get_candidate_dirty()
+                || ui.get_lookup_dirty()
+                || ui.get_review_dirty())
         {
             ui.invoke_request_navigation(NavigationAction::Quit, "".into());
             return slint::CloseRequestResponse::KeepWindowShown;
