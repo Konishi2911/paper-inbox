@@ -19,24 +19,38 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { name: windows-x86_64, os: windows-latest, binary: paper-desktop.exe }
-          - { name: macos-arm64, os: macos-latest, binary: paper-desktop }
-          - { name: macos-x86_64, os: macos-15-intel, binary: paper-desktop }
+          - { name: windows-x86_64, os: windows-latest }
+          - { name: macos-arm64, os: macos-latest }
+          - { name: macos-x86_64, os: macos-15-intel }
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - run: cargo build --release --locked -p paper-desktop
-      - name: Package
+      - name: Package (Windows)
+        if: runner.os == 'Windows'
         shell: bash
         run: |
           dir="paper-inbox-${GITHUB_REF_NAME}-${{ matrix.name }}"
           mkdir "$dir"
-          cp "target/release/${{ matrix.binary }}" "$dir/"
-          cp LICENSE LICENSE-MIT LICENSE-APACHE README.md "$dir/"
+          cp target/release/paper-desktop.exe "$dir/"
+          cp LICENSE LICENSE-MIT LICENSE-APACHE README.md THIRD-PARTY-NOTICES.md "$dir/"
           cp -r LICENSES "$dir/"
-          [ -f THIRD-PARTY-NOTICES.md ] && cp THIRD-PARTY-NOTICES.md "$dir/" || true
-          if [ "$RUNNER_OS" = "Windows" ]; then 7z a "$dir.zip" "$dir"; else zip -r "$dir.zip" "$dir"; fi
+          7z a "$dir.zip" "$dir"
+      - name: Package (macOS app bundle)
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          dir="paper-inbox-${GITHUB_REF_NAME}-${{ matrix.name }}"
+          app="$dir/Paper Inbox.app"
+          mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
+          cp target/release/paper-desktop "$app/Contents/MacOS/"
+          cp apps/desktop/assets/icons/icon.icns "$app/Contents/Resources/icon.icns"
+          sed "s/@VERSION@/${GITHUB_REF_NAME#v}/" packaging/macos/Info.plist > "$app/Contents/Info.plist"
+          cp LICENSE LICENSE-MIT LICENSE-APACHE README.md THIRD-PARTY-NOTICES.md "$dir/"
+          cp -r LICENSES "$dir/"
+          # ditto keeps the bundle's permissions; the app is unsigned (see README).
+          ditto -c -k --keepParent "$dir" "$dir.zip"
       - uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.name }}

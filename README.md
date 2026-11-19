@@ -6,12 +6,12 @@
 
 ## ダウンロードと初回起動
 
-[Releases](https://github.com/Konishi2911/paper-inbox/releases) から、お使いの OS 向けの zip を展開し、`paper-desktop`（Windows は `paper-desktop.exe`）を起動します。インストーラーはなく、削除は展開したフォルダーとデータ（下記「データの保存」）を消すだけです。
+[Releases](https://github.com/Konishi2911/paper-inbox/releases) から、お使いの OS 向けの zip を展開し、Windows は `paper-desktop.exe`、macOS は `Paper Inbox.app` を起動します。インストーラーはなく、削除は展開したフォルダーとデータ（下記「データの保存」）を消すだけです。
 
 実行ファイルには署名がないため、初回は OS の警告が出ます。配布元を確認したうえで次のとおり進めてください。
 
 - **Windows**: 「Windows によってPCが保護されました」と出たら、「詳細情報」→「実行」を選びます。
-- **macOS**: 「開発元を確認できません」と出たら、Finder で実行ファイルを右クリックして「開く」を選びます。ブロックされた場合は「システム設定」→「プライバシーとセキュリティ」の「このまま開く」を使います。端末から `xattr -d com.apple.quarantine paper-desktop` でも解除できます。
+- **macOS**: 「開発元を確認できません」と出たら、Finder で `Paper Inbox.app` を右クリックして「開く」を選びます。ブロックされた場合は「システム設定」→「プライバシーとセキュリティ」の「このまま開く」を使います。端末から `xattr -dr com.apple.quarantine "Paper Inbox.app"` でも解除できます。
 
 ## ソースからの起動
 
