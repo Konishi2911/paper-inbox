@@ -17,7 +17,6 @@ use std::{
     io::{self, Read},
     path::{Path, PathBuf},
     process::Command,
-    sync::Mutex,
 };
 
 /// Largest file accepted. Papers are a few MB; this only stops accidental huge files.
@@ -60,8 +59,10 @@ pub struct AttachmentFiles {
     blobs: FileBlobStore,
     /// Folder for temporary copies handed to the PDF viewer.
     open_dir: PathBuf,
-    /// Serializes "store file, add row" against cleanup so a new file is never reclaimed.
-    guard: Mutex<()>,
+    /// Lock file inside the file store. It is held while a file is stored and its row added,
+    /// and while cleanup runs, so no running instance (this process or another one that opened
+    /// the same library) can reclaim a file that is being attached right now.
+    lock_path: PathBuf,
 }
 
 impl AttachmentFiles {
@@ -81,8 +82,22 @@ impl AttachmentFiles {
         Ok(Self {
             blobs: FileBlobStore::open(files_dir)?,
             open_dir: open_dir.to_owned(),
-            guard: Mutex::new(()),
+            lock_path: files_dir.join(".lock"),
         })
+    }
+
+    /// Takes the exclusive store lock, waiting while another instance holds it. The lock is
+    /// released when the returned file is dropped, or when the process ends.
+    fn lock(&self) -> Result<fs::File, AppError> {
+        let file = fs::OpenOptions::new()
+            .create(true)
+            .write(true)
+            .truncate(false)
+            .open(&self.lock_path)
+            .map_err(|e| AppError::Storage(format!("ロックファイルを開けません: {e}")))?;
+        file.lock()
+            .map_err(|e| AppError::Storage(format!("ファイルストアをロックできません: {e}")))?;
+        Ok(file)
     }
 
     /// Imports a PDF chosen by the user and attaches it to the paper.
@@ -114,10 +129,7 @@ impl AttachmentFiles {
         }
         drop(file);
 
-        let _lock = self
-            .guard
-            .lock()
-            .map_err(|_| AppError::Storage("内部状態が壊れました。".into()))?;
+        let _lock = self.lock()?;
         let mut counted = Counting {
             inner: fs::File::open(source)
                 .map_err(|e| AppError::Input(format!("ファイルを開けません: {e}")))?,
@@ -243,10 +255,7 @@ impl AttachmentFiles {
     /// Deletes every unused file. The set is recomputed under the same lock that guards
     /// importing, so a file being attached right now is never removed.
     pub fn reclaim(&self, store: &SqliteLibrary) -> Result<ReclaimReport, AppError> {
-        let _lock = self
-            .guard
-            .lock()
-            .map_err(|_| AppError::Storage("内部状態が壊れました。".into()))?;
+        let _lock = self.lock()?;
         let mut report = ReclaimReport::default();
         for (hash, bytes) in self.unused(store)? {
             if self.blobs.remove(&hash)? {
@@ -358,7 +367,7 @@ fn viewer_name(name: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{stored_name, viewer_name};
+    use super::{AttachmentFiles, stored_name, viewer_name};
     use std::path::Path;
 
     #[test]
@@ -371,5 +380,29 @@ mod tests {
         assert_eq!(viewer_name(&"x".repeat(400)).chars().count(), 154);
         assert_eq!(stored_name(Path::new("dir/a\u{7}b.pdf")), "a_b.pdf");
         assert_eq!(stored_name(Path::new("")), "document.pdf");
+    }
+
+    /// Another running instance has its own `AttachmentFiles` on the same folder. Its attach and
+    /// cleanup must wait for ours, which only a lock outside this process's memory can do.
+    #[test]
+    fn the_store_lock_excludes_another_instance_on_the_same_folder() {
+        let root =
+            std::env::temp_dir().join(format!("paper-lock-{}", paper_core::model::PaperId::new()));
+        let files = root.join("library-files");
+        let first = AttachmentFiles::open(&files, &root.join("open")).unwrap();
+        let second = AttachmentFiles::open(&files, &root.join("open")).unwrap();
+        let held = first.lock().unwrap();
+        let probe = std::fs::OpenOptions::new()
+            .write(true)
+            .open(&second.lock_path)
+            .unwrap();
+        assert!(
+            matches!(probe.try_lock(), Err(std::fs::TryLockError::WouldBlock)),
+            "a second instance cannot take the lock while the first holds it"
+        );
+        drop(held);
+        assert!(probe.try_lock().is_ok(), "released with the guard");
+        drop(probe);
+        let _ = std::fs::remove_dir_all(root);
     }
 }
