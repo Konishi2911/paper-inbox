@@ -3,6 +3,11 @@
 Paper Inbox は下記のクレートを含みます。各クレートは自身のライセンスに従います。
 Paper Inbox's own code is `MIT OR Apache-2.0`. The Slint crates (`slint`, `i-slint-*`) are used under the Slint Royalty-free 2.0 license, whose text is in `LICENSES/LicenseRef-Slint-Royalty-free-2.0.md`; they are not repeated below.
 
+## 同梱素材 / Bundled assets
+
+- アプリ内のアイコン（`copy.svg`、`open.svg`）は Google の Material Icons / Material Symbols です。Apache License 2.0 で提供されており、本文は下の「Apache License 2.0」と同じです。 / The in-app icons are Material Icons / Material Symbols by Google, licensed under the Apache License 2.0 (full text below).
+- アプリのアイコン画像は Paper Inbox の素材で、本プロジェクトの著作物です。 / The application icon is part of Paper Inbox.
+
 ## ライセンス別一覧 / Overview
 
 - [MIT License](#MIT) (301)

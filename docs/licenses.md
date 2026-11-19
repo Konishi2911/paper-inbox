@@ -44,3 +44,7 @@ Crossref / arXiv から取得する書誌情報・概要・リンク先の文書
 cargo install cargo-about --locked --features cli
 cargo about generate about.hbs --locked -o THIRD-PARTY-NOTICES.md
 ```
+
+## 同梱するアイコン
+
+アプリ内のアイコン（`apps/desktop/ui/assets/icon/` のコピー・開く）は、Google の Material Icons / Material Symbols を使っています。Apache License 2.0 です。配布物の `THIRD-PARTY-NOTICES.md` に帰属を記載しています。アイコンを追加・差し替えたら、`about.hbs` の「同梱素材」も更新してください。アプリ自身のアイコン（`apps/desktop/assets/icons/`）は本プロジェクトの素材です。
