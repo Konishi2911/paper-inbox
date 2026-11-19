@@ -23,8 +23,8 @@ export component EmptyState inherits VerticalBox {
     }
     Text {
         text: root.library-empty
-            ? "DOI・arXiv ID・URL を貼り付けて Enter を押すと、書誌情報を取得して登録できます。PDF をこの画面へドラッグ＆ドロップしても、PDF の中の識別子を探して追加を始められます。"
-            : "中央の一覧から文献を選ぶと、ここに詳細が表示されます。新しい文献は「文献を追加」から登録できます。PDF をドロップしても追加を始められます。";
+            ? "DOI・arXiv ID・URL を貼り付けて Enter を押すと、書誌情報を取得して登録できます。PDF をこの画面へドラッグ＆ドロップしても、PDF の中の識別子を探して追加できます。"
+            : "中央の一覧から文献を選ぶと、ここに詳細が表示されます。新しい文献は「文献を追加」から登録できます。PDF をドロップしても追加できます。";
         wrap: word-wrap;
         color: Theme.text-secondary;
     }

@@ -169,7 +169,7 @@ fn pdfs_are_attached_listed_protected_removed_and_reclaimed_from_the_window() {
 
     // At the minimum window size the row's actions still fit.
     w.window().set_size(slint::LogicalSize::new(1080., 680.));
-    for label in ["results.pdfを開く", "results.pdfを取り外す", "追加…"] {
+    for label in ["results.pdfを開く", "results.pdfを除外", "追加…"] {
         let control = element(&w, label);
         assert!(
             control.absolute_position().x + control.size().width <= 1080.,
@@ -210,22 +210,22 @@ fn pdfs_are_attached_listed_protected_removed_and_reclaimed_from_the_window() {
     w.set_dirty(true);
     assert_eq!(element(&w, "追加…").accessible_enabled(), Some(false));
     assert_eq!(
-        element(&w, "results.pdfを取り外す").accessible_enabled(),
+        element(&w, "results.pdfを除外").accessible_enabled(),
         Some(false)
     );
     w.set_dirty(false);
 
     // Removing asks once inside the row; backing out leaves everything as it was.
-    activate(&w, "results.pdfを取り外す");
-    element(&w, "取り外しますか？");
+    activate(&w, "results.pdfを除外");
+    element(&w, "除外しますか？");
     assert!(absent(&w, "results.pdfを開く"));
-    activate(&w, "results.pdfの取り外しをやめる");
-    assert!(absent(&w, "取り外しますか？"));
+    activate(&w, "results.pdfの除外をやめる");
+    assert!(absent(&w, "除外しますか？"));
     assert_eq!(stored(&database, id), 1);
     element(&w, "results.pdfを開く");
 
-    activate(&w, "results.pdfを取り外す");
-    activate(&w, "results.pdfの取り外しを実行");
+    activate(&w, "results.pdfを除外");
+    activate(&w, "results.pdfの除外を実行");
     wait(&w);
     assert_eq!(w.get_attachment_rows().row_count(), 0, "{}", w.get_status());
     assert_eq!(stored(&database, id), 0);

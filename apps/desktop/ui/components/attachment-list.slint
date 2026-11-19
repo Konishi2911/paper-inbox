@@ -76,8 +76,8 @@ export component AttachmentList inherits VerticalBox {
                 }
             }
             if root.confirming != row.id : AppButton {
-                accessible-label: row.name + "を取り外す";
-                text: "取り外す";
+                accessible-label: row.name + "を除外";
+                text: "除外";
                 kind: "danger";
                 enabled: root.operable;
                 clicked => {
@@ -85,13 +85,13 @@ export component AttachmentList inherits VerticalBox {
                 }
             }
             if root.confirming == row.id : Text {
-                text: "取り外しますか？";
+                text: "除外しますか？";
                 vertical-alignment: center;
                 color: Theme.warning;
             }
             if root.confirming == row.id : AppButton {
-                accessible-label: row.name + "の取り外しを実行";
-                text: "取り外す";
+                accessible-label: row.name + "の除外を実行";
+                text: "除外";
                 kind: "danger";
                 enabled: root.operable;
                 clicked => {
@@ -100,8 +100,8 @@ export component AttachmentList inherits VerticalBox {
                 }
             }
             if root.confirming == row.id : AppButton {
-                accessible-label: row.name + "の取り外しをやめる";
-                text: "やめる";
+                accessible-label: row.name + "の除外をやめる";
+                text: "キャンセル";
                 kind: "outline";
                 clicked => {
                     root.confirming = "";

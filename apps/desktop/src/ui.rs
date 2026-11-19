@@ -822,7 +822,7 @@ impl Worker {
                     match files.detach(&app.store, attachment.id) {
                         Ok(()) => self.after_save(
                             id,
-                            "PDFを取り外しました。ファイルは「未使用PDFの整理」で削除するまで残ります。",
+                            "PDFを除外しました。ファイルは「未使用PDFの整理」で削除するまで残ります。",
                         ),
                         Err(e) => Reply {
                             message: e.to_string(),
