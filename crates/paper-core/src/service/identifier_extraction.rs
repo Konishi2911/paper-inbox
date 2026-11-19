@@ -228,20 +228,21 @@ fn looks_like_arxiv(token: &str) -> bool {
         _ => (token, None),
     };
     let _ = version;
-    if let Some((year_month, number)) = body.split_once('.') {
-        // New style: YYMM.NNNN or YYMM.NNNNN.
-        return year_month.len() == 4
-            && year_month.bytes().all(|b| b.is_ascii_digit())
-            && (4..=5).contains(&number.len())
-            && number.bytes().all(|b| b.is_ascii_digit());
-    }
-    // Old style: archive[.XX]/YYMMNNN.
-    body.split_once('/').is_some_and(|(archive, number)| {
-        !archive.is_empty()
+    // Old style first: archive[.XX]/YYMMNNN. Its subject class contains a period (math.GT), so
+    // the slash, not the period, tells the two styles apart.
+    if let Some((archive, number)) = body.split_once('/') {
+        return !archive.is_empty()
             && archive
                 .bytes()
-                .all(|b| b.is_ascii_lowercase() || matches!(b, b'-' | b'.' | b'A'..=b'Z'))
+                .all(|b| b.is_ascii_alphabetic() || matches!(b, b'-' | b'.'))
             && number.len() == 7
+            && number.bytes().all(|b| b.is_ascii_digit());
+    }
+    // New style: YYMM.NNNN or YYMM.NNNNN.
+    body.split_once('.').is_some_and(|(year_month, number)| {
+        year_month.len() == 4
+            && year_month.bytes().all(|b| b.is_ascii_digit())
+            && (4..=5).contains(&number.len())
             && number.bytes().all(|b| b.is_ascii_digit())
     })
 }
@@ -325,6 +326,9 @@ mod tests {
         assert_eq!(ids(&found), ["arxiv:2401.01234v2"]);
         let found = find_identifiers(&[], &pages(&["see arxiv.org/abs/hep-th/9901001v1."]));
         assert_eq!(ids(&found), ["arxiv:hep-th/9901001v1"]);
+        // An old-style archive may carry a subject class with a period: math.GT/0309136.
+        let found = find_identifiers(&[], &pages(&["arXiv:math.GT/0309136 [math.GT] 8 Sep 2003"]));
+        assert_eq!(ids(&found), ["arxiv:math.GT/0309136"]);
         let found = find_identifiers(&[], &pages(&["Page 2401.01234 of 5 and arXiv 2024"]));
         assert!(found.is_empty(), "{found:?}");
     }
