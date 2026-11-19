@@ -2,7 +2,7 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.1.0/) に倣い、バージョンは [SemVer](https://semver.org/lang/ja/) に従います。
 
-## [0.1.0] - 未リリース
+## [0.1.0] - 2026-11-19
 
 最初の公開版です。署名なしのバイナリ（Windows・macOS）を配布します。
 
