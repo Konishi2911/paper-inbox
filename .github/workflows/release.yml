@@ -68,7 +68,13 @@ jobs:
           sed "s/@VERSION@/${VERSION}/" packaging/macos/Info.plist > "$app/Contents/Info.plist"
           cp LICENSE LICENSE-MIT LICENSE-APACHE README.md THIRD-PARTY-NOTICES.md "$dir/"
           cp -r LICENSES "$dir/"
-          # ditto keeps the bundle's permissions; the app is unsigned (see README).
+          # The linker signs the executable alone; once it sits in a bundle with an Info.plist
+          # that signature no longer matches and macOS reports the app as "damaged". An ad-hoc
+          # signature (no certificate, so it is not a developer identity; see README) seals the
+          # whole bundle. The verify step fails the build if the seal is not valid.
+          codesign --force --deep --sign - "$app"
+          codesign --verify --deep --strict --verbose=2 "$app"
+          # ditto keeps the bundle's permissions and signature.
           ditto -c -k --keepParent "$dir" "$dir.zip"
       - uses: actions/upload-artifact@v4
         with:
