@@ -161,7 +161,9 @@ impl BlobStore for FileBlobStore {
         drop(file);
         let hash = ContentHash::from_bytes(hasher.finalize().into());
         let destination = self.path_of(&hash);
-        if destination.is_file() {
+        // A file already stored under this name is reused only when its content still matches.
+        // A damaged one is replaced by the intact copy just written.
+        if destination.is_file() && self.verify(&hash)? {
             return Ok(hash);
         }
         if let Some(parent) = destination.parent() {
@@ -169,8 +171,9 @@ impl BlobStore for FileBlobStore {
         }
         match fs::rename(&temp.path, &destination) {
             Ok(()) => temp.keep = true,
-            // A concurrent writer of the same content may have won the rename.
-            Err(_) if destination.is_file() => {}
+            // A concurrent writer of the same content may have won the rename. That is fine only
+            // while what it stored is intact; a damaged copy that cannot be replaced is an error.
+            Err(_) if destination.is_file() && self.verify(&hash).unwrap_or(false) => {}
             Err(e) => return Err(e.into()),
         }
         Ok(hash)

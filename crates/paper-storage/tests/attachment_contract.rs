@@ -444,3 +444,28 @@ fn a_version_4_database_is_upgraded_in_place_and_newer_ones_are_refused() {
         .unwrap();
     assert!(SqliteLibrary::open_local(sandbox.database()).is_err());
 }
+
+#[test]
+fn storing_the_same_content_again_replaces_a_damaged_stored_file() {
+    let sandbox = Sandbox::new();
+    let blobs = FileBlobStore::open(sandbox.files()).unwrap();
+    let hash = put(&blobs, b"original content");
+    let hex = content_hash_hex(&hash);
+    let path = sandbox.files().join("blobs").join(&hex[..2]).join(&hex);
+    std::fs::write(&path, b"tampered").unwrap();
+    assert!(!blobs.verify(&hash).unwrap());
+    // Choosing the intact file again repairs the store instead of reporting a stored copy.
+    assert_eq!(put(&blobs, b"original content"), hash);
+    assert!(
+        blobs.verify(&hash).unwrap(),
+        "the damaged copy was replaced"
+    );
+    assert_eq!(file_count(&blobs), 1);
+    // An intact copy is left alone and no temporary file remains.
+    assert_eq!(put(&blobs, b"original content"), hash);
+    assert!(blobs.verify(&hash).unwrap());
+    let tmp = std::fs::read_dir(sandbox.files().join("tmp"))
+        .unwrap()
+        .count();
+    assert_eq!(tmp, 0, "no temporary file is left behind");
+}
