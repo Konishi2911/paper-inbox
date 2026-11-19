@@ -1,0 +1,49 @@
+import { VerticalBox, HorizontalBox, ComboBox } from "std-widgets.slint";
+import { ProposalRow, DiffInputField, DiffResolution, DiffFilter, DiffBulkAction } from "../types.slint";
+import { MetadataDiffCard } from "../components/metadata-diff-row.slint";
+import { Theme } from "../theme.slint";
+import { AppButton } from "../components/app-button.slint";
+export component ProposalView inherits Rectangle {
+    in property <[ProposalRow]> proposal-rows;
+    // Number of proposals before filtering; 0 hides the whole review toolbar.
+    in property <int> total;
+    in property <bool> operable;
+    in property <bool> wide;
+    in property <bool> dirty;
+    in property <string> summary;
+    in-out property <DiffFilter> diff-filter:DiffFilter.changed;
+    callback choose(string,DiffResolution);
+    callback edit(string,DiffInputField,string);
+    callback bulk(DiffBulkAction);
+    callback apply();
+    min-height:content.preferred-height;min-width:0px;
+    content := VerticalBox {
+        padding:0px;spacing:10px;
+        HorizontalLayout {
+            spacing:8px;
+            Text {text:"更新の提案";font-size:18px;font-weight:600;vertical-alignment:center;}
+            Text {text:root.total==0 ? "なし" : root.summary;color:Theme.text-secondary;vertical-alignment:center;wrap:word-wrap;horizontal-stretch:1;min-width:0px;}
+        }
+        if root.total>0 : HorizontalLayout {
+            spacing:6px;
+            ComboBox {
+                accessible-label:"差分フィルタ";
+                width:112px;
+                model:["すべて","変更あり","要確認","未判断","判断済み"];
+                current-index:root.diff-filter==DiffFilter.all ? 0 : root.diff-filter==DiffFilter.changed ? 1 : root.diff-filter==DiffFilter.conflict ? 2 : root.diff-filter==DiffFilter.unresolved ? 3 : 4;
+                selected(index)=>{root.diff-filter=index==0 ? DiffFilter.all : index==1 ? DiffFilter.changed : index==2 ? DiffFilter.conflict : index==3 ? DiffFilter.unresolved : DiffFilter.decided;}
+            }
+            AppButton {text:"安全な項目を採用";enabled:root.operable;clicked=>{root.bulk(DiffBulkAction.accept-safe);}}
+            AppButton {text:"すべて維持";enabled:root.operable;clicked=>{root.bulk(DiffBulkAction.keep-all);}}
+            Rectangle {horizontal-stretch:1;}
+            if root.dirty : AppButton {text:"リセット";enabled:root.operable;clicked=>{root.bulk(DiffBulkAction.reset);}}
+            AppButton {text:"判断を適用";primary:true;enabled:root.operable && root.dirty;clicked=>{root.apply();}}
+        }
+        if root.total>0 && root.proposal-rows.length==0 : Text {text:"この条件に合う提案はありません。";wrap:word-wrap;color:Theme.text-secondary;}
+        for row in root.proposal-rows : MetadataDiffCard {
+            proposal:row;operable:root.operable;wide:root.wide;
+            choose(id,decision)=>{root.choose(id,decision);}
+            edit(id,field,value)=>{root.edit(id,field,value);}
+        }
+    }
+}

@@ -45,6 +45,12 @@ codec!(
 );
 codec!(status_name, status, ReadingStatus, [Unread, Reading, Read]);
 codec!(
+    attachment_kind_name,
+    attachment_kind,
+    AttachmentKind,
+    [FullText, Supplementary, Figure, Other]
+);
+codec!(
     field_name,
     field,
     BibliographyField,

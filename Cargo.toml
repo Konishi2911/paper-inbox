@@ -18,5 +18,11 @@ uuid = { version = "1", features = ["v4", "serde"] }
 chrono = { version = "0.4", features = ["serde"] }
 thiserror = "2"
 rusqlite = { version = "0.37", features = ["bundled"] }
-slint = "1"
+slint = { version = "1", features = ["unstable-winit-030"] }
 
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = "symbols"
+panic = "abort"

@@ -10,9 +10,15 @@ use std::{
     path::Path,
     sync::{Mutex, MutexGuard},
 };
+mod attachments;
+mod blob;
 mod candidates;
+mod identifiers;
 mod sql;
+mod tags;
 mod versions;
+
+pub use blob::{BlobError, FileBlobStore, content_hash_hex, parse_content_hash};
 
 pub type Result<T> = std::result::Result<T, StorageError>;
 #[derive(Debug, thiserror::Error)]
@@ -71,7 +77,7 @@ impl SqliteLibrary {
         db.busy_timeout(std::time::Duration::from_secs(5))?;
         db.pragma_update(None, "foreign_keys", true)?;
         let version: u32 = db.pragma_query_value(None, "user_version", |r| r.get(0))?;
-        if version > 4 {
+        if version > 6 {
             return Err(StorageError::Corrupt(format!(
                 "Unsupported schema version {version}"
             )));
@@ -106,7 +112,9 @@ impl SqliteLibrary {
         }
         versions::migrate(&tx)?;
         candidates::migrate(&tx)?;
-        tx.pragma_update(None, "user_version", 4)?;
+        attachments::migrate(&tx)?;
+        tags::migrate(&tx)?;
+        tx.pragma_update(None, "user_version", 6)?;
         tx.commit()?;
         Ok(Self {
             connection: Mutex::new(db),
@@ -126,6 +134,12 @@ impl SqliteLibrary {
         ids.iter()
             .map(|id| sql::get(&tx, *id)?.ok_or(StorageError::NotFound(*id)))
             .collect()
+    }
+    /// Hashes that an attachment which has not been removed still refers to. Stored files
+    /// outside this set are unused and can be reclaimed.
+    pub fn referenced_attachment_hashes(&self) -> Result<Vec<ContentHash>> {
+        let db = self.lock()?;
+        attachments::referenced_hashes(&db)
     }
     pub fn citation_keys(&self, exclude: Option<PaperId>) -> Result<Vec<String>> {
         let db = self.lock()?;
@@ -192,6 +206,19 @@ impl SqliteLibrary {
                 proposal_id,
                 resolution,
             } => return candidates::resolve(self, tx, proposal_id, resolution, now),
+            LibraryCommand::AddAttachment { attachment } => {
+                return attachments::add(self, tx, attachment, now);
+            }
+            LibraryCommand::CreateTag { tag } => return tags::create(self, tx, tag, now),
+            LibraryCommand::AddTag { paper_id, tag_id } => {
+                return tags::add(self, tx, paper_id, tag_id, now);
+            }
+            LibraryCommand::RemoveTag { paper_id, tag_id } => {
+                return tags::remove(self, tx, paper_id, tag_id, now);
+            }
+            LibraryCommand::RemoveAttachment { attachment_id } => {
+                return attachments::remove(self, tx, attachment_id, now);
+            }
             LibraryCommand::SetCanonicalVersion {
                 paper_id,
                 version_id,
@@ -506,6 +533,19 @@ fn append_event(
     now: DateTime<Utc>,
     result: &mut CommitResult,
 ) -> Result<()> {
+    append_event_for(db, device, kind, Some(snapshot), revision, now, result)
+}
+
+/// Events about a tag itself, not about a paper, have no snapshot.
+fn append_event_for(
+    db: &Connection,
+    device: DeviceId,
+    kind: &str,
+    snapshot: Option<&str>,
+    revision: Option<RevisionId>,
+    now: DateTime<Utc>,
+    result: &mut CommitResult,
+) -> Result<()> {
     let parent: Option<String> = db
         .query_row(
             "SELECT id FROM events WHERE device_id=?1 ORDER BY sequence DESC LIMIT 1",
@@ -544,10 +584,9 @@ impl PaperRepository for SqliteLibrary {
         let guard = self.lock()?;
         let db = guard.unchecked_transaction()?;
         let f = &query.filter;
-        if !f.tags.is_empty() || f.collection.is_some() || query.sort.field == SortField::Relevance
-        {
+        if f.collection.is_some() || query.sort.field == SortField::Relevance {
             return Err(StorageError::Unsupported(
-                "tag/collection filters or relevance ranking",
+                "collection filters or relevance ranking",
             ));
         }
         let mut conditions = match f.deletion {
@@ -592,9 +631,31 @@ impl PaperRepository for SqliteLibrary {
             conditions.push("s.favorite=?".into());
             values.push(i64::from(v).into());
         }
-        // These entities cannot yet be added through this store.
-        if f.has_attachment == Some(true) {
-            conditions.push("0".into());
+        if !f.tags.is_empty() {
+            let tag_exists = "EXISTS(SELECT 1 FROM paper_tags x WHERE x.paper_id=p.id AND x.tag_id";
+            match f.tag_match {
+                TagMatch::All => {
+                    for tag in &f.tags {
+                        conditions.push(format!("{tag_exists}=?)"));
+                        values.push(tag.to_string().into());
+                    }
+                }
+                TagMatch::Any => {
+                    let marks = vec!["?"; f.tags.len()].join(",");
+                    conditions.push(format!("{tag_exists} IN ({marks}))"));
+                    values.extend(f.tags.iter().map(|t| t.to_string().into()));
+                }
+            }
+        }
+        if let Some(has) = f.has_attachment {
+            conditions.push(
+                if has {
+                    "EXISTS(SELECT 1 FROM attachments a WHERE a.paper_id=p.id AND a.removed_at IS NULL)"
+                } else {
+                    "NOT EXISTS(SELECT 1 FROM attachments a WHERE a.paper_id=p.id AND a.removed_at IS NULL)"
+                }
+                .into(),
+            );
         }
         if let Some(pending) = f.has_pending_proposal {
             conditions.push(if pending {"EXISTS(SELECT 1 FROM update_proposals u WHERE u.paper_id=p.id AND u.status='Pending')"} else {"NOT EXISTS(SELECT 1 FROM update_proposals u WHERE u.paper_id=p.id AND u.status='Pending')"}.into());
@@ -651,8 +712,12 @@ impl PaperRepository for SqliteLibrary {
                     reading_status: m.reading_status,
                     favorite: m.favorite,
                     archived: m.archived,
-                    tags: m.tags.clone(),
-                    has_attachment: false,
+                    tags: tags::of_paper(&db, p.id())?.into_iter().map(|t| t.id).collect(),
+                    has_attachment: db.query_row(
+                        "SELECT EXISTS(SELECT 1 FROM attachments WHERE paper_id=?1 AND removed_at IS NULL)",
+                        [p.id().to_string()],
+                        |r| r.get(0),
+                    )?,
                     has_pending_proposal: db.query_row("SELECT EXISTS(SELECT 1 FROM update_proposals WHERE paper_id=?1 AND status='Pending')",[p.id().to_string()],|r|r.get(0))?,
                     created_at: p.created_at(),
                     updated_at: p.updated_at(),
@@ -676,8 +741,22 @@ impl PaperRepository for SqliteLibrary {
             .map(|s| versions::read_snapshot(&db, &s))
             .collect()
     }
-    fn attachments(&self, _paper_id: PaperId) -> Result<Vec<Attachment>> {
-        Ok(vec![])
+    fn tags(&self, include_archived: bool) -> Result<Vec<TagCount>> {
+        tags::counts(&*self.lock()?, include_archived)
+    }
+    fn paper_tags(&self, paper_id: PaperId) -> Result<Vec<Tag>> {
+        tags::of_paper(&*self.lock()?, paper_id)
+    }
+    fn find_by_identifiers(
+        &self,
+        doi: Option<&Doi>,
+        arxiv: Option<&ArxivId>,
+    ) -> Result<Vec<IdentifierMatch>> {
+        identifiers::find(&*self.lock()?, doi, arxiv)
+    }
+    fn attachments(&self, paper_id: PaperId) -> Result<Vec<Attachment>> {
+        let db = self.lock()?;
+        attachments::list(&db, paper_id)
     }
     fn revisions(&self, target: &FieldTarget) -> Result<Vec<FieldRevision>> {
         let db = self.lock()?;
@@ -730,68 +809,82 @@ impl LibraryStore for SqliteLibrary {
                 r.get::<_, String>(3)?,
                 r.get::<_, u32>(4)?,
                 r.get::<_, String>(5)?,
-                r.get::<_, String>(6)?,
+                r.get::<_, Option<String>>(6)?,
                 r.get::<_, Option<String>>(7)?,
             ))
         })?;
         let mut events = vec![];
         for row in rows {
             let (id, device, sequence, timestamp, schema_version, kind, snapshot, revision) = row?;
-            let p = sql::read_snapshot(&db, &snapshot)?;
-            let operation = match kind.as_str() {
-                "PaperCreated" => SyncOperation::PaperCreated(p),
-                "CanonicalVersionChanged" => SyncOperation::CanonicalVersionChanged {
-                    paper_id: p.id(),
-                    version_id: p.canonical_version(),
-                },
-                "PaperVersionAdded" => {
-                    let v: String = db.query_row(
-                        "SELECT version_snapshot_id FROM events WHERE id=?1",
-                        [&id],
-                        |r| r.get(0),
-                    )?;
-                    SyncOperation::PaperVersionAdded(versions::read_snapshot(&db, &v)?)
-                }
-                "FieldRevisionCreated" | "FieldHeadsChanged" => {
-                    let revision = sql::read_revision(
-                        &db,
-                        sql::decode(
-                            revision
-                                .ok_or_else(|| StorageError::Corrupt("Missing revision".into()))?,
-                        )?,
-                    )?;
-                    if kind == "FieldRevisionCreated" {
-                        SyncOperation::FieldRevisionCreated(revision)
-                    } else {
-                        SyncOperation::FieldHeadsChanged {
-                            target: revision.target(),
-                            heads: vec![revision.id],
+            let operation = if kind.starts_with("Tag") {
+                let paper = snapshot
+                    .as_deref()
+                    .map(|s| sql::read_snapshot(&db, s))
+                    .transpose()?
+                    .map(|p| p.id());
+                tags::read_event(&db, &id, &kind, paper)?
+            } else {
+                let snapshot = snapshot.ok_or_else(|| {
+                    StorageError::Corrupt("Event without a paper snapshot".into())
+                })?;
+                let p = sql::read_snapshot(&db, &snapshot)?;
+                match kind.as_str() {
+                    "PaperCreated" => SyncOperation::PaperCreated(p),
+                    "CanonicalVersionChanged" => SyncOperation::CanonicalVersionChanged {
+                        paper_id: p.id(),
+                        version_id: p.canonical_version(),
+                    },
+                    "PaperVersionAdded" => {
+                        let v: String = db.query_row(
+                            "SELECT version_snapshot_id FROM events WHERE id=?1",
+                            [&id],
+                            |r| r.get(0),
+                        )?;
+                        SyncOperation::PaperVersionAdded(versions::read_snapshot(&db, &v)?)
+                    }
+                    "FieldRevisionCreated" | "FieldHeadsChanged" => {
+                        let revision = sql::read_revision(
+                            &db,
+                            sql::decode(revision.ok_or_else(|| {
+                                StorageError::Corrupt("Missing revision".into())
+                            })?)?,
+                        )?;
+                        if kind == "FieldRevisionCreated" {
+                            SyncOperation::FieldRevisionCreated(revision)
+                        } else {
+                            SyncOperation::FieldHeadsChanged {
+                                target: revision.target(),
+                                heads: vec![revision.id],
+                            }
                         }
                     }
+                    "CitationKeyChanged" => SyncOperation::CitationKeyChanged {
+                        paper_id: p.id(),
+                        citation_key: p.citation_key().clone(),
+                    },
+                    "NotesChanged" => SyncOperation::NotesChanged {
+                        paper_id: p.id(),
+                        notes: p.metadata().notes.clone(),
+                    },
+                    "ReadingStatusChanged" => SyncOperation::ReadingStatusChanged {
+                        paper_id: p.id(),
+                        status: p.metadata().reading_status,
+                    },
+                    "FavoriteChanged" => SyncOperation::FavoriteChanged {
+                        paper_id: p.id(),
+                        favorite: p.metadata().favorite,
+                    },
+                    "ArchivedChanged" => SyncOperation::ArchivedChanged {
+                        paper_id: p.id(),
+                        archived: p.metadata().archived,
+                    },
+                    "PaperDeleted" => SyncOperation::PaperDeleted(p.id()),
+                    "PaperRestored" => SyncOperation::PaperRestored(p.id()),
+                    "AttachmentAdded" | "AttachmentRemoved" => {
+                        attachments::read_event(&db, &id, &kind)?
+                    }
+                    _ => candidates::read_event(&db, &id, &kind)?,
                 }
-                "CitationKeyChanged" => SyncOperation::CitationKeyChanged {
-                    paper_id: p.id(),
-                    citation_key: p.citation_key().clone(),
-                },
-                "NotesChanged" => SyncOperation::NotesChanged {
-                    paper_id: p.id(),
-                    notes: p.metadata().notes.clone(),
-                },
-                "ReadingStatusChanged" => SyncOperation::ReadingStatusChanged {
-                    paper_id: p.id(),
-                    status: p.metadata().reading_status,
-                },
-                "FavoriteChanged" => SyncOperation::FavoriteChanged {
-                    paper_id: p.id(),
-                    favorite: p.metadata().favorite,
-                },
-                "ArchivedChanged" => SyncOperation::ArchivedChanged {
-                    paper_id: p.id(),
-                    archived: p.metadata().archived,
-                },
-                "PaperDeleted" => SyncOperation::PaperDeleted(p.id()),
-                "PaperRestored" => SyncOperation::PaperRestored(p.id()),
-                _ => candidates::read_event(&db, &id, &kind)?,
             };
             let mut parent_stmt = db.prepare(
                 "SELECT parent_id FROM event_parents WHERE event_id=?1 ORDER BY parent_id",

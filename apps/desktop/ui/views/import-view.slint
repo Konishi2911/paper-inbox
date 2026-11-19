@@ -1,0 +1,354 @@
+import { VerticalBox, HorizontalBox, LineEdit, TextEdit, ComboBox, CheckBox, ScrollView } from "std-widgets.slint";
+import { Theme } from "../theme.slint";
+import { DuplicateRow, LookupField, TagRow } from "../types.slint";
+import { AppButton } from "../components/app-button.slint";
+import { TagEditor } from "../components/tag-editor.slint";
+
+// Unified add screen (lookup-new) and identifier lookup for an existing paper.
+// Fetched bibliography is read-only so its provenance is preserved; only
+// personal values are entered here. The parent owns navigation and saving.
+export component ImportView inherits VerticalBox {
+    in property <bool> about-open;
+    in property <bool> busy;
+    callback cancel-lookup();
+    in property <bool> confirm-discard;
+    callback confirm-lookup();
+    callback fetch-lookup();
+    callback manual-requested();
+    in property <bool> load-required;
+    in property <string> lookup-source;
+    in property <[LookupField]> lookup-fields;
+    in-out property <bool> lookup-dirty;
+    in-out property <bool> lookup-has-result;
+    in-out property <string> lookup-identifier;
+    in-out property <string> lookup-key;
+    in-out property <string> lookup-notes;
+    in-out property <int> lookup-reading-status;
+    in-out property <bool> lookup-favorite;
+    in property <bool> lookup-new;
+    in property <string> lookup-pdf-name;
+    callback pdf-clear();
+    in property <[DuplicateRow]> lookup-duplicates;
+    callback open-duplicate(string);
+    in property <[string]> lookup-candidates;
+    callback pick-pdf-requested();
+    in property <[TagRow]> lookup-tags;
+    in property <[TagRow]> tag-suggestions;
+    callback tag-add-requested(string);
+    callback tag-remove-requested(string);
+    callback tag-input-changed(string);
+    in property <bool> ready;
+
+    property <bool> interactive: root.ready && !root.busy && !root.confirm-discard && !root.about-open;
+    property <bool> can-fetch: root.interactive && !root.load-required && root.lookup-identifier != "";
+    property <bool> can-confirm: root.interactive && !root.load-required && root.lookup-has-result;
+
+    padding: 0px;
+    spacing: 12px;
+
+    Text {
+        text: root.lookup-new ? "文献を追加" : "識別子から更新候補を取得";
+        font-size: 20px;
+        font-weight: 700;
+        color: Theme.text-primary;
+    }
+
+    HorizontalBox {
+        padding: 0px;
+        spacing: 8px;
+        identifier := LineEdit {
+            accessible-label: "取得する識別子";
+            enabled: root.interactive;
+            text <=> root.lookup-identifier;
+            placeholder-text: "DOI / arXiv ID / 公式URL を貼り付けて Enter";
+            edited(v) => {
+                root.lookup-dirty = true;
+                root.lookup-has-result = false;
+            }
+            accepted => {
+                if (root.can-fetch) {
+                    root.fetch-lookup();
+                }
+            }
+        }
+        AppButton {
+            text: "書誌情報を取得";
+            enabled: root.can-fetch;
+            clicked => {
+                root.fetch-lookup();
+            }
+        }
+    }
+    Text {
+        text: "DOI は Crossref、arXiv ID は arXiv へ送信します。"
+            + (root.lookup-new ? "「登録」を押すまで保存しません。" : "");
+        wrap: word-wrap;
+        font-size: 12px;
+        color: Theme.text-secondary;
+    }
+
+    // A PDF dropped onto the window; it is attached when the paper is registered.
+    if root.lookup-new && root.lookup-pdf-name != "" : HorizontalBox {
+        padding: 0px;
+        spacing: 8px;
+        Text {
+            text: "登録時に添付するPDF: " + root.lookup-pdf-name;
+            vertical-alignment: center;
+            overflow: elide;
+            horizontal-stretch: 1;
+            color: Theme.text-primary;
+        }
+        AppButton {
+            accessible-label: "添付するPDFを取り消す";
+            text: "取り消し";
+            kind: "outline";
+            small: true;
+            enabled: root.interactive;
+            clicked => {
+                root.pdf-clear();
+            }
+        }
+    }
+
+    // The same DOI or arXiv ID is already in the library. Registering stays possible;
+    // the warning only makes the choice visible and offers the existing paper.
+    if root.lookup-new && root.lookup-has-result && root.lookup-duplicates.length > 0 : Rectangle {
+        background: Theme.diff-current;
+        border-radius: 6px;
+        border-width: 1px;
+        border-color: Theme.warning;
+        VerticalBox {
+            padding: 12px;
+            spacing: 6px;
+            Text {
+                text: "同じ DOI / arXiv ID の文献がすでに登録されています";
+                font-weight: 700;
+                color: Theme.warning;
+                wrap: word-wrap;
+            }
+            for duplicate in root.lookup-duplicates : HorizontalBox {
+                padding: 0px;
+                spacing: 8px;
+                Text {
+                    text: duplicate.label + (duplicate.deleted ? "（削除済み。開くと復元できます）" : "");
+                    horizontal-stretch: 1;
+                    vertical-alignment: center;
+                    wrap: word-wrap;
+                    color: Theme.text-primary;
+                }
+                AppButton {
+                    accessible-label: duplicate.label + "を開く";
+                    text: "既存を開く";
+                    kind: "outline";
+                    small: true;
+                    enabled: root.interactive;
+                    clicked => {
+                        root.open-duplicate(duplicate.id);
+                    }
+                }
+            }
+        }
+    }
+    // Other identifiers found in the PDF; choosing one only fills the field.
+    if root.lookup-new && root.lookup-candidates.length > 1 : HorizontalBox {
+        padding: 0px;
+        spacing: 6px;
+        Text {
+            text: "PDFで見つかった候補:";
+            vertical-alignment: center;
+            color: Theme.text-secondary;
+            font-size: 12px;
+        }
+        for candidate in root.lookup-candidates : AppButton {
+            accessible-label: candidate + "を識別子にする";
+            text: candidate;
+            kind: "outline";
+            small: true;
+            enabled: root.interactive && candidate != root.lookup-identifier;
+            clicked => {
+                root.lookup-identifier = candidate;
+                root.lookup-dirty = true;
+                root.lookup-has-result = false;
+            }
+        }
+        Rectangle {
+            horizontal-stretch: 1;
+        }
+    }
+
+    ScrollView {
+        vertical-stretch: 1;
+        VerticalBox {
+            padding: 0px;
+            spacing: 10px;
+            alignment: start;
+
+            if !root.lookup-has-result : Text {
+                text: root.lookup-new
+                    ? "取得した書誌情報はここに表示されます。識別子がない文献は下の「手動で入力」から登録できます。"
+                    : "取得した内容は既存の候補・承認処理へ渡します。";
+                wrap: word-wrap;
+                color: Theme.text-secondary;
+            }
+
+            if root.lookup-has-result : Text {
+                text: "取得結果";
+                font-size: 16px;
+                font-weight: 600;
+                color: Theme.text-primary;
+            }
+            if root.lookup-has-result : Text {
+                text: root.lookup-source;
+                wrap: word-wrap;
+                font-size: 12px;
+                color: Theme.text-secondary;
+            }
+            if root.lookup-has-result : Rectangle {
+                background: Theme.diff-current;
+                border-radius: 6px;
+                VerticalBox {
+                    padding: 12px;
+                    spacing: 6px;
+                    for field in root.lookup-fields : HorizontalBox {
+                        padding: 0px;
+                        spacing: 12px;
+                        Text {
+                            text: field.label;
+                            width: 96px;
+                            color: Theme.text-secondary;
+                            wrap: word-wrap;
+                        }
+                        Text {
+                            text: field.value == "" ? "（なし）" : field.value;
+                            horizontal-stretch: 1;
+                            color: Theme.text-primary;
+                            wrap: word-wrap;
+                        }
+                    }
+                }
+            }
+
+            if root.lookup-new && root.lookup-has-result : VerticalBox {
+                padding: 0px;
+                spacing: 8px;
+                Text {
+                    text: "登録時の入力";
+                    font-size: 16px;
+                    font-weight: 600;
+                    color: Theme.text-primary;
+                }
+                Text {
+                    text: "引用キー（第一著者＋出版年。使用済みならタイトル代表語を追加）";
+                    wrap: word-wrap;
+                    color: Theme.text-secondary;
+                }
+                LineEdit {
+                    accessible-label: "登録する引用キー";
+                    enabled: root.interactive;
+                    text <=> root.lookup-key;
+                    // Created when a result arrives, so Enter registers next.
+                    init => {
+                        self.focus();
+                    }
+                    edited(v) => {
+                        root.lookup-dirty = true;
+                    }
+                    accepted => {
+                        if (root.can-confirm) {
+                            root.confirm-lookup();
+                        }
+                    }
+                }
+                HorizontalBox {
+                    padding: 0px;
+                    spacing: 12px;
+                    Text {
+                        text: "読書状態";
+                        vertical-alignment: center;
+                        color: Theme.text-secondary;
+                    }
+                    ComboBox {
+                        accessible-label: "登録時の読書状態";
+                        enabled: root.interactive;
+                        model: ["未読", "読書中", "既読"];
+                        current-index <=> root.lookup-reading-status;
+                    }
+                    CheckBox {
+                        accessible-label: "登録時のお気に入り";
+                        enabled: root.interactive;
+                        text: "お気に入り";
+                        checked <=> root.lookup-favorite;
+                    }
+                    Rectangle {
+                        horizontal-stretch: 1;
+                    }
+                }
+                TagEditor {
+                    tags: root.lookup-tags;
+                    suggestions: root.tag-suggestions;
+                    operable: root.interactive;
+                    add-requested(name) => { root.tag-add-requested(name); }
+                    remove-requested(id) => { root.tag-remove-requested(id); }
+                    input-changed(text) => { root.tag-input-changed(text); }
+                }
+                TextEdit {
+                    accessible-label: "登録時のメモ";
+                    enabled: root.interactive;
+                    placeholder-text: "メモ（任意）";
+                    text <=> root.lookup-notes;
+                    min-height: 72px;
+                    edited => {
+                        root.lookup-dirty = true;
+                    }
+                }
+            }
+        }
+    }
+
+    HorizontalBox {
+        padding: 0px;
+        spacing: 8px;
+        AppButton {
+            text: root.lookup-new ? (root.lookup-duplicates.length > 0 ? "重複を承知で登録" : "登録") : "更新候補として保存";
+            primary: true;
+            enabled: root.can-confirm;
+            clicked => {
+                root.confirm-lookup();
+            }
+        }
+        AppButton {
+            kind: "outline";
+            // Closing discards without a dialog, so the label states it.
+            text: !root.lookup-new
+                ? "入力と取得結果を破棄して戻る"
+                : (root.lookup-dirty ? "破棄して閉じる" : "閉じる");
+            enabled: !root.busy && !root.about-open && !root.confirm-discard;
+            clicked => {
+                root.cancel-lookup();
+            }
+        }
+        Rectangle {
+            horizontal-stretch: 1;
+        }
+        if root.lookup-new : AppButton {
+            accessible-label: "PDFを選んで追加";
+            text: "PDFから追加";
+            enabled: root.interactive;
+            clicked => {
+                root.pick-pdf-requested();
+            }
+        }
+        if root.lookup-new : AppButton {
+            accessible-label: "識別子なしで手動入力";
+            text: "手動で入力";
+            enabled: root.interactive;
+            clicked => {
+                root.manual-requested();
+            }
+        }
+    }
+
+    init => {
+        identifier.focus();
+    }
+}

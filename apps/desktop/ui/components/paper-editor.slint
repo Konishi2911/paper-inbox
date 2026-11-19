@@ -1,0 +1,480 @@
+import { ConfirmDialog } from "../dialogs/confirm-dialog.slint";
+import { VerticalBox, HorizontalBox, LineEdit, TextEdit, ComboBox, CheckBox, ScrollView } from "std-widgets.slint";
+import { AuthorEditor } from "author-editor.slint";
+import { Theme } from "../theme.slint";
+import { AuthorAction, AuthorRow } from "../types.slint";
+import { AppButton } from "app-button.slint";
+
+// Label on the left, input on the right: halves the form height and keeps
+// labels in one column so the eye moves straight down.
+component FormRow inherits HorizontalBox {
+    in property <string> label;
+    padding: 0px;
+    spacing: 10px;
+    Text {
+        text: root.label;
+        // The input carries the same accessible label.
+        accessible-role: none;
+        width: 88px;
+        vertical-alignment: center;
+        horizontal-alignment: right;
+        wrap: word-wrap;
+        color: Theme.text-secondary;
+    }
+    @children
+}
+
+component SectionTitle inherits Text {
+    font-size: 15px;
+    font-weight: 600;
+    color: Theme.text-primary;
+}
+
+// The parent owns navigation, persistence and confirmation state.
+// Field order follows the detail: bibliography, identifiers, content, personal values.
+export component PaperEditor inherits VerticalBox {
+    in-out property <string> citation-key;
+    in-out property <string> paper-title;
+    in-out property <string> container-title;
+    in-out property <string> year;
+    in-out property <string> publisher;
+    in-out property <string> volume;
+    in-out property <string> issue;
+    in-out property <string> pages;
+    in-out property <string> doi;
+    in-out property <string> arxiv-id;
+    in-out property <string> url;
+    in-out property <string> abstract-text;
+    in-out property <string> keywords;
+    in-out property <string> notes;
+    in-out property <int> publication-type;
+    in-out property <int> reading-status;
+    in-out property <bool> favorite;
+    in-out property <bool> archived;
+    in-out property <bool> dirty;
+    in property <[AuthorRow]> author-rows;
+    in property <string> identifier-warning;
+    in property <string> form-error;
+    in property <bool> operable;
+    in property <bool> editable;
+    in property <bool> saved-paper;
+    in property <bool> editor-deleted;
+    in property <bool> load-required;
+    in property <bool> edit-mode;
+    in property <bool> confirm-delete;
+    in property <bool> delete-confirm-operable;
+    callback save();
+    callback suggest-key();
+    callback reload-requested();
+    callback lookup-requested();
+    callback metadata-requested();
+    callback cancel-requested();
+    callback delete-requested();
+    callback restore-requested();
+    callback confirm-delete-requested();
+    callback cancel-delete-requested();
+    callback author-edit(int,int,string);
+    callback author-kind(int,int);
+    callback author-action(AuthorAction,int);
+    callback author-bulk(string);
+
+    property <bool> can-save: root.editable && (!root.saved-paper || root.dirty);
+
+    // Ctrl+S saves from any field; unhandled keys bubble up from the inputs.
+    form-keys := FocusScope {
+        key-pressed(event) => {
+            if (event.modifiers.control && (event.text == "s" || event.text == "S")) {
+                if (root.can-save) {
+                    root.save();
+                }
+                return accept;
+            }
+            return reject;
+        }
+
+        VerticalBox {
+            padding: 0px;
+            spacing: 10px;
+
+            HorizontalBox {
+                padding: 0px;
+                spacing: 8px;
+                Text {
+                    text: root.editor-deleted ? "削除済み文献" : (root.saved-paper ? "文献を編集" : "文献を追加（手動入力）");
+                    font-size: 20px;
+                    font-weight: 700;
+                    vertical-alignment: center;
+                    color: Theme.text-primary;
+                }
+                if root.dirty : Text {
+                    text: "● 未保存";
+                    vertical-alignment: center;
+                    color: Theme.warning;
+                }
+                Rectangle {
+                    horizontal-stretch: 1;
+                }
+                // New papers can switch to identifier lookup; unsaved input is confirmed by the parent.
+                if !root.saved-paper : AppButton {
+                    text: "DOI / arXiv から取得に切り替え";
+                    enabled: root.operable;
+                    clicked => {
+                        root.lookup-requested();
+                    }
+                }
+                if root.saved-paper : AppButton {
+                    text: "候補・版を確認";
+                    enabled: root.editable;
+                    clicked => {
+                        root.metadata-requested();
+                    }
+                }
+                if root.saved-paper : AppButton {
+                    text: "再読込";
+                    enabled: root.operable;
+                    clicked => {
+                        root.reload-requested();
+                    }
+                }
+            }
+
+            ScrollView {
+                content-width: self.visible-width;
+                vertical-stretch: 1;
+                VerticalBox {
+                    padding: 0px;
+                    padding-right: 12px;
+                    spacing: 8px;
+                    alignment: start;
+
+                    SectionTitle {
+                        text: "書誌情報";
+                    }
+                    FormRow {
+                        label: "タイトル";
+                        LineEdit {
+                            accessible-label: "文献タイトル";
+                            enabled: root.editable;
+                            text <=> root.paper-title;
+                            edited(text) => {
+                                root.dirty = true;
+                            }
+                        }
+                    }
+                    HorizontalBox {
+                        padding: 0px;
+                        spacing: 10px;
+                        Text {
+                            text: "著者";
+                            width: 88px;
+                            horizontal-alignment: right;
+                            color: Theme.text-secondary;
+                        }
+                        AuthorEditor {
+                            author-rows: root.author-rows;
+                            editable: root.editable;
+                            author-edit(index, field, value) => {
+                                root.author-edit(index, field, value);
+                            }
+                            author-kind(index, kind) => {
+                                root.author-kind(index, kind);
+                            }
+                            author-action(action, index) => {
+                                root.author-action(action, index);
+                            }
+                            author-bulk(text) => {
+                                root.author-bulk(text);
+                            }
+                        }
+                    }
+                    FormRow {
+                        label: "出版年";
+                        LineEdit {
+                            accessible-label: "出版年";
+                            width: 80px;
+                            enabled: root.editable;
+                            placeholder-text: "未入力可";
+                            text <=> root.year;
+                            edited(text) => {
+                                root.dirty = true;
+                            }
+                        }
+                        Text {
+                            text: "種別";
+                            vertical-alignment: center;
+                            color: Theme.text-secondary;
+                        }
+                        ComboBox {
+                            accessible-label: "出版種別";
+                            enabled: root.editable;
+                            model: ["未指定", "学術誌論文", "会議論文", "書籍", "書籍の章", "修士論文", "博士論文", "学位論文", "技術報告", "プレプリント", "特許", "その他"];
+                            current-index <=> root.publication-type;
+                            selected(index) => {
+                                root.dirty = true;
+                            }
+                        }
+                    }
+                    FormRow {
+                        label: "掲載先";
+                        LineEdit {
+                            accessible-label: "掲載先";
+                            enabled: root.editable;
+                            placeholder-text: "学術誌・会議・書籍名";
+                            text <=> root.container-title;
+                            edited(text) => {
+                                root.dirty = true;
+                            }
+                        }
+                    }
+                    FormRow {
+                        label: "巻・号";
+                        LineEdit {
+                            accessible-label: "巻";
+                            min-width: 56px;
+                            enabled: root.editable;
+                            placeholder-text: "巻";
+                            text <=> root.volume;
+                            edited(text) => {
+                                root.dirty = true;
+                            }
+                        }
+                        LineEdit {
+                            accessible-label: "号";
+                            min-width: 56px;
+                            enabled: root.editable;
+                            placeholder-text: "号";
+                            text <=> root.issue;
+                            edited(text) => {
+                                root.dirty = true;
+                            }
+                        }
+                        LineEdit {
+                            accessible-label: "ページ";
+                            min-width: 72px;
+                            enabled: root.editable;
+                            placeholder-text: "ページ 例: 1-10";
+                            text <=> root.pages;
+                            edited(text) => {
+                                root.dirty = true;
+                            }
+                        }
+                    }
+                    FormRow {
+                        label: "出版社";
+                        LineEdit {
+                            accessible-label: "出版社";
+                            enabled: root.editable;
+                            text <=> root.publisher;
+                            edited(text) => {
+                                root.dirty = true;
+                            }
+                        }
+                    }
+
+                    SectionTitle {
+                        text: "識別子";
+                    }
+                    if root.identifier-warning != "" : Text {
+                        text: root.identifier-warning;
+                        wrap: word-wrap;
+                        color: Theme.warning;
+                    }
+                    FormRow {
+                        label: "DOI";
+                        LineEdit {
+                            accessible-label: "DOI";
+                            enabled: root.editable;
+                            placeholder-text: "本体または公式URL";
+                            text <=> root.doi;
+                            edited(text) => {
+                                root.dirty = true;
+                            }
+                        }
+                    }
+                    FormRow {
+                        label: "arXiv";
+                        LineEdit {
+                            accessible-label: "arXiv ID";
+                            enabled: root.editable;
+                            placeholder-text: "版番号を保持します";
+                            text <=> root.arxiv-id;
+                            edited(text) => {
+                                root.dirty = true;
+                            }
+                        }
+                    }
+                    FormRow {
+                        label: "URL";
+                        LineEdit {
+                            accessible-label: "URL";
+                            enabled: root.editable;
+                            placeholder-text: "https://…";
+                            text <=> root.url;
+                            edited(text) => {
+                                root.dirty = true;
+                            }
+                        }
+                    }
+                    FormRow {
+                        label: "引用キー";
+                        LineEdit {
+                            accessible-label: "引用キー";
+                            enabled: root.editable;
+                            placeholder-text: root.saved-paper ? "" : "空欄なら登録時に自動で提案します";
+                            text <=> root.citation-key;
+                            edited(text) => {
+                                root.dirty = true;
+                            }
+                        }
+                        AppButton {
+                            text: "引用キーを提案";
+                            enabled: root.editable;
+                            clicked => {
+                                root.suggest-key();
+                            }
+                        }
+                    }
+
+                    SectionTitle {
+                        text: "内容";
+                    }
+                    FormRow {
+                        label: "アブストラクト";
+                        TextEdit {
+                            accessible-label: "アブストラクト";
+                            enabled: root.editable;
+                            min-height: 96px;
+                            text <=> root.abstract-text;
+                            edited => {
+                                root.dirty = true;
+                            }
+                        }
+                    }
+                    FormRow {
+                        label: "キーワード";
+                        LineEdit {
+                            accessible-label: "キーワード";
+                            enabled: root.editable;
+                            placeholder-text: "「;」で区切る";
+                            text <=> root.keywords;
+                            edited(text) => {
+                                root.dirty = true;
+                            }
+                        }
+                    }
+
+                    SectionTitle {
+                        text: "自分の記録";
+                    }
+                    FormRow {
+                        label: "読書状態";
+                        ComboBox {
+                            accessible-label: "読書状態";
+                            width: 120px;
+                            enabled: root.editable;
+                            model: ["未読", "読書中", "既読"];
+                            current-index <=> root.reading-status;
+                            selected(index) => {
+                                root.dirty = true;
+                            }
+                        }
+                        CheckBox {
+                            enabled: root.editable;
+                            text: "お気に入り";
+                            checked <=> root.favorite;
+                            toggled => {
+                                root.dirty = true;
+                            }
+                        }
+                        CheckBox {
+                            enabled: root.editable;
+                            text: "アーカイブ";
+                            checked <=> root.archived;
+                            toggled => {
+                                root.dirty = true;
+                            }
+                        }
+                        Rectangle {
+                            horizontal-stretch: 1;
+                        }
+                    }
+                    FormRow {
+                        label: "メモ";
+                        TextEdit {
+                            accessible-label: "メモ";
+                            enabled: root.editable;
+                            min-height: 96px;
+                            text <=> root.notes;
+                            edited => {
+                                root.dirty = true;
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Errors appear next to the action that caused them.
+            if root.form-error != "" : Text {
+                text: root.form-error;
+                wrap: word-wrap;
+                color: Theme.warning;
+            }
+            HorizontalBox {
+                padding: 0px;
+                spacing: 8px;
+                AppButton {
+                    text: root.saved-paper ? "変更を保存" : "文献を登録";
+                    primary: true;
+                    enabled: root.can-save;
+                    clicked => {
+                        root.save();
+                    }
+                }
+                if root.saved-paper && root.edit-mode && !root.editor-deleted : AppButton {
+                    text: "編集をキャンセル";
+                    kind: "outline";
+                    enabled: root.operable;
+                    clicked => {
+                        root.cancel-requested();
+                    }
+                }
+                Text {
+                    text: "Ctrl+S で保存";
+                    vertical-alignment: center;
+                    font-size: 12px;
+                    color: Theme.text-secondary;
+                }
+                // The destructive action is kept apart from saving.
+                Rectangle {
+                    horizontal-stretch: 1;
+                }
+                if root.saved-paper && !root.editor-deleted : AppButton {
+                    text: "削除する…";
+                    kind: "danger";
+                    enabled: root.operable && !root.load-required;
+                    clicked => {
+                        root.delete-requested();
+                    }
+                }
+                if root.editor-deleted : AppButton {
+                    text: "復元する";
+                    enabled: root.operable && !root.load-required;
+                    clicked => {
+                        root.restore-requested();
+                    }
+                }
+            }
+            if root.confirm-delete : ConfirmDialog {
+                message: "この文献を削除済みに移動しますか？ 後で復元できます。未保存の入力は破棄されます。";
+                accept-label: "削除済みに移動";
+                operable: root.delete-confirm-operable;
+                accepted => {
+                    root.confirm-delete-requested();
+                }
+                cancelled => {
+                    root.cancel-delete-requested();
+                }
+            }
+        }
+    }
+}

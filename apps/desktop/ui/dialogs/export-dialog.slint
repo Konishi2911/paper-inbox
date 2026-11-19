@@ -1,0 +1,24 @@
+import { VerticalBox, HorizontalBox, TextEdit } from "std-widgets.slint";
+import { AppButton } from "../components/app-button.slint";
+
+
+export component ExportDialog inherits VerticalBox {
+    in property <bool> about-open;
+    in property <bool> busy;
+    callback cancel-export();
+    callback confirm-export();
+    in property <string> export-preview;
+    in property <bool> export-replaces;
+    in property <string> export-summary;
+    in property <string> export-warnings;
+    Text { text:"BibTeX 出力の確認";font-size:20px; }
+    Text { text:root.export-summary;wrap:word-wrap; }
+    if root.export-replaces : Text { text:"この保存先には既存ファイルがあります。出力すると置き換えます。";wrap:word-wrap; }
+    Text { text:"保存済みの文献を出力します。未保存の編集内容は含まれません。";wrap:word-wrap; }
+    TextEdit { text:root.export-warnings=="" ? "警告はありません。" : root.export-warnings;read-only:true;height:100px; }
+    TextEdit { text:root.export-preview;read-only:true;vertical-stretch:1; }
+    HorizontalBox {
+        AppButton {text:root.export-replaces ? "既存ファイルを置き換える" : "ファイルへ出力";enabled:!root.busy && !root.about-open;clicked=>{root.confirm-export();}}
+        AppButton {kind:"outline";text:"キャンセル";enabled:!root.busy && !root.about-open;clicked=>{root.cancel-export();}}
+    }
+}

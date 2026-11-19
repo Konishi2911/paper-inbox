@@ -1,0 +1,183 @@
+import { ConfirmDialog } from "../dialogs/confirm-dialog.slint";
+import { CandidateEditor } from "candidate-editor.slint";
+import { ProposalView } from "proposal-view.slint";
+import { VerticalBox, HorizontalBox, ScrollView } from "std-widgets.slint";
+import { Theme } from "../theme.slint";
+
+import { DiffInputField, DiffResolution, DiffFilter, DiffBulkAction, CandidateRow, ProposalRow, VersionRow } from "../types.slint";
+import { AppButton } from "../components/app-button.slint";
+
+// One compact line per candidate or version: title, then a muted summary and its action.
+component RecordRow inherits Rectangle {
+    in property <string> title;
+    in property <string> details;
+    in property <string> badge;
+    in property <string> action;
+    in property <bool> action-enabled;
+    callback activated();
+    background: Theme.surface;
+    border-width:1px;border-color:Theme.border;border-radius:6px;
+    min-width:0px;
+    min-height: content.preferred-height;
+    content := HorizontalBox {
+        padding:8px;spacing:8px;
+        VerticalLayout {
+            spacing:2px;horizontal-stretch:1;min-width:0px;
+            HorizontalLayout {
+                spacing:6px;
+                if root.badge!="" : Text {text:root.badge;font-weight:600;color:Theme.selection-border;}
+                Text {text:root.title;font-weight:600;color:Theme.text-primary;wrap:word-wrap;horizontal-stretch:1;min-width:0px;}
+            }
+            Text {text:root.details;color:Theme.text-secondary;wrap:word-wrap;min-width:0px;}
+        }
+        if root.action!="" : VerticalLayout {
+            alignment:center;
+            AppButton {text:root.action;enabled:root.action-enabled;clicked=>{root.activated();}}
+        }
+    }
+}
+
+export component MetadataView inherits VerticalBox {
+    in property <bool> review-dirty;
+    in-out property <DiffFilter> diff-filter;
+    in property <string> diff-summary;
+    in property <int> proposal-total;
+    callback choose-metadata(string,DiffResolution);
+    callback edit-metadata(string,DiffInputField,string);
+    callback bulk-metadata(DiffBulkAction);
+    callback apply-metadata();
+    in property <bool> about-open;
+    callback associate-candidate(string);
+    in property <bool> associate-confirm;
+    in property <string> associate-id;
+    callback begin-candidate();
+    callback begin-lookup();
+    in property <bool> busy;
+    callback cancel-association();
+    callback cancel-candidate();
+    in-out property <string> candidate-abstract;
+    in-out property <string> candidate-arxiv;
+    in-out property <string> candidate-container;
+    in-out property <bool> candidate-dirty;
+    in-out property <string> candidate-doi;
+    in property <bool> candidate-form-open;
+    in-out property <int> candidate-kind;
+    in-out property <string> candidate-publisher;
+    in-out property <string> candidate-record;
+    in property <[CandidateRow]> candidate-rows;
+    in-out property <int> candidate-source;
+    in-out property <string> candidate-source-name;
+    in-out property <string> candidate-title;
+    in-out property <string> candidate-updated;
+    in-out property <bool> candidate-use-abstract;
+    in-out property <bool> candidate-use-container;
+    in-out property <bool> candidate-use-publisher;
+    in-out property <bool> candidate-use-title;
+    in-out property <bool> candidate-use-year;
+    in-out property <string> candidate-year;
+    in property <bool> confirm-discard;
+    in property <bool> metadata-operable;
+    in property <[ProposalRow]> proposal-rows;
+    callback propose-canonical(string);
+    callback refresh-review();
+    callback request-association(string);
+    callback resolve-metadata(string,bool);
+    callback return-to-paper();
+    in property <string> review-label;
+    callback submit-candidate();
+    in property <[VersionRow]> version-rows;
+    private property <bool> can-start: root.metadata-operable && !root.review-dirty && !root.candidate-form-open && !root.associate-confirm;
+    private property <bool> can-leave: !root.busy && !root.about-open && !root.confirm-discard;
+    HorizontalLayout {
+        spacing:8px;
+        AppButton {kind:"ghost";text:"文献へ戻る";enabled:root.can-leave;clicked=>{root.return-to-paper();}}
+        Text {text:root.review-label;font-size:18px;font-weight:600;vertical-alignment:center;overflow:elide;horizontal-stretch:1;min-width:0px;}
+    }
+    if !root.candidate-form-open : HorizontalLayout {
+        spacing:6px;
+        AppButton {text:"DOI / arXiv で取得";enabled:root.can-start;clicked=>{root.begin-lookup();}}
+        AppButton {text:"候補を手入力";enabled:root.can-start;clicked=>{root.begin-candidate();}}
+        Rectangle {horizontal-stretch:1;}
+        AppButton {kind:"ghost";text:"表示を更新";enabled:root.can-leave;clicked=>{root.refresh-review();}}
+    }
+    if root.candidate-form-open : CandidateEditor {
+        about-open : root.about-open;
+        busy : root.busy;
+        cancel-candidate()=>{root.cancel-candidate();}
+        candidate-abstract <=> root.candidate-abstract;
+        candidate-arxiv <=> root.candidate-arxiv;
+        candidate-container <=> root.candidate-container;
+        candidate-dirty <=> root.candidate-dirty;
+        candidate-doi <=> root.candidate-doi;
+        candidate-kind <=> root.candidate-kind;
+        candidate-publisher <=> root.candidate-publisher;
+        candidate-record <=> root.candidate-record;
+        candidate-source <=> root.candidate-source;
+        candidate-source-name <=> root.candidate-source-name;
+        candidate-title <=> root.candidate-title;
+        candidate-updated <=> root.candidate-updated;
+        candidate-use-abstract <=> root.candidate-use-abstract;
+        candidate-use-container <=> root.candidate-use-container;
+        candidate-use-publisher <=> root.candidate-use-publisher;
+        candidate-use-title <=> root.candidate-use-title;
+        candidate-use-year <=> root.candidate-use-year;
+        candidate-year <=> root.candidate-year;
+        confirm-discard : root.confirm-discard;
+        metadata-operable : root.metadata-operable;
+        submit-candidate()=>{root.submit-candidate();}
+    }
+    if !root.candidate-form-open : VerticalBox {
+        padding:0px;
+        if root.associate-confirm : ConfirmDialog {
+            message:"この候補を文献の別の版として登録しますか？ 書誌項目の変更は項目ごとに承認します。";
+            accept-label:"関連付ける";
+            operable:root.metadata-operable;
+            cancel-operable:!root.busy && !root.about-open;
+            accepted=>{root.associate-candidate(root.associate-id);}
+            cancelled=>{root.cancel-association();}
+        }
+        ScrollView {
+            vertical-stretch:1;
+            content-width: self.visible-width;
+            VerticalBox {
+                spacing:10px;alignment:start;
+                ProposalView {
+                    wide:root.width >= 600px;
+                    total:root.proposal-total;
+                    diff-filter <=> root.diff-filter;
+                    summary:root.diff-summary;
+                    dirty:root.review-dirty;
+                    choose(id,decision)=>{root.choose-metadata(id,decision);}
+                    edit(id,field,value)=>{root.edit-metadata(id,field,value);}
+                    bulk(action)=>{root.bulk-metadata(action);}
+                    apply()=>{root.apply-metadata();}
+                    proposal-rows:root.proposal-rows;
+                    operable:root.metadata-operable && !root.associate-confirm;
+                }
+                HorizontalLayout {
+                    spacing:8px;
+                    Text {text:"取得した候補";font-size:16px;font-weight:600;}
+                    Text {accessible-role:none;text:root.candidate-rows.length==0 ? "なし" : root.candidate-rows.length+" 件";color:Theme.text-secondary;vertical-alignment:center;}
+                }
+                for row in root.candidate-rows : RecordRow {
+                    title:row.label;details:row.details;
+                    action:row.held ? "関連付ける…" : "";
+                    action-enabled:root.can-start;
+                    activated=>{root.request-association(row.id);}
+                }
+                HorizontalLayout {
+                    spacing:8px;
+                    Text {text:"登録済みの版";font-size:16px;font-weight:600;}
+                    Text {accessible-role:none;text:root.version-rows.length==0 ? "なし" : root.version-rows.length+" 件";color:Theme.text-secondary;vertical-alignment:center;}
+                }
+                for row in root.version-rows : RecordRow {
+                    title:row.label;details:row.details;
+                    badge:row.canonical ? "正規版" : "";
+                    action:row.canonical ? "" : "正規版にする…";
+                    action-enabled:root.can-start;
+                    activated=>{root.propose-canonical(row.id);}
+                }
+            }
+        }
+    }
+}

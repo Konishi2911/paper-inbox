@@ -20,8 +20,11 @@ Slint を含むライセンスの選択方針は[ライセンス説明](licenses
 | accesskit_unix | 0.22.1 | `MIT OR Apache-2.0` |
 | accesskit_winit | 0.33.2 | `Apache-2.0` |
 | adler2 | 2.0.1 | `0BSD OR MIT OR Apache-2.0` |
+| aes | 0.9.4 | `MIT OR Apache-2.0` |
 | ahash | 0.8.12 | `MIT OR Apache-2.0` |
 | aho-corasick | 1.1.5 | `Unlicense OR MIT` |
+| alloc-no-stdlib | 2.0.4 | `BSD-3-Clause` |
+| alloc-stdlib | 0.2.4 | `BSD-3-Clause` |
 | allocator-api2 | 0.2.21 | `MIT OR Apache-2.0` |
 | annotate-snippets | 0.12.18 | `MIT OR Apache-2.0` |
 | anstyle | 1.0.14 | `MIT OR Apache-2.0` |
@@ -53,8 +56,12 @@ Slint を含むライセンスの選択方針は[ライセンス説明](licenses
 | bit-set | 0.10.0 | `Apache-2.0 OR MIT` |
 | bit-vec | 0.9.1 | `Apache-2.0 OR MIT` |
 | bitflags | 2.13.2 | `MIT OR Apache-2.0` |
+| block-buffer | 0.10.4 | `MIT OR Apache-2.0` |
+| block-buffer | 0.12.1 | `MIT OR Apache-2.0` |
+| block-padding | 0.4.2 | `MIT OR Apache-2.0` |
 | blocking | 1.7.0 | `Apache-2.0 OR MIT` |
 | borsh | 1.8.1 | `MIT OR Apache-2.0` |
+| brotli-decompressor | 5.0.3 | `BSD-3-Clause/MIT` |
 | by_address | 1.2.1 | `MIT OR Apache-2.0` |
 | bytemuck | 1.25.2 | `Zlib OR Apache-2.0 OR MIT` |
 | bytemuck_derive | 1.12.1 | `Zlib OR Apache-2.0 OR MIT` |
@@ -63,12 +70,14 @@ Slint を含むライセンスの選択方針は[ライセンス説明](licenses
 | calloop | 0.13.0 | `MIT` |
 | calloop | 0.14.5 | `MIT` |
 | calloop-wayland-source | 0.3.0 | `MIT` |
+| cbc | 0.2.1 | `MIT OR Apache-2.0` |
 | cc | 1.11.2 | `MIT OR Apache-2.0` |
 | cexpr | 0.6.0 | `Apache-2.0/MIT` |
 | cfg-if | 1.0.5 | `MIT OR Apache-2.0` |
 | cfg_aliases | 0.2.2 | `MIT` |
 | chacha20 | 0.10.2 | `MIT OR Apache-2.0` |
 | chrono | 0.4.45 | `MIT OR Apache-2.0` |
+| cipher | 0.5.2 | `MIT OR Apache-2.0` |
 | clang-sys | 1.9.1 | `Apache-2.0` |
 | clru | 0.6.3 | `MIT` |
 | codespan-reporting | 0.13.1 | `Apache-2.0` |
@@ -76,8 +85,12 @@ Slint を含むライセンスの選択方針は[ライセンス説明](licenses
 | concurrent-queue | 2.5.0 | `Apache-2.0 OR MIT` |
 | const-field-offset | 0.2.1 | `MIT OR Apache-2.0` |
 | const-field-offset-macro | 0.2.1 | `MIT OR Apache-2.0` |
+| const-oid | 0.10.3 | `Apache-2.0 OR MIT` |
 | convert_case | 0.10.0 | `MIT` |
+| core_detect | 1.0.0 | `MIT/Apache-2.0` |
 | countme | 3.0.1 | `MIT OR Apache-2.0` |
+| cpubits | 0.1.1 | `MIT OR Apache-2.0` |
+| cpufeatures | 0.2.17 | `MIT OR Apache-2.0` |
 | cpufeatures | 0.3.1 | `MIT OR Apache-2.0` |
 | crc32fast | 1.5.5 | `MIT OR Apache-2.0` |
 | critical-section | 1.2.0 | `MIT OR Apache-2.0` |
@@ -85,11 +98,15 @@ Slint を含むライセンスの選択方針は[ライセンス説明](licenses
 | crossbeam-epoch | 0.9.21 | `MIT OR Apache-2.0` |
 | crossbeam-queue | 0.3.14 | `MIT OR Apache-2.0` |
 | crossbeam-utils | 0.8.23 | `MIT OR Apache-2.0` |
+| crypto-common | 0.1.7 | `MIT OR Apache-2.0` |
+| crypto-common | 0.2.2 | `MIT OR Apache-2.0` |
 | ctor | 0.10.1 | `Apache-2.0 OR MIT` |
 | cursor-icon | 1.2.0 | `MIT OR Apache-2.0 OR Zlib` |
 | data-url | 0.3.2 | `MIT OR Apache-2.0` |
 | derive_more | 2.1.1 | `MIT` |
 | derive_more-impl | 2.1.1 | `MIT` |
+| digest | 0.10.7 | `MIT OR Apache-2.0` |
+| digest | 0.11.3 | `MIT OR Apache-2.0` |
 | displaydoc | 0.2.7 | `MIT OR Apache-2.0` |
 | dlib | 0.5.3 | `MIT` |
 | document-features | 0.2.12 | `MIT OR Apache-2.0` |
@@ -100,7 +117,9 @@ Slint を含むライセンスの選択方針は[ライセンス説明](licenses
 | drm-fourcc | 2.2.0 | `MIT` |
 | drm-sys | 0.8.1 | `MIT` |
 | dtor | 0.8.1 | `Apache-2.0 OR MIT` |
+| ecb | 0.2.1 | `MIT OR Apache-2.0` |
 | either | 1.19.0 | `MIT OR Apache-2.0` |
+| encoding_rs | 0.8.44 | `(Apache-2.0 OR MIT) AND BSD-3-Clause` |
 | endi | 1.1.1 | `MIT` |
 | enumflags2 | 0.7.12 | `MIT OR Apache-2.0` |
 | enumflags2_derive | 0.7.12 | `MIT OR Apache-2.0` |
@@ -140,6 +159,7 @@ Slint を含むライセンスの選択方針は[ライセンス説明](licenses
 | futures-util | 0.3.34 | `MIT OR Apache-2.0` |
 | gbm | 0.18.0 | `MIT` |
 | gbm-sys | 0.4.0 | `MIT` |
+| generic-array | 0.14.7 | `MIT` |
 | gethostname | 1.1.0 | `Apache-2.0` |
 | getrandom | 0.2.17 | `MIT OR Apache-2.0` |
 | getrandom | 0.3.4 | `MIT OR Apache-2.0` |
@@ -168,6 +188,7 @@ Slint を含むライセンスの選択方針は[ライセンス説明](licenses
 | http-body | 1.1.0 | `MIT` |
 | http-body-util | 0.1.5 | `MIT` |
 | httparse | 1.10.1 | `MIT OR Apache-2.0` |
+| hybrid-array | 0.4.15 | `MIT OR Apache-2.0` |
 | hyper | 1.12.0 | `MIT` |
 | hyper-rustls | 0.27.10 | `Apache-2.0 OR ISC OR MIT` |
 | hyper-util | 0.1.21 | `MIT` |
@@ -205,6 +226,7 @@ Slint を含むライセンスの選択方針は[ライセンス説明](licenses
 | imagesize | 0.15.0 | `MIT` |
 | imgref | 1.12.3 | `CC0-1.0 OR Apache-2.0` |
 | indexmap | 2.14.2 | `Apache-2.0 OR MIT` |
+| inout | 0.2.6 | `MIT OR Apache-2.0` |
 | input | 0.10.0 | `MIT` |
 | input-sys | 1.19.0 | `MIT` |
 | io-lifetimes | 1.0.11 | `Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT` |
@@ -232,11 +254,13 @@ Slint を含むライセンスの選択方針は[ライセンス説明](licenses
 | litrs | 1.0.1 | `MIT OR Apache-2.0` |
 | lock_api | 0.4.14 | `MIT OR Apache-2.0` |
 | log | 0.4.35 | `MIT OR Apache-2.0` |
+| lopdf | 0.47.0 | `MIT` |
 | lru-slab | 0.1.3 | `MIT OR Apache-2.0 OR Zlib` |
 | lyon_algorithms | 1.0.22 | `MIT OR Apache-2.0` |
 | lyon_extra | 1.1.0 | `MIT OR Apache-2.0` |
 | lyon_geom | 1.0.20 | `MIT OR Apache-2.0` |
 | lyon_path | 1.0.19 | `MIT OR Apache-2.0` |
+| md-5 | 0.11.0 | `MIT OR Apache-2.0` |
 | memchr | 2.8.3 | `Unlicense OR MIT` |
 | memmap2 | 0.9.12 | `MIT OR Apache-2.0` |
 | memoffset | 0.9.1 | `MIT` |
@@ -245,6 +269,7 @@ Slint を含むライセンスの選択方針は[ライセンス説明](licenses
 | miniz_oxide | 0.9.1 | `MIT OR Zlib OR Apache-2.0` |
 | mio | 1.2.5 | `MIT` |
 | moxcms | 0.8.1 | `BSD-3-Clause OR Apache-2.0` |
+| multiversion_no_op | 1.0.0 | `Apache-2.0 OR MIT` |
 | naga | 30.0.2 | `MIT OR Apache-2.0` |
 | naga-types | 30.0.2 | `MIT OR Apache-2.0` |
 | natord | 1.0.9 | `MIT` |
@@ -282,6 +307,7 @@ Slint を含むライセンスの選択方針は[ライセンス説明](licenses
 | pkg-config | 0.3.34 | `MIT OR Apache-2.0` |
 | png | 0.18.1 | `MIT OR Apache-2.0` |
 | polling | 3.11.0 | `Apache-2.0 OR MIT` |
+| pollster | 1.0.1 | `Apache-2.0/MIT` |
 | polycool | 0.4.0 | `MIT OR Apache-2.0` |
 | portable-atomic | 1.15.0 | `Apache-2.0 OR MIT` |
 | potential_utf | 0.1.6 | `Unicode-3.0` |
@@ -301,6 +327,7 @@ Slint を含むライセンスの選択方針は[ライセンス説明](licenses
 | rand | 0.10.3 | `MIT OR Apache-2.0` |
 | rand_core | 0.10.1 | `MIT OR Apache-2.0` |
 | rand_pcg | 0.10.2 | `MIT OR Apache-2.0` |
+| rangemap | 1.8.0 | `MIT/Apache-2.0` |
 | raw-window-handle | 0.6.2 | `MIT OR Apache-2.0 OR Zlib` |
 | rayon | 1.12.0 | `MIT OR Apache-2.0` |
 | rayon-core | 1.13.0 | `MIT OR Apache-2.0` |
@@ -311,6 +338,7 @@ Slint を含むライセンスの選択方針は[ライセンス説明](licenses
 | renderdoc-sys | 1.1.0 | `MIT OR Apache-2.0` |
 | reqwest | 0.12.28 | `MIT OR Apache-2.0` |
 | resvg | 0.48.1 | `Apache-2.0 OR MIT` |
+| rfd | 0.18.0 | `MIT` |
 | rgb | 0.8.53 | `MIT` |
 | ring | 0.17.14 | `Apache-2.0 AND ISC` |
 | rowan | 0.17.0 | `MIT OR Apache-2.0` |
@@ -339,10 +367,13 @@ Slint を含むライセンスの選択方針は[ライセンス説明](licenses
 | serde_repr | 0.1.21 | `MIT OR Apache-2.0` |
 | serde_spanned | 1.1.3 | `MIT OR Apache-2.0` |
 | serde_urlencoded | 0.7.1 | `MIT/Apache-2.0` |
+| sha2 | 0.10.9 | `MIT OR Apache-2.0` |
+| sha2 | 0.11.1 | `MIT OR Apache-2.0` |
 | shlex | 1.3.0 | `MIT OR Apache-2.0` |
 | shlex | 2.0.1 | `MIT OR Apache-2.0` |
 | signal-hook-registry | 1.4.8 | `MIT OR Apache-2.0` |
 | simd-adler32 | 0.3.10 | `MIT` |
+| simdutf8 | 0.1.5 | `MIT OR Apache-2.0` |
 | simplecss | 0.2.2 | `Apache-2.0 OR MIT` |
 | siphasher | 1.0.4 | `MIT OR Apache-2.0` |
 | skia-bindings | 0.153.3 | `MIT` |
@@ -366,6 +397,7 @@ Slint を含むライセンスの選択方針は[ライセンス説明](licenses
 | stable_deref_trait | 1.2.1 | `MIT OR Apache-2.0` |
 | static_assertions | 1.1.0 | `MIT OR Apache-2.0` |
 | strict-num | 0.1.1 | `MIT` |
+| stringprep | 0.1.5 | `MIT/Apache-2.0` |
 | strum | 0.28.0 | `MIT` |
 | strum_macros | 0.28.0 | `MIT` |
 | subtle | 2.6.1 | `BSD-3-Clause` |
@@ -409,11 +441,14 @@ Slint を含むライセンスの選択方針は[ライセンス説明](licenses
 | try-lock | 0.2.5 | `MIT` |
 | ttf-parser | 0.25.1 | `MIT OR Apache-2.0` |
 | typed-index-collections | 3.5.0 | `MIT OR Apache-2.0` |
+| typenum | 1.20.1 | `MIT OR Apache-2.0` |
 | udev | 0.9.3 | `MIT` |
 | unicase | 2.10.0 | `MIT OR Apache-2.0` |
 | unicode-bidi | 0.3.18 | `MIT OR Apache-2.0` |
 | unicode-ident | 1.0.27 | `(MIT OR Apache-2.0) AND Unicode-3.0` |
 | unicode-linebreak | 0.1.5 | `Apache-2.0` |
+| unicode-normalization | 0.1.26 | `(MIT OR Apache-2.0) AND Unicode-3.0` |
+| unicode-properties | 0.1.5 | `(MIT OR Apache-2.0) AND Unicode-3.0` |
 | unicode-script | 0.5.9 | `MIT OR Apache-2.0` |
 | unicode-segmentation | 1.13.3 | `MIT OR Apache-2.0` |
 | unicode-vo | 0.1.0 | `MIT/Apache-2.0` |
@@ -443,6 +478,7 @@ Slint を含むライセンスの選択方針は[ライセンス説明](licenses
 | webbrowser | 1.2.7 | `MIT OR Apache-2.0` |
 | webpki-roots | 1.0.12 | `CDLA-Permissive-2.0` |
 | weezl | 0.1.12 | `MIT OR Apache-2.0` |
+| weezl | 0.2.1 | `MIT OR Apache-2.0` |
 | wgpu | 30.0.2 | `MIT OR Apache-2.0` |
 | wgpu-core | 30.0.2 | `MIT OR Apache-2.0` |
 | wgpu-core-deps-windows-linux-android | 30.0.2 | `MIT OR Apache-2.0` |

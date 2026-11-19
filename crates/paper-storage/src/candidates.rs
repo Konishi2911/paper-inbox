@@ -616,7 +616,17 @@ pub(super) fn details(db: &Connection, paper: PaperId) -> Result<Vec<MetadataPro
                 }
                 _ => (None, None, None, None),
             };
+            let current_revisions = match &proposal.kind {
+                ProposalKind::FieldUpdate { target, .. } => sql::heads(db, target)?
+                    .into_iter()
+                    .map(|id| sql::read_revision(db, id))
+                    .collect::<Result<Vec<_>>>()?,
+                _ => Vec::new(),
+            };
+            let unavailable_reason = unavailable_reason(db, &proposal)?.map(str::to_owned);
             Ok(MetadataProposalDetail {
+                unavailable_reason,
+                current_revisions,
                 proposal,
                 expected_value,
                 current_value,
@@ -801,6 +811,11 @@ pub(super) fn resolve(
         affected_papers: vec![paper_id],
         ..Default::default()
     };
+    if !matches!(resolution, ProposalResolution::Reject)
+        && unavailable_reason(db, &proposal)?.is_some()
+    {
+        return Err(StorageError::Conflict(paper_id));
+    }
     let mut custom_bibliography = None;
     if !matches!(resolution, ProposalResolution::Reject) {
         let mut paper = sql::get(db, paper_id)?.ok_or(StorageError::NotFound(paper_id))?;
@@ -1045,4 +1060,77 @@ pub(super) fn register(
         }
     }
     Ok(result)
+}
+
+/// Shared preflight for presentation and persistence. Always run again inside save's transaction.
+fn unavailable_reason(db: &Connection, proposal: &UpdateProposal) -> Result<Option<&'static str>> {
+    if proposal.status != ProposalStatus::Pending {
+        return Ok(Some("既に解決済みの提案です。"));
+    }
+    let paper_id = match &proposal.kind {
+        ProposalKind::FieldUpdate { target, .. } => target.paper_id,
+        ProposalKind::CanonicalVersionChange { paper_id, .. } => *paper_id,
+        _ => return Ok(Some("この提案種別は適用できません。")),
+    };
+    let paper = sql::get(db, paper_id)?.ok_or(StorageError::NotFound(paper_id))?;
+    if paper.deleted_at().is_some() {
+        return Ok(Some("文献は削除済みです。"));
+    }
+    let context=db.query_row("SELECT candidate_id,expected_version_snapshot,candidate_version_id,expected_canonical_version_id FROM update_proposals WHERE id=?1",[proposal.id.to_string()],|r|Ok((r.get::<_,Option<String>>(0)?,r.get::<_,Option<String>>(1)?,r.get::<_,String>(2)?,r.get::<_,Option<String>>(3)?)))?;
+    let snapshot: String = db.query_row(
+        "SELECT snapshot_id FROM paper_versions WHERE id=?1",
+        [&context.2],
+        |r| r.get(0),
+    )?;
+    if context.1.as_ref() != Some(&snapshot) {
+        return Ok(Some("候補の版が変更されています。表示を更新してください。"));
+    }
+    match &proposal.kind {
+        ProposalKind::FieldUpdate {
+            target,
+            expected_heads,
+            candidate_revision,
+        } => {
+            let revision = sql::read_revision(db, *candidate_revision)?;
+            if revision.target() != *target {
+                return Ok(Some("候補改訂の対象が一致しません。"));
+            }
+            if sql::heads(db, target)? != *expected_heads {
+                return Ok(Some(
+                    "現在の改訂が変更されています。表示を更新してください。",
+                ));
+            }
+            if let Some(id) = context.0 {
+                let candidate = read_candidate(db, sql::decode(id)?)?;
+                if candidate.paper_id != paper_id {
+                    return Ok(Some("候補の対象文献が一致しません。"));
+                }
+                if candidate.status != CandidateStatus::Associated {
+                    let identity = paper_core::service::assess_identity(
+                        paper.bibliography(),
+                        &candidate.candidate.bibliography,
+                    );
+                    if identity.outcome != paper_core::service::IdentityMatch::Exact
+                        || identity.evidence.iter().any(|e| {
+                            matches!(
+                                e,
+                                paper_core::service::IdentityEvidence::UnvalidatedIdentifier { .. }
+                            )
+                        })
+                    {
+                        return Ok(Some("文献の同一性を再確認する必要があります。"));
+                    }
+                }
+            } else if paper.canonical_version().map(|id| id.to_string()) != context.3 {
+                return Ok(Some("正規版が変更されています。表示を更新してください。"));
+            }
+        }
+        ProposalKind::CanonicalVersionChange {
+            current_version, ..
+        } if *current_version != paper.canonical_version() => {
+            return Ok(Some("正規版が変更されています。表示を更新してください。"));
+        }
+        _ => {}
+    }
+    Ok(None)
 }

@@ -1,8 +1,13 @@
 use crate::export::{self, PreparedExport};
 use crate::{
-    AuthorRow, MainWindow, PaperRow,
-    application::{Application, AuthorInput, PaperForm},
+    AttachmentRow, AuthorAction, AuthorRow, DetailView, LinkTarget, LookupField, MainWindow,
+    NavigationAction, PaperRow, TagRow,
+    application::{
+        Application, AuthorInput, PaperForm, QuickChange, tag_name_message, tag_suggestions,
+    },
+    attachment::AttachmentFiles,
     config::Config,
+    lookup::{LookupPreview, LookupUserInput},
 };
 use paper_core::service::{BibtexOptions, BibtexWarning};
 use paper_core::{command::PaperEditState, model::*, query::*};
@@ -17,7 +22,12 @@ use std::{
 enum Request {
     BeginLookup(bool),
     FetchLookup(String),
-    ConfirmLookup(String, String),
+    ConfirmLookup(String, String, LookupUserInput, Option<PathBuf>),
+    /// Opens the add screen with a dropped PDF to attach once the paper is registered.
+    BeginLookupWithPdf(PathBuf),
+    /// A PDF chosen or dropped while the add screen is open; the flag says whether a found
+    /// identifier may fill the (empty) identifier field.
+    ScanLookupPdf(PathBuf, bool),
     CancelLookup,
     SuggestKey(PaperForm),
     Initialize,
@@ -25,11 +35,15 @@ enum Request {
     New,
     Open(PaperId),
     Save(PaperForm),
+    Quick(QuickChange),
+    AddTag(String),
+    RemoveTag(TagId),
     Delete(bool),
     ReviewMetadata(PaperId),
     SubmitCandidate(crate::metadata::CandidateForm),
     AssociateCandidate(CandidateId),
     ResolveMetadata(ProposalId, bool),
+    ResolveMetadataBatch(Vec<crate::metadata_resolution::ResolutionInput>),
     ProposeCanonical(VersionId),
     PrepareExport {
         ids: Vec<PaperId>,
@@ -38,6 +52,11 @@ enum Request {
     },
     ConfirmExport,
     CancelExport,
+    AttachPdf(PathBuf),
+    OpenAttachment(AttachmentId),
+    DetachAttachment(AttachmentId),
+    PrepareCleanup,
+    ReclaimUnused,
     Shutdown,
 }
 struct EditorView {
@@ -45,6 +64,8 @@ struct EditorView {
     id: Option<PaperId>,
     deleted: bool,
     identifier_warning: String,
+    /// The saved entry with default export options, for the copy action.
+    bibtex: String,
 }
 #[derive(Default)]
 struct Reply {
@@ -54,7 +75,6 @@ struct Reply {
     ready: Option<bool>,
     saved: bool,
     load_required: bool,
-    offset: Option<i32>,
     export_preview: Option<(String, String, String, bool)>,
     clear_export: bool,
     metadata: Option<MetadataReview>,
@@ -62,8 +82,30 @@ struct Reply {
     close_candidate: bool,
     lookup_open: Option<bool>,
     lookup_new: Option<bool>,
-    lookup_preview: Option<(String, String)>,
+    /// A dropped PDF waiting on the add screen: its path and file name.
+    lookup_pdf: Option<(String, String)>,
+    /// Identifier found in that PDF, put into the identifier field; and every candidate found.
+    lookup_identifier: Option<String>,
+    lookup_candidates: Option<Vec<String>>,
+    /// Saved papers with the same DOI or arXiv ID as the fetched result (empty when none).
+    lookup_duplicates: Option<Vec<IdentifierMatch>>,
+    lookup_preview: Option<(LookupPreview, String)>,
     key_suggestion: Option<String>,
+    form_error: Option<String>,
+    /// Attachment rows of the paper in `editor`; sent together with every editor reload.
+    attachments: Option<Vec<AttachmentView>>,
+    /// Tags of the paper in `editor`, sent with every editor reload.
+    paper_tags: Option<Vec<Tag>>,
+    /// Every tag with its count, sent with every list reload.
+    tag_counts: Option<Vec<TagCount>>,
+    /// Unused file count and total bytes; opens the cleanup screen.
+    cleanup: Option<(usize, u64)>,
+}
+struct AttachmentView {
+    id: String,
+    name: String,
+    details: String,
+    missing: bool,
 }
 pub type LookupProvider = Box<
     dyn FnMut(&PaperIdentifier) -> Result<Vec<MetadataCandidate>, paper_metadata::LookupError>
@@ -77,6 +119,7 @@ struct PendingLookup {
 struct Worker {
     config: Config,
     app: Option<Application>,
+    files: Option<AttachmentFiles>,
     editing: Option<PaperEditState>,
     query: PaperQuery,
     pending_export: Option<PreparedExport>,
@@ -87,6 +130,61 @@ struct Worker {
 }
 impl Worker {
     fn handle(&mut self, request: Request) -> Reply {
+        let mut reply = self.handle_request(request);
+        self.fill_attachments(&mut reply);
+        self.fill_tags(&mut reply);
+        reply
+    }
+    /// Every editor reload carries the paper's PDFs, so the list never lags behind.
+    fn fill_attachments(&self, reply: &mut Reply) {
+        let Some(editor) = &reply.editor else {
+            return;
+        };
+        let mut rows = vec![];
+        if let (Some(id), Some(app), Some(files)) = (editor.id, &self.app, &self.files) {
+            match files.list(&app.store, id) {
+                Ok(list) => {
+                    for a in list {
+                        let missing = !files.is_present(&a).unwrap_or(false);
+                        rows.push(AttachmentView {
+                            id: a.id.to_string(),
+                            name: a.filename.clone(),
+                            details: crate::detail::attachment_details(&a, missing),
+                            missing,
+                        });
+                    }
+                }
+                Err(e) => reply
+                    .message
+                    .push_str(&format!(" PDFの一覧を読み込めません: {e}")),
+            }
+        }
+        reply.attachments = Some(rows);
+    }
+    /// Every editor reload carries the paper's tags and every list reload the tag counts, so the
+    /// detail, the sidebar and completion never disagree with the stored state.
+    fn fill_tags(&self, reply: &mut Reply) {
+        let Some(app) = &self.app else {
+            return;
+        };
+        if let Some(id) = reply.editor.as_ref().and_then(|e| e.id) {
+            match app.paper_tags(id) {
+                Ok(tags) => reply.paper_tags = Some(tags),
+                Err(e) => reply
+                    .message
+                    .push_str(&format!(" タグを読み込めません: {e}")),
+            }
+        }
+        if reply.list.is_some() || reply.editor.is_some() {
+            match app.tag_counts(self.query.filter.include_archived) {
+                Ok(counts) => reply.tag_counts = Some(counts),
+                Err(e) => reply
+                    .message
+                    .push_str(&format!(" タグの一覧を読み込めません: {e}")),
+            }
+        }
+    }
+    fn handle_request(&mut self, request: Request) -> Reply {
         if matches!(request, Request::Initialize) {
             return match self.config.prepare().and_then(|_| {
                 SqliteLibrary::open_local(&self.config.database)
@@ -94,6 +192,16 @@ impl Worker {
             }) {
                 Ok(store) => {
                     self.app = Some(Application { store });
+                    let files = AttachmentFiles::open(
+                        &self.config.files_dir(),
+                        &std::env::temp_dir().join("paper-inbox-open"),
+                    );
+                    let files_note = files
+                        .as_ref()
+                        .err()
+                        .map(|e| format!(" PDFの保存先を開けないため、PDF機能は使えません: {e}"))
+                        .unwrap_or_default();
+                    self.files = files.ok();
                     self.editing = None;
                     self.pending_export = None;
                     self.review = None;
@@ -101,15 +209,11 @@ impl Worker {
                     match self.app.as_ref().unwrap().list(&self.query) {
                         Ok(list) => Reply {
                             list: Some(list),
-                            editor: Some(EditorView {
-                                form: PaperForm::default(),
-                                id: None,
-                                deleted: false,
-                                identifier_warning: String::new(),
-                            }),
+                            // The neutral screen (a welcome or a hint) is shown first; a blank
+                            // form is opened only when the user asks for manual entry.
                             ready: Some(true),
                             close_metadata: true,
-                            message: "準備ができました。".into(),
+                            message: format!("準備ができました。{files_note}"),
                             ..Default::default()
                         },
                         Err(e) => Reply {
@@ -147,6 +251,7 @@ impl Worker {
                             id: None,
                             deleted: false,
                             identifier_warning: String::new(),
+                            bibtex: String::new(),
                         })
                     } else {
                         None
@@ -159,6 +264,11 @@ impl Worker {
                     ..Default::default()
                 }
             }
+            Request::BeginLookupWithPdf(path) => {
+                let opened = self.handle_request(Request::BeginLookup(true));
+                pdf_lookup_reply(opened, &path, true)
+            }
+            Request::ScanLookupPdf(path, fill) => pdf_lookup_reply(Reply::default(), &path, fill),
             Request::FetchLookup(input) => {
                 self.pending_lookup = None;
                 let fetched = paper_metadata::parse_identifier(&input)
@@ -186,6 +296,13 @@ impl Worker {
                             String::new()
                         };
                         let details = crate::lookup::preview(&candidate);
+                        // Only a new registration can duplicate a paper; updating one cannot.
+                        let duplicates = if self.lookup_new {
+                            app.duplicates_of(&candidate.bibliography)
+                                .unwrap_or_default()
+                        } else {
+                            vec![]
+                        };
                         self.pending_lookup = Some(PendingLookup {
                             candidate,
                             paper_id: PaperId::new(),
@@ -193,6 +310,7 @@ impl Worker {
                         });
                         Reply {
                             lookup_preview: Some((details, key)),
+                            lookup_duplicates: Some(duplicates),
                             message: "取得結果を確認してください。まだ保存していません。".into(),
                             ..Default::default()
                         }
@@ -207,7 +325,7 @@ impl Worker {
                     },
                 }
             }
-            Request::ConfirmLookup(input, key) => {
+            Request::ConfirmLookup(input, key, user_input, pdf) => {
                 let Some(pending) = &self.pending_lookup else {
                     return Reply {
                         message: "書誌情報を再取得してください。".into(),
@@ -221,10 +339,28 @@ impl Worker {
                     };
                 }
                 if self.lookup_new {
-                    match app.register_lookup(pending.paper_id, &pending.candidate, &key) {
+                    match app.register_lookup(
+                        pending.paper_id,
+                        &pending.candidate,
+                        &key,
+                        &user_input,
+                    ) {
                         Ok(id) => {
                             self.pending_lookup = None;
-                            let mut reply = self.after_save(id, "取得した書誌情報を登録しました。");
+                            // The paper is already saved; a PDF that cannot be attached is
+                            // reported but never undoes the registration.
+                            let mut message = String::from("取得した書誌情報を登録しました。");
+                            if let (Some(path), Some(files)) = (pdf, self.files.as_ref()) {
+                                match files.attach(&app.store, id, &path) {
+                                    Ok(a) => {
+                                        message.push_str(&format!(" PDFを添付しました: {}", a.filename));
+                                    }
+                                    Err(e) => message.push_str(&format!(
+                                        " ただしPDFは添付できませんでした（詳細画面から添付できます）: {e}"
+                                    )),
+                                }
+                            }
+                            let mut reply = self.after_save(id, &message);
                             reply.lookup_open = Some(false);
                             reply.close_metadata = true;
                             reply
@@ -295,7 +431,6 @@ impl Worker {
                 Ok(list) => {
                     self.query = query;
                     Reply {
-                        offset: Some(self.query.pagination.offset as i32),
                         list: Some(list),
                         message: "一覧を更新しました。".into(),
                         ..Default::default()
@@ -308,12 +443,16 @@ impl Worker {
             },
             Request::New => {
                 self.editing = None;
+                self.review = None;
+                self.pending_lookup = None;
                 Reply {
+                    close_metadata: true,
                     editor: Some(EditorView {
                         form: PaperForm::default(),
                         id: None,
                         deleted: false,
                         identifier_warning: String::new(),
+                        bibtex: String::new(),
                     }),
                     message: "新しい文献を登録できます。".into(),
                     ..Default::default()
@@ -335,13 +474,101 @@ impl Worker {
                     ..Default::default()
                 },
             },
-            Request::Save(form) => match app.save(self.editing.as_ref(), &form) {
-                Ok(id) => self.after_save(id, "保存しました。"),
-                Err(e) => Reply {
-                    message: e.to_string(),
-                    ..Default::default()
-                },
-            },
+            Request::Save(mut form) => {
+                // A new paper without a key gets the usual suggestion; the
+                // reloaded form shows it. Saved keys are never generated here.
+                let mut key_note = "";
+                if self.editing.is_none() && form.citation_key.trim().is_empty() {
+                    match app.suggest_key(&form, None) {
+                        Ok(key) => {
+                            form.citation_key = key;
+                            key_note = "引用キーは自動で提案した値を使いました。";
+                        }
+                        Err(e) => {
+                            return Reply {
+                                message: e.to_string(),
+                                form_error: Some(e.to_string()),
+                                ..Default::default()
+                            };
+                        }
+                    }
+                }
+                match app.save(self.editing.as_ref(), &form) {
+                    Ok(id) => self.after_save(id, &format!("保存しました。{key_note}")),
+                    Err(e) => Reply {
+                        message: e.to_string(),
+                        form_error: Some(e.to_string()),
+                        ..Default::default()
+                    },
+                }
+            }
+            Request::Quick(change) => {
+                let Some(state) = self.editing.clone() else {
+                    return Reply {
+                        message: "文献を選択してください。".into(),
+                        ..Default::default()
+                    };
+                };
+                let id = state.paper.id();
+                let message = match &change {
+                    QuickChange::ReadingStatus(_) => "読書状態を更新しました。",
+                    QuickChange::Favorite(true) => "お気に入りに追加しました。",
+                    QuickChange::Favorite(false) => "お気に入りから外しました。",
+                    QuickChange::Archived(true) => "アーカイブしました。",
+                    QuickChange::Archived(false) => "アーカイブを解除しました。",
+                    QuickChange::Notes(_) => "メモを保存しました。",
+                };
+                let keeps_input = matches!(change, QuickChange::Notes(_));
+                match app.quick_update(&state, change) {
+                    Ok(()) => self.after_save(id, message),
+                    // A failed note keeps the typed draft. A failed toggle
+                    // reloads so the control shows the stored value again.
+                    Err(e) if keeps_input => Reply {
+                        message: e.to_string(),
+                        ..Default::default()
+                    },
+                    Err(e) => {
+                        let mut reply = self.after_save(id, "");
+                        reply.saved = false;
+                        reply.message = format!("{e} 表示を保存済みの内容に戻しました。");
+                        reply
+                    }
+                }
+            }
+            Request::AddTag(name) => {
+                let Some(state) = self.editing.clone() else {
+                    return Reply {
+                        message: "タグを付ける文献を選択してください。".into(),
+                        ..Default::default()
+                    };
+                };
+                let id = state.paper.id();
+                match app.add_tag_by_name(&state, &name) {
+                    Ok(done) => {
+                        self.after_save(id, &format!("タグ「{}」を付けました。", done.tag.name))
+                    }
+                    Err(e) => Reply {
+                        message: e.to_string(),
+                        ..Default::default()
+                    },
+                }
+            }
+            Request::RemoveTag(tag_id) => {
+                let Some(state) = self.editing.clone() else {
+                    return Reply {
+                        message: "文献を選択してください。".into(),
+                        ..Default::default()
+                    };
+                };
+                let id = state.paper.id();
+                match app.remove_tag(&state, tag_id) {
+                    Ok(()) => self.after_save(id, "タグを外しました。"),
+                    Err(e) => Reply {
+                        message: e.to_string(),
+                        ..Default::default()
+                    },
+                }
+            }
             Request::Delete(deleted) => {
                 let Some(state) = &self.editing else {
                     return Reply {
@@ -412,6 +639,24 @@ impl Worker {
                         "候補を同じ文献の版として登録しました。差分は提案を確認してください。",
                         false,
                     ),
+                    Err(e) => Reply {
+                        message: e.to_string(),
+                        ..Default::default()
+                    },
+                }
+            }
+            Request::ResolveMetadataBatch(inputs) => {
+                let Some(review) = &self.review else {
+                    return Reply {
+                        message: "候補画面を開き直してください。".into(),
+                        ..Default::default()
+                    };
+                };
+                let id = review.state.paper.id();
+                match app.resolve_metadata_batch(review, &inputs) {
+                    Ok(()) => {
+                        self.after_metadata(id, "判断済みの項目をまとめて保存しました。", false)
+                    }
                     Err(e) => Reply {
                         message: e.to_string(),
                         ..Default::default()
@@ -525,6 +770,111 @@ impl Worker {
                     ..Default::default()
                 }
             }
+            Request::AttachPdf(path) => {
+                let (Some(state), Some(files)) = (self.editing.as_ref(), self.files.as_ref())
+                else {
+                    return Reply {
+                        message: "PDFを添付する文献を選択してください。".into(),
+                        ..Default::default()
+                    };
+                };
+                let id = state.paper.id();
+                match files.attach(&app.store, id, &path) {
+                    Ok(attachment) => {
+                        self.after_save(id, &format!("PDFを添付しました: {}", attachment.filename))
+                    }
+                    Err(e) => Reply {
+                        message: e.to_string(),
+                        ..Default::default()
+                    },
+                }
+            }
+            Request::OpenAttachment(attachment_id) | Request::DetachAttachment(attachment_id) => {
+                let detach = matches!(request, Request::DetachAttachment(_));
+                let (Some(state), Some(files)) = (self.editing.as_ref(), self.files.as_ref())
+                else {
+                    return Reply {
+                        message: "文献を選択してください。".into(),
+                        ..Default::default()
+                    };
+                };
+                let id = state.paper.id();
+                // Only attachments of the paper on screen can be opened or removed.
+                let found = files
+                    .list(&app.store, id)
+                    .map(|list| list.into_iter().find(|a| a.id == attachment_id));
+                let attachment = match found {
+                    Ok(Some(a)) => a,
+                    Ok(None) => {
+                        return Reply {
+                            message: "このPDFは見つかりません。表示を更新してください。".into(),
+                            ..Default::default()
+                        };
+                    }
+                    Err(e) => {
+                        return Reply {
+                            message: e.to_string(),
+                            ..Default::default()
+                        };
+                    }
+                };
+                if detach {
+                    match files.detach(&app.store, attachment.id) {
+                        Ok(()) => self.after_save(
+                            id,
+                            "PDFを除外しました。ファイルは「未使用PDFの整理」で削除するまで残ります。",
+                        ),
+                        Err(e) => Reply {
+                            message: e.to_string(),
+                            ..Default::default()
+                        },
+                    }
+                } else {
+                    let opened = files
+                        .prepare_open(&attachment)
+                        .and_then(|path| AttachmentFiles::open_with_system(&path));
+                    Reply {
+                        message: match opened {
+                            Ok(()) => format!("PDFを開きました: {}", attachment.filename),
+                            Err(e) => e.to_string(),
+                        },
+                        ..Default::default()
+                    }
+                }
+            }
+            Request::PrepareCleanup => match self.files.as_ref().map(|f| f.unused(&app.store)) {
+                Some(Ok(unused)) => Reply {
+                    cleanup: Some((unused.len(), unused.iter().map(|(_, bytes)| bytes).sum())),
+                    ..Default::default()
+                },
+                Some(Err(e)) => Reply {
+                    message: e.to_string(),
+                    ..Default::default()
+                },
+                None => Reply {
+                    message: "PDFの保存先を開けていません。再接続してください。".into(),
+                    ..Default::default()
+                },
+            },
+            Request::ReclaimUnused => match self.files.as_ref().map(|f| f.reclaim(&app.store)) {
+                Some(Ok(report)) => Reply {
+                    cleanup: Some((0, 0)),
+                    message: format!(
+                        "未使用のPDFを {} 件（{}）削除しました。",
+                        report.files,
+                        crate::detail::format_size(report.bytes)
+                    ),
+                    ..Default::default()
+                },
+                Some(Err(e)) => Reply {
+                    message: e.to_string(),
+                    ..Default::default()
+                },
+                None => Reply {
+                    message: "PDFの保存先を開けていません。再接続してください。".into(),
+                    ..Default::default()
+                },
+            },
             Request::Initialize | Request::Shutdown => unreachable!(),
         }
     }
@@ -575,21 +925,7 @@ impl Worker {
             }
         }
         match app.list(&self.query) {
-            Ok(mut list) => {
-                if self.query.pagination.offset >= list.total_count {
-                    self.query.pagination.offset = if list.total_count == 0 {
-                        0
-                    } else {
-                        (list.total_count - 1) / 20 * 20
-                    };
-                    match app.list(&self.query) {
-                        Ok(page) => list = page,
-                        Err(e) => reply
-                            .message
-                            .push_str(&format!(" 一覧の更新に失敗しました: {e}")),
-                    }
-                }
-                reply.offset = Some(self.query.pagination.offset as i32);
+            Ok(list) => {
                 reply.list = Some(list);
             }
             Err(e) => reply
@@ -603,6 +939,7 @@ fn view(state: &PaperEditState) -> EditorView {
     EditorView {
         form: PaperForm::from_paper(&state.paper),
         id: Some(state.paper.id()),
+        bibtex: paper_core::service::render_entry(&state.paper, &BibtexOptions::default()).content,
         deleted: state.paper.deleted_at().is_some(),
         identifier_warning: if state.paper.bibliography().identifiers.raw_doi.is_some()
             || state
@@ -644,11 +981,65 @@ pub fn attach(ui: &MainWindow, config: Config) -> Controller {
         }),
     )
 }
+/// Accepts a dropped file only when its extension says PDF; the content is checked again
+/// when it is attached, so a renamed file is still refused there.
+pub fn dropped_pdf(path: &str) -> Result<PathBuf, &'static str> {
+    let path = PathBuf::from(path);
+    let is_pdf = path
+        .extension()
+        .and_then(|e| e.to_str())
+        .is_some_and(|e| e.eq_ignore_ascii_case("pdf"));
+    if is_pdf {
+        Ok(path)
+    } else {
+        Err("PDFファイル（.pdf）だけドロップできます。")
+    }
+}
+
+/// Forwards the operating system's file-drag events to the window. Slint has no API for
+/// files dragged in from outside, so this uses its (unstable) winit hook; with a backend that
+/// is not winit, such as the one in tests, it does nothing. Windows and macOS deliver these
+/// events; Wayland does not in this winit version, so the attach button stays the way there.
+fn install_file_drop(ui: &MainWindow) {
+    use slint::winit_030::{EventResult, WinitWindowAccessor, winit::event::WindowEvent};
+    let weak = ui.as_weak();
+    ui.window().on_winit_window_event(move |_, event| {
+        if let Some(ui) = weak.upgrade() {
+            match event {
+                WindowEvent::HoveredFile(_) => ui.set_drop_hover(true),
+                WindowEvent::HoveredFileCancelled => ui.set_drop_hover(false),
+                WindowEvent::DroppedFile(path) => {
+                    // One event is sent per file; each is handled on its own.
+                    ui.invoke_file_dropped(path.to_string_lossy().as_ref().into());
+                }
+                _ => {}
+            }
+        }
+        EventResult::Propagate
+    });
+}
+/// Chooses the PDF to attach. It runs on the UI thread and is replaced in tests.
+pub type FilePicker = Box<dyn Fn() -> Option<PathBuf>>;
+fn choose_pdf() -> Option<PathBuf> {
+    rfd::FileDialog::new()
+        .set_title("添付するPDFを選択")
+        .add_filter("PDF", &["pdf"])
+        .pick_file()
+}
 /// Inject transport for deterministic integration tests; production uses fixed HTTPS hosts.
 pub fn attach_with_lookup_provider(
     ui: &MainWindow,
     config: Config,
     lookup_provider: LookupProvider,
+) -> Controller {
+    attach_with_providers(ui, config, lookup_provider, Box::new(choose_pdf))
+}
+/// Like [`attach_with_lookup_provider`] with an injectable file chooser.
+pub fn attach_with_providers(
+    ui: &MainWindow,
+    config: Config,
+    lookup_provider: LookupProvider,
+    file_picker: FilePicker,
 ) -> Controller {
     ui.set_database_path(config.database.to_string_lossy().as_ref().into());
     let (sender, receiver) = mpsc::channel();
@@ -657,6 +1048,7 @@ pub fn attach_with_lookup_provider(
         let mut state = Worker {
             config,
             app: None,
+            files: None,
             editing: None,
             pending_export: None,
             review: None,
@@ -665,7 +1057,7 @@ pub fn attach_with_lookup_provider(
             lookup_provider,
             query: PaperQuery {
                 pagination: Pagination {
-                    limit: 20,
+                    limit: 50,
                     offset: 0,
                 },
                 ..Default::default()
@@ -696,29 +1088,32 @@ pub fn attach_with_lookup_provider(
     ui.on_navigate(move |action, id| {
         if let Some(ui) = weak.upgrade() {
             let request = match action {
-                3 => {
+                NavigationAction::Quit => {
                     let _ = slint::quit_event_loop();
                     return;
                 }
-                5 => Request::BeginLookup(true),
-                0 => Request::New,
-                2 => {
+                NavigationAction::ImportPaper => Request::BeginLookup(true),
+                NavigationAction::CreatePaper => Request::New,
+                NavigationAction::AttachmentCleanup => Request::PrepareCleanup,
+                NavigationAction::Reconnect => {
                     ui.set_ready(false);
                     Request::Initialize
                 }
-                _ => match uuid::Uuid::parse_str(&id) {
-                    Ok(id) => {
-                        if action == 4 {
-                            Request::ReviewMetadata(PaperId::from_uuid(id))
-                        } else {
-                            Request::Open(PaperId::from_uuid(id))
+                NavigationAction::OpenPaper | NavigationAction::MetadataReview => {
+                    match uuid::Uuid::parse_str(&id) {
+                        Ok(id) => {
+                            if action == NavigationAction::MetadataReview {
+                                Request::ReviewMetadata(PaperId::from_uuid(id))
+                            } else {
+                                Request::Open(PaperId::from_uuid(id))
+                            }
+                        }
+                        Err(_) => {
+                            ui.set_status("文献 ID を読み取れません。".into());
+                            return;
                         }
                     }
-                    Err(_) => {
-                        ui.set_status("文献 ID を読み取れません。".into());
-                        return;
-                    }
-                },
+                }
             };
             dispatch(&ui, &tx, request);
         }
@@ -752,6 +1147,23 @@ pub fn attach_with_lookup_provider(
                 Request::ConfirmLookup(
                     ui.get_lookup_identifier().into(),
                     ui.get_lookup_key().into(),
+                    LookupUserInput {
+                        notes: ui.get_lookup_notes().into(),
+                        reading_status: match ui.get_lookup_reading_status() {
+                            1 => ReadingStatus::Reading,
+                            2 => ReadingStatus::Read,
+                            _ => ReadingStatus::Unread,
+                        },
+                        favorite: ui.get_lookup_favorite(),
+                        tags: ui
+                            .get_lookup_tags()
+                            .iter()
+                            .map(|r| r.name.to_string())
+                            .collect(),
+                    },
+                    Some(ui.get_lookup_pdf())
+                        .filter(|p| !p.is_empty())
+                        .map(|p| PathBuf::from(p.as_str())),
                 ),
             );
         }
@@ -775,6 +1187,292 @@ pub fn attach_with_lookup_provider(
     ui.on_save(move || {
         if let Some(ui) = weak.upgrade() {
             dispatch(&ui, &tx, Request::Save(form_from_ui(&ui)));
+        }
+    });
+    // Detail quick actions save one personal value without the edit form.
+    let tx = sender.clone();
+    let weak = ui.as_weak();
+    ui.on_change_reading_status(move |index| {
+        if let Some(ui) = weak.upgrade() {
+            let status = match index {
+                1 => ReadingStatus::Reading,
+                2 => ReadingStatus::Read,
+                _ => ReadingStatus::Unread,
+            };
+            dispatch(&ui, &tx, Request::Quick(QuickChange::ReadingStatus(status)));
+        }
+    });
+    let tx = sender.clone();
+    let weak = ui.as_weak();
+    ui.on_toggle_favorite(move || {
+        if let Some(ui) = weak.upgrade() {
+            let favorite = !ui.get_favorite();
+            dispatch(&ui, &tx, Request::Quick(QuickChange::Favorite(favorite)));
+        }
+    });
+    let tx = sender.clone();
+    let weak = ui.as_weak();
+    ui.on_toggle_archived(move || {
+        if let Some(ui) = weak.upgrade() {
+            let archived = !ui.get_archived();
+            dispatch(&ui, &tx, Request::Quick(QuickChange::Archived(archived)));
+        }
+    });
+    let tx = sender.clone();
+    let weak = ui.as_weak();
+    ui.on_save_notes(move || {
+        if let Some(ui) = weak.upgrade() {
+            let notes = ui.get_notes().to_string();
+            dispatch(&ui, &tx, Request::Quick(QuickChange::Notes(notes)));
+        }
+    });
+    let file_picker: std::rc::Rc<FilePicker> = std::rc::Rc::new(file_picker);
+    let picker = file_picker.clone();
+    let tx = sender.clone();
+    let weak = ui.as_weak();
+    ui.on_pick_lookup_pdf(move || {
+        if let Some(ui) = weak.upgrade() {
+            match picker() {
+                Some(path) => {
+                    let fill = ui.get_lookup_identifier().is_empty();
+                    ui.set_lookup_dirty(true);
+                    dispatch(&ui, &tx, Request::ScanLookupPdf(path, fill));
+                }
+                None => ui.set_status("PDFの選択をやめました。".into()),
+            }
+        }
+    });
+    let tx = sender.clone();
+    let weak = ui.as_weak();
+    ui.on_attach_pdf(move || {
+        if let Some(ui) = weak.upgrade() {
+            match file_picker() {
+                Some(path) => dispatch(&ui, &tx, Request::AttachPdf(path)),
+                None => ui.set_status("PDFの添付をやめました。".into()),
+            }
+        }
+    });
+    let tx = sender.clone();
+    let weak = ui.as_weak();
+    ui.on_file_dropped(move |path| {
+        if let Some(ui) = weak.upgrade() {
+            ui.set_drop_hover(false);
+            match dropped_pdf(&path) {
+                Err(message) => ui.set_status(message.into()),
+                Ok(_) if ui.get_busy() => {
+                    ui.set_status("処理中のためドロップを受け付けられません。".into());
+                }
+                Ok(path) if ui.get_can_drop_attach() => {
+                    dispatch(&ui, &tx, Request::AttachPdf(path));
+                }
+                Ok(path) if ui.get_can_drop_new() => {
+                    if ui.get_lookup_open() {
+                        // The add screen is already open: the PDF to attach changes, and an
+                        // identifier is looked for in it.
+                        let fill = ui.get_lookup_identifier().is_empty();
+                        ui.set_lookup_dirty(true);
+                        dispatch(&ui, &tx, Request::ScanLookupPdf(path, fill));
+                    } else {
+                        dispatch(&ui, &tx, Request::BeginLookupWithPdf(path));
+                    }
+                }
+                Ok(_) => ui.set_status(
+                    "PDFを添付する文献を開くか、追加画面を開いてからドロップしてください（編集中は保存してから）。"
+                        .into(),
+                ),
+            }
+        }
+    });
+    install_file_drop(ui);
+    let tx = sender.clone();
+    let weak = ui.as_weak();
+    ui.on_open_attachment(move |id| {
+        if let Some(ui) = weak.upgrade() {
+            match uuid::Uuid::parse_str(&id) {
+                Ok(id) => dispatch(
+                    &ui,
+                    &tx,
+                    Request::OpenAttachment(AttachmentId::from_uuid(id)),
+                ),
+                Err(_) => ui.set_status("PDFの ID を読み取れません。".into()),
+            }
+        }
+    });
+    let tx = sender.clone();
+    let weak = ui.as_weak();
+    ui.on_add_tag(move |name| {
+        if let Some(ui) = weak.upgrade() {
+            dispatch(&ui, &tx, Request::AddTag(name.to_string()));
+        }
+    });
+    let tx = sender.clone();
+    let weak = ui.as_weak();
+    ui.on_remove_tag(move |id| {
+        if let Some(ui) = weak.upgrade() {
+            match uuid::Uuid::parse_str(&id) {
+                Ok(id) => dispatch(&ui, &tx, Request::RemoveTag(TagId::from_uuid(id))),
+                Err(_) => ui.set_status("タグ ID を読み取れません。".into()),
+            }
+        }
+    });
+    // Tags of the add screen are only a list of names until the paper is registered, so
+    // they are kept on the screen (row id = folded name) and sent with the confirmation.
+    let weak = ui.as_weak();
+    ui.on_lookup_tag_add(move |name| {
+        if let Some(ui) = weak.upgrade() {
+            match normalize_tag_name(&name) {
+                Ok((display, key)) => {
+                    let mut rows: Vec<TagRow> = ui.get_lookup_tags().iter().collect();
+                    if rows.iter().any(|r| r.id == key.as_str()) {
+                        ui.set_status(format!("タグ「{display}」はすでに指定しています。").into());
+                    } else {
+                        rows.push(TagRow {
+                            id: key.into(),
+                            name: display.into(),
+                            count: 0,
+                            selected: false,
+                        });
+                        ui.set_lookup_tags(ModelRc::new(VecModel::from(rows)));
+                        ui.set_lookup_dirty(true);
+                    }
+                    ui.set_tag_suggestions(ModelRc::new(VecModel::from(Vec::<TagRow>::new())));
+                }
+                Err(e) => ui.set_status(tag_name_message(e).into()),
+            }
+        }
+    });
+    let weak = ui.as_weak();
+    ui.on_lookup_tag_remove(move |id| {
+        if let Some(ui) = weak.upgrade() {
+            let rows: Vec<TagRow> = ui.get_lookup_tags().iter().filter(|r| r.id != id).collect();
+            ui.set_lookup_tags(ModelRc::new(VecModel::from(rows)));
+        }
+    });
+    let weak = ui.as_weak();
+    ui.on_lookup_tag_input_changed(move |typed| {
+        if let Some(ui) = weak.upgrade() {
+            let chosen: Vec<slint::SharedString> =
+                ui.get_lookup_tags().iter().map(|r| r.id).collect();
+            let mut all = Vec::new();
+            let mut taken = Vec::new();
+            for r in ui.get_tag_rows().iter() {
+                let Ok(uuid) = uuid::Uuid::parse_str(&r.id) else {
+                    continue;
+                };
+                let tag = Tag {
+                    id: TagId::from_uuid(uuid),
+                    name: r.name.to_string(),
+                };
+                if tag
+                    .key()
+                    .is_ok_and(|k| chosen.iter().any(|c| c.as_str() == k))
+                {
+                    taken.push(tag.id);
+                }
+                all.push(TagCount {
+                    tag,
+                    paper_count: 0,
+                });
+            }
+            let rows: Vec<TagRow> = tag_suggestions(&all, &taken, &typed, 6)
+                .into_iter()
+                .map(|t| TagRow {
+                    id: t.id.to_string().into(),
+                    name: t.name.into(),
+                    count: 0,
+                    selected: false,
+                })
+                .collect();
+            ui.set_tag_suggestions(ModelRc::new(VecModel::from(rows)));
+        }
+    });
+    let weak = ui.as_weak();
+    ui.on_tag_input_changed(move |typed| {
+        if let Some(ui) = weak.upgrade() {
+            // Completion works on what is already on screen, so typing never waits for the worker.
+            let all: Vec<TagCount> = ui
+                .get_tag_rows()
+                .iter()
+                .filter_map(|r| {
+                    Some(TagCount {
+                        tag: Tag {
+                            id: TagId::from_uuid(uuid::Uuid::parse_str(&r.id).ok()?),
+                            name: r.name.to_string(),
+                        },
+                        paper_count: 0,
+                    })
+                })
+                .collect();
+            let taken: Vec<TagId> = ui
+                .get_paper_tag_rows()
+                .iter()
+                .filter_map(|r| uuid::Uuid::parse_str(&r.id).ok().map(TagId::from_uuid))
+                .collect();
+            let rows: Vec<TagRow> = tag_suggestions(&all, &taken, &typed, 6)
+                .into_iter()
+                .map(|t| TagRow {
+                    id: t.id.to_string().into(),
+                    name: t.name.into(),
+                    count: 0,
+                    selected: false,
+                })
+                .collect();
+            ui.set_tag_suggestions(ModelRc::new(VecModel::from(rows)));
+        }
+    });
+    let tx = sender.clone();
+    let weak = ui.as_weak();
+    ui.on_toggle_tag_filter(move |id| {
+        if let Some(ui) = weak.upgrade() {
+            let mut chosen: Vec<slint::SharedString> = ui.get_filter_tag_ids().iter().collect();
+            match chosen.iter().position(|c| *c == id) {
+                Some(at) => {
+                    chosen.remove(at);
+                }
+                None => chosen.push(id),
+            }
+            ui.set_filter_tag_ids(ModelRc::new(VecModel::from(chosen)));
+            ui.set_limit(50);
+            dispatch(&ui, &tx, Request::List(query_from_ui(&ui)));
+        }
+    });
+    let tx = sender.clone();
+    let weak = ui.as_weak();
+    ui.on_detach_attachment(move |id| {
+        if let Some(ui) = weak.upgrade() {
+            match uuid::Uuid::parse_str(&id) {
+                Ok(id) => dispatch(
+                    &ui,
+                    &tx,
+                    Request::DetachAttachment(AttachmentId::from_uuid(id)),
+                ),
+                Err(_) => ui.set_status("PDFの ID を読み取れません。".into()),
+            }
+        }
+    });
+    let tx = sender.clone();
+    let weak = ui.as_weak();
+    ui.on_reclaim_unused(move || {
+        if let Some(ui) = weak.upgrade() {
+            dispatch(&ui, &tx, Request::ReclaimUnused);
+        }
+    });
+    let weak = ui.as_weak();
+    ui.on_open_link(move |target| {
+        if let Some(ui) = weak.upgrade() {
+            let url = match target {
+                LinkTarget::Doi => crate::detail::doi_url(&ui.get_doi()),
+                LinkTarget::Arxiv => crate::detail::arxiv_url(&ui.get_arxiv_id()),
+                LinkTarget::Url => crate::detail::web_url(&ui.get_url()),
+            };
+            let message = match url {
+                Some(url) => match crate::detail::open_in_browser(&url) {
+                    Ok(()) => format!("ブラウザーで開きました: {url}"),
+                    Err(e) => e,
+                },
+                None => "開ける形式のリンクではありません。値を確認してください。".into(),
+            };
+            ui.set_status(message.into());
         }
     });
     let tx = sender.clone();
@@ -826,6 +1524,7 @@ pub fn attach_with_lookup_provider(
                     return;
                 }
             };
+            ui.set_preview_return_view(ui.get_detail_view());
             let options = BibtexOptions {
                 include_abstract: ui.get_export_abstract(),
                 include_doi: ui.get_export_doi(),
@@ -890,6 +1589,17 @@ pub fn attach_with_lookup_provider(
     });
     let tx = sender.clone();
     let weak = ui.as_weak();
+    ui.on_apply_metadata(move || {
+        if let Some(ui) = weak.upgrade() {
+            match crate::ui_metadata::read_decisions(&ui) {
+                Ok(inputs) => dispatch(&ui, &tx, Request::ResolveMetadataBatch(inputs)),
+                Err(e) => ui.set_status(e.to_string().into()),
+            }
+        }
+    });
+    crate::ui_metadata::attach_decisions(ui);
+    let tx = sender.clone();
+    let weak = ui.as_weak();
     ui.on_resolve_metadata(move |id, accept| {
         if let Some(ui) = weak.upgrade() {
             match uuid::Uuid::parse_str(&id) {
@@ -933,7 +1643,32 @@ pub fn attach_with_lookup_provider(
         }
     });
     let weak = ui.as_weak();
-    ui.on_author_action(move |index, action| {
+    ui.on_author_bulk(move |text| {
+        if let Some(ui) = weak.upgrade() {
+            let model = ui.get_author_rows();
+            let Some(rows) = model.as_any().downcast_ref::<VecModel<AuthorRow>>() else {
+                return;
+            };
+            let parsed = crate::application::parse_author_list(&text);
+            if parsed.is_empty() {
+                ui.set_status("追加できる著者名がありませんでした。".into());
+                return;
+            }
+            let count = parsed.len();
+            for author in parsed {
+                rows.push(AuthorRow {
+                    kind: author.kind,
+                    given: author.given.into(),
+                    name: author.name.into(),
+                    orcid: author.orcid.into(),
+                });
+            }
+            ui.set_dirty(true);
+            ui.set_status(format!("著者を{count}名追加しました。各行を確認してください。").into());
+        }
+    });
+    let weak = ui.as_weak();
+    ui.on_author_action(move |action, index| {
         if let Some(ui) = weak.upgrade() {
             let model = ui.get_author_rows();
             let Some(rows) = model.as_any().downcast_ref::<VecModel<AuthorRow>>() else {
@@ -941,12 +1676,14 @@ pub fn attach_with_lookup_provider(
             };
             let index = index.max(0) as usize;
             match action {
-                0 => rows.push(AuthorRow::default()),
-                1 if index < rows.row_count() => {
-                    rows.remove(index);
+                AuthorAction::Add => rows.push(AuthorRow::default()),
+                AuthorAction::Remove => {
+                    if index < rows.row_count() {
+                        rows.remove(index);
+                    }
                 }
-                2 | 3 => {
-                    let other = if action == 2 {
+                AuthorAction::MoveUp | AuthorAction::MoveDown => {
+                    let other = if action == AuthorAction::MoveUp {
                         index.checked_sub(1)
                     } else {
                         Some(index + 1)
@@ -958,7 +1695,6 @@ pub fn attach_with_lookup_provider(
                         rows.set_row_data(other, a);
                     }
                 }
-                _ => {}
             }
             ui.set_dirty(true);
         }
@@ -966,9 +1702,12 @@ pub fn attach_with_lookup_provider(
     let weak = ui.as_weak();
     ui.window().on_close_requested(move || {
         if let Some(ui) = weak.upgrade()
-            && (ui.get_dirty() || ui.get_candidate_dirty() || ui.get_lookup_dirty())
+            && (ui.get_dirty()
+                || ui.get_candidate_dirty()
+                || ui.get_lookup_dirty()
+                || ui.get_review_dirty())
         {
-            ui.invoke_request_navigation(3, "".into());
+            ui.invoke_request_navigation(NavigationAction::Quit, "".into());
             return slint::CloseRequestResponse::KeepWindowShown;
         }
         slint::CloseRequestResponse::HideWindow
@@ -994,8 +1733,11 @@ fn dispatch(ui: &MainWindow, sender: &Sender<Request>, request: Request) {
     ui.set_busy(true);
     ui.set_status("処理しています…".into());
     if sender.send(request).is_err() {
-        ui.set_busy(false);
+        ui.set_busy(ui.get_pending_requests() > 0);
         ui.set_status("処理を続けられません。アプリを再起動してください。".into());
+    } else {
+        // Every request is answered by exactly one reply, which gives the count back.
+        ui.set_pending_requests(ui.get_pending_requests() + 1);
     }
 }
 pub fn form_from_ui(ui: &MainWindow) -> PaperForm {
@@ -1015,8 +1757,15 @@ pub fn form_from_ui(ui: &MainWindow) -> PaperForm {
         publication_type: ui.get_publication_type().max(0) as usize,
         container_title: ui.get_container_title().into(),
         year: ui.get_year().into(),
+        publisher: ui.get_publisher().into(),
+        volume: ui.get_volume().into(),
+        issue: ui.get_issue().into(),
+        pages: ui.get_pages().into(),
         doi: ui.get_doi().into(),
         arxiv_id: ui.get_arxiv_id().into(),
+        url: ui.get_url().into(),
+        abstract_text: ui.get_abstract_text().into(),
+        keywords: ui.get_keywords().into(),
         notes: ui.get_notes().into(),
         reading_status: ui.get_reading_status().max(0) as usize,
         favorite: ui.get_favorite(),
@@ -1028,6 +1777,15 @@ fn query_from_ui(ui: &MainWindow) -> PaperQuery {
         text: Some(ui.get_search_text().into()),
         filter: PaperFilter {
             include_archived: ui.get_show_deleted() || ui.get_include_archived(),
+            tags: ui
+                .get_filter_tag_ids()
+                .iter()
+                .filter_map(|id| uuid::Uuid::parse_str(&id).ok().map(TagId::from_uuid))
+                .collect(),
+            tag_match: TagMatch::All,
+            reading_status: ui.get_filter_unread().then_some(ReadingStatus::Unread),
+            favorite: ui.get_filter_favorite().then_some(true),
+            has_attachment: ui.get_filter_pdf().then_some(true),
             deletion: if ui.get_show_deleted() {
                 DeletionFilter::Deleted
             } else {
@@ -1047,32 +1805,81 @@ fn query_from_ui(ui: &MainWindow) -> PaperQuery {
             _ => PaperSort::default(),
         },
         pagination: Pagination {
-            limit: 20,
-            offset: ui.get_offset().max(0) as usize,
+            limit: ui.get_limit().max(1) as usize,
+            offset: 0,
         },
     }
 }
 fn apply_reply(ui: &MainWindow, reply: Reply) {
+    let mut next_view = None;
     if let Some(new) = reply.lookup_new {
         ui.set_lookup_new(new);
         if new {
-            ui.set_metadata_open(false);
+            ui.set_candidate_dirty(false);
         }
         ui.set_lookup_identifier("".into());
-        ui.set_lookup_details("".into());
+        ui.set_lookup_source("".into());
+        ui.set_lookup_fields(ModelRc::default());
         ui.set_lookup_key("".into());
+        ui.set_lookup_notes("".into());
+        ui.set_lookup_reading_status(0);
+        ui.set_lookup_favorite(false);
+        ui.set_lookup_tags(ModelRc::default());
+        ui.set_lookup_pdf("".into());
+        ui.set_lookup_candidates(ModelRc::default());
+        ui.set_lookup_duplicates(ModelRc::default());
+        ui.set_lookup_pdf_name("".into());
         ui.set_lookup_has_result(false);
         ui.set_lookup_dirty(false);
     }
-    if let Some(open) = reply.lookup_open {
-        ui.set_lookup_open(open);
-        if !open {
-            ui.set_lookup_dirty(false);
-            ui.set_lookup_has_result(false);
-        }
+    if let Some((path, name)) = reply.lookup_pdf {
+        ui.set_lookup_pdf(path.into());
+        ui.set_lookup_pdf_name(name.into());
+        ui.set_lookup_dirty(true);
     }
-    if let Some((details, key)) = reply.lookup_preview {
-        ui.set_lookup_details(details.into());
+    if let Some(duplicates) = reply.lookup_duplicates {
+        let rows: Vec<crate::DuplicateRow> = duplicates
+            .into_iter()
+            .map(|d| crate::DuplicateRow {
+                id: d.paper_id.to_string().into(),
+                label: match d.title {
+                    Some(title) if !title.is_empty() => format!("{}  {}", d.citation_key, title),
+                    _ => d.citation_key,
+                }
+                .into(),
+                deleted: d.deleted,
+            })
+            .collect();
+        ui.set_lookup_duplicates(ModelRc::new(VecModel::from(rows)));
+    }
+    if let Some(candidates) = reply.lookup_candidates {
+        let rows: Vec<slint::SharedString> = candidates.into_iter().map(Into::into).collect();
+        ui.set_lookup_candidates(ModelRc::new(VecModel::from(rows)));
+    }
+    if let Some(identifier) = reply.lookup_identifier {
+        ui.set_lookup_identifier(identifier.into());
+        ui.set_lookup_has_result(false);
+    }
+    if reply.lookup_open == Some(false) {
+        ui.set_lookup_tags(ModelRc::default());
+        ui.set_lookup_candidates(ModelRc::default());
+        ui.set_lookup_duplicates(ModelRc::default());
+        ui.set_lookup_pdf("".into());
+        ui.set_lookup_pdf_name("".into());
+        ui.set_lookup_dirty(false);
+        ui.set_lookup_has_result(false);
+    }
+    if let Some((preview, key)) = reply.lookup_preview {
+        let fields: Vec<_> = preview
+            .fields
+            .into_iter()
+            .map(|(label, value)| LookupField {
+                label: label.into(),
+                value: value.into(),
+            })
+            .collect();
+        ui.set_lookup_source(preview.source.into());
+        ui.set_lookup_fields(ModelRc::new(VecModel::from(fields)));
         ui.set_lookup_key(key.into());
         ui.set_lookup_has_result(true);
         ui.set_lookup_dirty(true);
@@ -1083,26 +1890,46 @@ fn apply_reply(ui: &MainWindow, reply: Reply) {
     }
 
     if reply.close_metadata {
-        ui.set_lookup_open(false);
         ui.set_lookup_dirty(false);
-        ui.set_metadata_open(false);
-        ui.set_candidate_form_open(false);
         ui.set_candidate_dirty(false);
-    }
-    if let Some(offset) = reply.offset {
-        ui.set_offset(offset);
     }
     if let Some(ready) = reply.ready {
         ui.set_ready(ready);
     }
     if let Some(editor) = reply.editor {
         let f = editor.form;
+        // A complete, successfully loaded editor is the only point at which
+        // an existing paper returns to read mode. Error replies keep the draft.
+        next_view = Some(if editor.id.is_none() || editor.deleted {
+            DetailView::PaperEditor
+        } else {
+            DetailView::PaperDetail
+        });
+        // Read-only presentation derived from the same saved form.
+        ui.set_paper_authors(crate::detail::authors_full(&f).into());
+        ui.set_paper_authors_short(crate::detail::authors_short(&f).into());
+        ui.set_publication_summary(crate::detail::publication_summary(&f).into());
+        let (preview, long) = crate::detail::abstract_preview(&f.abstract_text);
+        ui.set_abstract_preview(preview.into());
+        ui.set_abstract_long(long);
+        ui.set_keywords_line(crate::detail::keywords_line(&f).into());
+        ui.set_paper_bibtex(editor.bibtex.into());
+        ui.set_identifiers_line(crate::detail::identifiers_line(&f).into());
+        ui.set_notes_editing(false);
+        ui.set_form_error("".into());
         ui.set_citation_key(f.citation_key.into());
         ui.set_paper_title(f.title.into());
         ui.set_container_title(f.container_title.into());
         ui.set_year(f.year.into());
+        ui.set_publisher(f.publisher.into());
+        ui.set_volume(f.volume.into());
+        ui.set_issue(f.issue.into());
+        ui.set_pages(f.pages.into());
         ui.set_doi(f.doi.into());
         ui.set_arxiv_id(f.arxiv_id.into());
+        ui.set_url(f.url.into());
+        ui.set_abstract_text(f.abstract_text.into());
+        ui.set_keywords(f.keywords.into());
         ui.set_identifier_warning(editor.identifier_warning.into());
         ui.set_publication_type(f.publication_type as i32);
         ui.set_notes(f.notes.into());
@@ -1120,7 +1947,7 @@ fn apply_reply(ui: &MainWindow, reply: Reply) {
             })
             .collect();
         ui.set_author_rows(ModelRc::new(VecModel::from(rows)));
-        ui.set_editor_visible(true);
+        ui.set_review_dirty(false);
         ui.set_editor_deleted(editor.deleted);
         ui.set_saved_paper(editor.id.is_some());
         ui.set_editing_id(
@@ -1136,14 +1963,72 @@ fn apply_reply(ui: &MainWindow, reply: Reply) {
     }
     if let Some(review) = reply.metadata {
         crate::ui_metadata::show_review(ui, &review);
+        next_view = Some(DetailView::MetadataReview);
     }
     if reply.close_candidate {
-        ui.set_candidate_form_open(false);
+        if ui.get_detail_view() == DetailView::MetadataCandidateEditor {
+            next_view = Some(DetailView::MetadataReview);
+        }
         ui.set_candidate_dirty(false);
     }
     if reply.saved {
         ui.set_dirty(false);
     }
+    if let Some(error) = reply.form_error {
+        ui.set_form_error(error.into());
+    }
+    if let Some(rows) = reply.attachments {
+        let rows: Vec<_> = rows
+            .into_iter()
+            .map(|a| AttachmentRow {
+                id: a.id.into(),
+                name: a.name.into(),
+                details: a.details.into(),
+                missing: a.missing,
+            })
+            .collect();
+        // The main button opens the first file that is still in the library.
+        ui.set_primary_attachment(
+            rows.iter()
+                .find(|r| !r.missing)
+                .map(|r| r.id.clone())
+                .unwrap_or_default(),
+        );
+        ui.set_attachment_rows(ModelRc::new(VecModel::from(rows)));
+    }
+    if let Some(tags) = reply.paper_tags {
+        ui.set_paper_tag_rows(ModelRc::new(VecModel::from(
+            tags.into_iter()
+                .map(|t| TagRow {
+                    id: t.id.to_string().into(),
+                    name: t.name.into(),
+                    count: 0,
+                    selected: false,
+                })
+                .collect::<Vec<_>>(),
+        )));
+        ui.set_tag_suggestions(ModelRc::new(VecModel::from(Vec::<TagRow>::new())));
+    }
+    if let Some(counts) = reply.tag_counts {
+        let chosen = ui.get_filter_tag_ids();
+        ui.set_tag_rows(ModelRc::new(VecModel::from(
+            counts
+                .into_iter()
+                .map(|c| TagRow {
+                    selected: chosen.iter().any(|id| id.as_str() == c.tag.id.to_string()),
+                    id: c.tag.id.to_string().into(),
+                    name: c.tag.name.into(),
+                    count: c.paper_count.min(i32::MAX as usize) as i32,
+                })
+                .collect::<Vec<_>>(),
+        )));
+    }
+    if let Some((count, bytes)) = reply.cleanup {
+        ui.set_cleanup_count(count.min(i32::MAX as usize) as i32);
+        ui.set_cleanup_size(crate::detail::format_size(bytes).into());
+        next_view = Some(DetailView::AttachmentCleanup);
+    }
+
     if reply.load_required {
         ui.set_load_required(true);
     }
@@ -1159,6 +2044,13 @@ fn apply_reply(ui: &MainWindow, reply: Reply) {
                 id: p.id.to_string().into(),
                 title: p.title.unwrap_or_default().into(),
                 citation_key: p.citation_key.as_str().into(),
+                reading_status: match p.reading_status {
+                    ReadingStatus::Unread => 0,
+                    ReadingStatus::Reading => 1,
+                    ReadingStatus::Read => 2,
+                },
+                favorite: p.favorite,
+                has_pdf: p.has_attachment,
                 year: p.year.map(|y| y.to_string()).unwrap_or_default().into(),
                 authors: p
                     .authors
@@ -1184,13 +2076,34 @@ fn apply_reply(ui: &MainWindow, reply: Reply) {
         ui.set_export_summary(summary.into());
         ui.set_export_warnings(warnings.into());
         ui.set_export_replaces(replaces);
-        ui.set_export_confirm(true);
+        next_view = Some(DetailView::ExportPreview);
     }
-    if reply.clear_export {
-        ui.set_export_confirm(false);
+    if reply.clear_export && ui.get_detail_view() == DetailView::ExportPreview {
+        next_view = Some(ui.get_preview_return_view());
+    }
+    if reply.lookup_open == Some(true) {
+        next_view = Some(DetailView::Import);
+    } else if reply.lookup_open == Some(false)
+        && ui.get_detail_view() == DetailView::Import
+        && next_view.is_none()
+    {
+        // Closing the unified add screen returns to the neutral view; manual
+        // entry is an explicit navigation of its own.
+        next_view = Some(if ui.get_lookup_new() {
+            DetailView::Empty
+        } else {
+            DetailView::MetadataReview
+        });
+    }
+    if let Some(view) = next_view {
+        ui.set_detail_view(view);
     }
     ui.set_status(reply.message.into());
-    ui.set_busy(false);
+    // Stay busy while another request is still being handled, so a reply that arrives early
+    // (for example a list refresh from typing in the search box) does not unlock the screen.
+    let pending = (ui.get_pending_requests() - 1).max(0);
+    ui.set_pending_requests(pending);
+    ui.set_busy(pending > 0);
 }
 
 fn warning_messages(prepared: &PreparedExport) -> String {
@@ -1239,4 +2152,172 @@ fn warning_messages(prepared: &PreparedExport) -> String {
         })
         .collect::<Vec<_>>()
         .join("\n")
+}
+
+/// The reply that puts a PDF on the add screen: it waits to be attached on registration, and the
+/// identifiers found in it are offered (and the best one filled in when `fill`). An unreadable PDF
+/// is still kept for attaching, since attaching has its own check.
+fn pdf_lookup_reply(mut reply: Reply, path: &std::path::Path, fill: bool) -> Reply {
+    let name = path
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    reply.lookup_pdf = Some((path.to_string_lossy().into_owned(), name));
+    reply.message = match crate::pdf_identifier::scan_pdf(path) {
+        Ok(found) if found.is_empty() => {
+            "PDFから識別子は見つかりませんでした。識別子を入力してください。登録時にこのPDFを添付します。"
+                .into()
+        }
+        Ok(found) => {
+            let texts: Vec<String> = found
+                .iter()
+                .take(5)
+                .map(|f| match &f.identifier {
+                    PaperIdentifier::Doi(d) => d.as_str().to_owned(),
+                    PaperIdentifier::Arxiv(a) => format!("arXiv:{}", a.as_str()),
+                    PaperIdentifier::Url(u) => u.clone(),
+                })
+                .collect();
+            let place = match found[0].found_in {
+                paper_core::service::FoundIn::DocumentInfo => "PDFの情報".to_owned(),
+                paper_core::service::FoundIn::PageText { page } => format!("{page}ページ目"),
+            };
+            let others = if texts.len() > 1 {
+                format!("（ほかに{}件の候補があります）", texts.len() - 1)
+            } else {
+                String::new()
+            };
+            if fill {
+                reply.lookup_identifier = Some(texts[0].clone());
+            }
+            let message = format!(
+                "{place}から識別子を見つけました: {}{others}。確かめて Enter で書誌情報を取得します。",
+                texts[0]
+            );
+            reply.lookup_candidates = Some(texts);
+            message
+        }
+        Err(e) => format!("{e} 登録時にこのPDFを添付します。"),
+    };
+    reply
+}
+
+#[cfg(test)]
+mod reply_contract {
+    use super::{EditorView, Reply, Request, apply_reply, dispatch};
+    use crate::{
+        DetailView, MainWindow,
+        application::{AuthorInput, PaperForm},
+    };
+    use paper_core::model::PaperId;
+
+    /// A reply for one request must not clear `busy` while another request is still being
+    /// handled; otherwise the screen accepts input (and tests move on) before a save finishes.
+    #[test]
+    fn busy_lasts_until_every_pending_request_has_replied() {
+        i_slint_backend_testing::init_no_event_loop();
+        let w = MainWindow::new().unwrap();
+        let (sender, _receiver) = std::sync::mpsc::channel();
+        dispatch(&w, &sender, Request::Shutdown);
+        dispatch(&w, &sender, Request::Shutdown);
+        assert!(w.get_busy());
+        assert_eq!(w.get_pending_requests(), 2);
+        apply_reply(&w, Reply::default());
+        assert!(w.get_busy(), "one request is still pending");
+        apply_reply(&w, Reply::default());
+        assert!(!w.get_busy());
+        assert_eq!(w.get_pending_requests(), 0);
+        // A reply without a matching request (direct use in tests) never goes below zero.
+        apply_reply(&w, Reply::default());
+        assert_eq!(w.get_pending_requests(), 0);
+        assert!(!w.get_busy());
+    }
+
+    #[test]
+    fn only_a_complete_reload_leaves_existing_edit_mode() {
+        i_slint_backend_testing::init_no_event_loop();
+        let w = MainWindow::new().unwrap();
+        w.set_detail_view(DetailView::PaperEditor);
+        w.set_dirty(true);
+        w.set_paper_title("draft".into());
+        apply_reply(
+            &w,
+            Reply {
+                message: "validation or conflict failure".into(),
+                ..Default::default()
+            },
+        );
+        assert!(w.get_edit_mode());
+        assert!(w.get_dirty());
+        assert_eq!(w.get_paper_title(), "draft");
+        apply_reply(
+            &w,
+            Reply {
+                saved: true,
+                load_required: true,
+                message: "saved, reload failed".into(),
+                ..Default::default()
+            },
+        );
+        assert!(w.get_edit_mode());
+        assert!(!w.get_dirty());
+        assert!(w.get_load_required());
+        assert_eq!(w.get_paper_title(), "draft");
+        apply_reply(
+            &w,
+            Reply {
+                editor: Some(EditorView {
+                    id: Some(PaperId::new()),
+                    deleted: false,
+                    identifier_warning: String::new(),
+                    bibtex: String::new(),
+                    form: PaperForm {
+                        title: "loaded".into(),
+                        authors: vec![
+                            AuthorInput {
+                                kind: 0,
+                                given: "Ada".into(),
+                                name: "Smith".into(),
+                                orcid: String::new(),
+                            },
+                            AuthorInput {
+                                kind: 1,
+                                name: "Research Group".into(),
+                                ..Default::default()
+                            },
+                            AuthorInput {
+                                kind: 2,
+                                name: "Literal Author".into(),
+                                ..Default::default()
+                            },
+                        ],
+                        ..Default::default()
+                    },
+                }),
+                ..Default::default()
+            },
+        );
+        assert!(!w.get_edit_mode());
+        assert!(!w.get_load_required());
+        assert_eq!(w.get_paper_title(), "loaded");
+        assert_eq!(
+            w.get_paper_authors(),
+            "Ada Smith, Research Group, Literal Author"
+        );
+        apply_reply(
+            &w,
+            Reply {
+                editor: Some(EditorView {
+                    id: None,
+                    deleted: false,
+                    identifier_warning: String::new(),
+                    bibtex: String::new(),
+                    form: PaperForm::default(),
+                }),
+                ..Default::default()
+            },
+        );
+        assert!(w.get_edit_mode());
+        assert_eq!(w.get_paper_authors(), "");
+    }
 }

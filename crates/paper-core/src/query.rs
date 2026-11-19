@@ -123,6 +123,10 @@ pub enum DeletionFilter {
 #[derive(Clone, Debug)]
 pub struct MetadataProposalDetail {
     pub proposal: crate::model::UpdateProposal,
+    /// Read in the same transaction as current values; saving rechecks this.
+    pub unavailable_reason: Option<String>,
+    /// All current heads: never invent a single source for divergent revisions.
+    pub current_revisions: Vec<crate::model::FieldRevision>,
     pub expected_value: Option<crate::model::BibliographyValue>,
     pub current_value: Option<crate::model::BibliographyValue>,
     pub proposed_value: Option<crate::model::BibliographyValue>,
@@ -134,4 +138,21 @@ pub struct MetadataReview {
     pub candidates: Vec<crate::model::StoredMetadataCandidate>,
     pub proposals: Vec<MetadataProposalDetail>,
     pub versions: Vec<crate::model::PaperVersion>,
+}
+
+/// A tag with the number of papers that carry it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct TagCount {
+    pub tag: crate::model::Tag,
+    pub paper_count: usize,
+}
+
+/// A saved paper that carries a DOI or arXiv ID, found by `find_by_identifiers`.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct IdentifierMatch {
+    pub paper_id: PaperId,
+    pub citation_key: String,
+    pub title: Option<String>,
+    /// The paper is in the trash. It still keeps its identifiers and its citation key.
+    pub deleted: bool,
 }

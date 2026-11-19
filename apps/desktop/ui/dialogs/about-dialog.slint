@@ -1,0 +1,24 @@
+import { VerticalBox, AboutSlint } from "std-widgets.slint";
+import { Theme } from "../theme.slint";
+import { AppButton } from "../components/app-button.slint";
+
+export component AboutDialog inherits FocusScope {
+    callback close();
+    width:520px;height:360px;
+    init=>{self.focus();}
+    key-pressed(event)=>{
+        if (event.text==Key.Escape) {root.close();return accept;}
+        return reject;
+    }
+    Rectangle {
+        background:Theme.surface;border-radius:12px;
+        VerticalBox {
+            padding:24px;spacing:12px;
+            Text {text:"Paper Inbox";font-size:24px;font-weight:700;color:Theme.text-primary;}
+            Text {text:"ローカルで管理する文献ライブラリ";wrap:word-wrap;}
+            Text {text:"独自コード: MIT OR Apache-2.0\nCopyright © 2026 Paper Inbox contributors";wrap:word-wrap;font-size:13px;}
+            AboutSlint {height:110px;}
+            AppButton {kind:"outline";text:"閉じる";clicked=>{root.close();}}
+        }
+    }
+}

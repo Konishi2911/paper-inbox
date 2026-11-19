@@ -30,6 +30,22 @@ impl Config {
         }
         Ok(Self { database })
     }
+    /// Folder of the attachment files, next to the database file and named after it
+    /// (`library.sqlite` -> `library-files`). Libraries that share a folder therefore never
+    /// share files, so cleaning up one library cannot delete the PDFs of another.
+    pub fn files_dir(&self) -> PathBuf {
+        let stem = self
+            .database
+            .file_stem()
+            .filter(|s| !s.is_empty())
+            .map_or_else(|| OsString::from("library"), |s| s.to_os_string());
+        let mut name = stem;
+        name.push("-files");
+        self.database
+            .parent()
+            .unwrap_or(std::path::Path::new(""))
+            .join(name)
+    }
     pub fn prepare(&self) -> Result<(), String> {
         if let Some(parent) = self.database.parent().filter(|p| !p.as_os_str().is_empty()) {
             std::fs::create_dir_all(parent).map_err(|e| {
@@ -71,6 +87,21 @@ mod tests {
         assert!(Config::from_args(["--database".into()], |_| None).is_err());
         assert!(Config::from_args(["--unknown".into()], |_| None).is_err());
         assert!(Config::from_args(["--database".into(), "".into()], |_| None).is_err());
+    }
+    #[test]
+    fn attachment_folder_follows_the_database_name() {
+        let files = |db: &str| {
+            Config::from_args(["--database".into(), db.into()], |_| None)
+                .unwrap()
+                .files_dir()
+        };
+        // The default name keeps the folder that earlier versions used.
+        assert_eq!(
+            files("/d/library.sqlite"),
+            PathBuf::from("/d/library-files")
+        );
+        assert_ne!(files("/d/work.sqlite"), files("/d/personal.sqlite"));
+        assert_eq!(files("/d/work.sqlite"), PathBuf::from("/d/work-files"));
     }
     #[cfg(target_os = "linux")]
     #[test]

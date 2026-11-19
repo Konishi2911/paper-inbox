@@ -1,0 +1,217 @@
+import {
+    VerticalBox,
+    ScrollView
+} from "std-widgets.slint";
+
+import { Theme } from "../theme.slint";
+import { TagRow } from "../types.slint";
+import { AppButton } from "app-button.slint";
+
+export component Sidebar inherits Rectangle {
+    // Input properties
+    in property <bool> collapsed;
+    in property <bool> operable;
+    in property <bool> can-open-about;
+    in property <bool> can-reconnect;
+
+    in property <int> selected-count;
+    in property <string> database-path;
+    in property <[TagRow]> tag-rows;
+    callback tag-toggled(string);
+
+    // Callbacks
+    // A single entry point: the add screen offers identifier lookup first
+    // and manual entry as a fallback.
+    callback add-requested();
+    callback library-requested(bool);
+    callback export-requested();
+    callback cleanup-requested();
+    callback about-requested();
+    callback reconnect-requested();
+
+    // Appearance
+    background: Theme.sidebar;
+
+    VerticalBox {
+        padding: 12px;
+        spacing: 12px;
+
+        AppButton {
+            accessible-label: "文献を追加";
+
+            text: root.collapsed
+                ? "＋"
+                : "＋ 文献を追加";
+
+            primary: true;
+            enabled: root.operable;
+
+            clicked => {
+                root.add-requested();
+            }
+        }
+
+        Rectangle {
+            height: 1px;
+            background: Theme.divider;
+        }
+
+        // Library section
+        Text {
+            text: root.collapsed
+                ? "本"
+                : "ライブラリ";
+
+            color: Theme.text-muted;
+            font-weight: 600;
+        }
+
+        AppButton {
+            accessible-label: "すべての文献";
+            kind: "ghost";
+            align-start: true;
+
+            text: root.collapsed
+                ? "全"
+                : "すべての文献";
+
+            enabled: root.operable;
+
+            clicked => {
+                root.library-requested(false);
+            }
+        }
+
+        AppButton {
+            accessible-label: "削除済み";
+            kind: "ghost";
+            align-start: true;
+
+            text: root.collapsed
+                ? "削"
+                : "削除済み";
+
+            enabled: root.operable;
+
+            clicked => {
+                root.library-requested(true);
+            }
+        }
+
+        Rectangle {
+            height: 1px;
+            background: Theme.divider;
+        }
+
+        // Export section
+        AppButton {
+            accessible-label: "BibTeX 出力";
+            kind: "ghost";
+            align-start: true;
+
+            text: root.collapsed
+                ? "出"
+                : "BibTeX 出力 ("
+                    + root.selected-count
+                    + ")";
+
+            enabled: root.operable;
+
+            clicked => {
+                root.export-requested();
+            }
+        }
+
+        // Files no paper uses any more are deleted only from this explicit screen.
+        AppButton {
+            accessible-label: "未使用PDFの整理";
+            kind: "ghost";
+            align-start: true;
+
+            text: root.collapsed
+                ? "整"
+                : "未使用PDFの整理";
+
+            enabled: root.operable;
+
+            clicked => {
+                root.cleanup-requested();
+            }
+        }
+
+        // Tags: choosing some narrows the list to papers that carry all of them. Tags nobody
+        // carries are hidden unless they are chosen.
+        ScrollView {
+            vertical-stretch: 1;
+            VerticalBox {
+                padding: 0px;
+                spacing: 4px;
+                alignment: start;
+                if !root.collapsed && root.tag-rows.length > 0 : Text {
+                    text: "タグ";
+                    color: Theme.text-muted;
+                    font-weight: 600;
+                }
+                if !root.collapsed : VerticalBox {
+                    padding: 0px;
+                    spacing: 4px;
+                    for tag in root.tag-rows : VerticalBox {
+                        padding: 0px;
+                        if tag.count > 0 || tag.selected : AppButton {
+                            accessible-label: "タグ " + tag.name + (tag.selected ? "の絞り込みを解除" : "で絞り込む");
+                            text: tag.name + " (" + tag.count + ")";
+                            kind: tag.selected ? "tonal" : "ghost";
+                            align-start: true;
+                            enabled: root.operable;
+                            clicked => {
+                                root.tag-toggled(tag.id);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Database information
+        if !root.collapsed : Text {
+            text: root.database-path;
+            wrap: word-wrap;
+            font-size: 11px;
+            color: Theme.text-secondary;
+        }
+
+        // Application information
+        AppButton {
+            accessible-label: "このアプリについて";
+            kind: "ghost";
+            align-start: true;
+
+            text: root.collapsed
+                ? "i"
+                : "このアプリについて";
+
+            enabled: root.can-open-about;
+
+            clicked => {
+                root.about-requested();
+            }
+        }
+
+        // Reconnect
+        AppButton {
+            accessible-label: "保存先に再接続";
+            kind: "ghost";
+            align-start: true;
+
+            text: root.collapsed
+                ? "↻"
+                : "保存先に再接続";
+
+            enabled: root.can-reconnect;
+
+            clicked => {
+                root.reconnect-requested();
+            }
+        }
+    }
+}

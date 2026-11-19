@@ -1,0 +1,54 @@
+import { Palette } from "std-widgets.slint";
+
+// Every color has a light and a dark value; the dark one is chosen when the system (or the
+// platform's window theme) reports a dark color scheme, so views never branch on it themselves.
+export global Theme {
+    out property <bool> dark: Palette.color-scheme == ColorScheme.dark;
+
+    // Backgrounds
+    out property <color> background: root.dark ? #14181f : #f4f6fa;
+    out property <color> sidebar: root.dark ? #1a2029 : #eaf0f8;
+    out property <color> list-background: root.dark ? #181d25 : #f8faff;
+    out property <color> surface: root.dark ? #1f252f : #ffffff;
+
+    // Text colors
+    out property <color> text-primary: root.dark ? #e4e9f2 : #20314f;
+    out property <color> text-secondary: root.dark ? #9aa7bb : #66758b;
+    out property <color> text-muted: root.dark ? #8f9db3 : #536783;
+
+    // Borders
+    out property <color> border: root.dark ? #333c4a : #e1e7ef;
+    out property <color> divider: root.dark ? #303948 : #d6dfed;
+
+    // Selection
+    out property <color> selection: root.dark ? #25344f : #e6efff;
+    out property <color> selection-border: root.dark ? #5b84d0 : #6e95da;
+    out property <color> hover: root.dark ? #262e3a : #f0f4fa;
+
+    // Warning
+    out property <color> warning: root.dark ? #e8a95c : #945616;
+
+    // Metadata comparison: labels accompany every color cue.
+    out property <color> diff-current: root.dark ? #232a35 : #f3f5f8;
+    out property <color> diff-proposed: root.dark ? #1f3128 : #eef6f0;
+    out property <color> diff-conflict: root.dark ? #3a2e1c : #fff4e4;
+
+    // Buttons: filled accent, soft fill, outline, danger. Hover and press are a translucent
+    // wash of `wash` over the button, so they work on any background.
+    out property <color> accent: root.dark ? #6f95d8 : #3d5a80;
+    out property <color> on-accent: #ffffff;
+    out property <color> tonal: root.dark ? #2a3342 : #e6ecf5;
+    out property <color> outline: root.dark ? #3b4658 : #cdd6e4;
+    out property <color> danger-fill: root.dark ? #4a2a2a : #fbe9e7;
+    out property <color> danger-text: root.dark ? #ff9d94 : #b3261e;
+    out property <color> wash: root.dark ? #ffffff : #20314f;
+    out property <color> chip-on: root.dark ? #6f95d8.with-alpha(0.28) : #3d5a80.with-alpha(0.14);
+    out property <color> chip-on-text: root.dark ? #b9ceff : #2f4a6d;
+
+    // Modal overlay
+    out property <color> overlay: root.dark ? #000000aa : #00000066;
+
+    // Splitter
+    out property <color> splitter: root.dark ? #303948 : #d6dfed;
+    out property <color> splitter-active: root.dark ? #5b84d0 : #6e95da;
+}

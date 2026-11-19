@@ -1,0 +1,78 @@
+import { Theme } from "../theme.slint";
+
+export component Splitter inherits Rectangle {
+    // Input properties
+    in property <length> target-width;
+    in property <bool> operable: true;
+
+    // Internal state
+    private property <length> drag-start-x;
+    private property <length> drag-start-width;
+
+    // Callback
+    callback resize-requested(length);
+
+    // Layout
+    width: 8px;
+    horizontal-stretch: 0;
+    vertical-stretch: 1;
+
+    background: transparent;
+
+    // Visible separator
+    Rectangle {
+        width: splitter-touch.pressed
+            || splitter-touch.has-hover
+            ? 3px
+            : 1px;
+
+        height: parent.height;
+
+        x: (parent.width - self.width) / 2;
+
+        background: root.operable
+            && (splitter-touch.pressed
+                || splitter-touch.has-hover)
+            ? Theme.splitter-active
+            : Theme.splitter;
+
+        animate background {
+            duration: 100ms;
+            easing: ease-out;
+        }
+    }
+
+    // Mouse interaction
+    splitter-touch := TouchArea {
+        enabled: root.operable;
+
+        width: parent.width;
+        height: parent.height;
+
+        mouse-cursor: col-resize;
+
+        pointer-event(event) => {
+            if (event.kind == PointerEventKind.down
+                && event.button == PointerEventButton.left) {
+
+                root.drag-start-x =
+                    self.absolute-position.x
+                    + self.mouse-x;
+
+                root.drag-start-width =
+                    root.target-width;
+            }
+        }
+
+        moved => {
+            if (self.pressed) {
+                root.resize-requested(
+                    root.drag-start-width
+                    + self.absolute-position.x
+                    + self.mouse-x
+                    - root.drag-start-x
+                );
+            }
+        }
+    }
+}

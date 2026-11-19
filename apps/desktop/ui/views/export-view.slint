@@ -1,0 +1,32 @@
+import { VerticalBox, HorizontalBox, LineEdit, CheckBox } from "std-widgets.slint";
+import { AppButton } from "../components/app-button.slint";
+
+
+export component ExportView inherits VerticalBox {
+    in-out property <bool> export-abstract;
+    in-out property <bool> export-doi;
+    in-out property <bool> export-keywords;
+    in-out property <string> export-path;
+    in-out property <bool> export-url;
+    in property <bool> operable;
+    callback prepare-export();
+    callback return-requested();
+    in property <int> selected-count;
+    spacing:12px;
+    Text {text:"BibTeX 出力";font-size:20px;font-weight:600;}
+    Text {text:"中央の一覧で出力する文献にチェックを入れてください。保存済みの内容を出力します。";wrap:word-wrap;}
+    Text {text:"選択中: "+root.selected-count+"件";}
+    Text {text:"保存先 (.bib)";}
+    LineEdit {enabled:root.operable;text<=>root.export-path;placeholder-text:"出力先 /home/…/references.bib";}
+    HorizontalBox {
+        CheckBox {enabled:root.operable;text:"DOI";checked<=>root.export-doi;}
+        CheckBox {enabled:root.operable;text:"URL";checked<=>root.export-url;}
+    }
+    HorizontalBox {
+        CheckBox {enabled:root.operable;text:"概要";checked<=>root.export-abstract;}
+        CheckBox {enabled:root.operable;text:"キーワード";checked<=>root.export-keywords;}
+    }
+    AppButton {enabled:root.operable && root.selected-count>0;text:"出力内容を確認";clicked=>{root.prepare-export();}}
+    AppButton {kind:"outline";text:"詳細・入力へ戻る";enabled:root.operable;clicked=>{root.return-requested();}}
+    Rectangle {background:transparent;vertical-stretch:1;}
+}

@@ -1,0 +1,86 @@
+import { VerticalBox, HorizontalBox, LineEdit, TextEdit, ComboBox, CheckBox, ScrollView } from "std-widgets.slint";
+import { Theme } from "../theme.slint";
+import { AppButton } from "../components/app-button.slint";
+
+
+export component CandidateEditor inherits VerticalBox {
+    in property <bool> about-open;
+    in property <bool> busy;
+    callback cancel-candidate();
+    in-out property <string> candidate-abstract;
+    in-out property <string> candidate-arxiv;
+    in-out property <string> candidate-container;
+    in-out property <bool> candidate-dirty;
+    in-out property <string> candidate-doi;
+    in-out property <int> candidate-kind;
+    in-out property <string> candidate-publisher;
+    in-out property <string> candidate-record;
+    in-out property <int> candidate-source;
+    in-out property <string> candidate-source-name;
+    in-out property <string> candidate-title;
+    in-out property <string> candidate-updated;
+    in-out property <bool> candidate-use-abstract;
+    in-out property <bool> candidate-use-container;
+    in-out property <bool> candidate-use-publisher;
+    in-out property <bool> candidate-use-title;
+    in-out property <bool> candidate-use-year;
+    in-out property <string> candidate-year;
+    in property <bool> confirm-discard;
+    in property <bool> metadata-operable;
+    callback submit-candidate();
+    // Width of the check column so every field starts at the same x.
+    private property <length> check-width: 112px;
+    Text {text:"候補を手入力";font-size:18px;font-weight:600;}
+    Text {text:"チェックした項目だけを提案します（空欄なら削除の提案）。";wrap:word-wrap;color:Theme.text-secondary;}
+    ScrollView {
+        vertical-stretch:1;
+        content-width: self.visible-width;
+        VerticalBox {
+            spacing:8px;alignment:start;
+            HorizontalLayout {
+                spacing:6px;
+                ComboBox {accessible-label:"情報源";enabled:root.metadata-operable;model:["Crossref","出版社","OpenAlex","arXiv","PDF","その他"];current-index<=>root.candidate-source;selected(v)=>{root.candidate-dirty=true;}}
+                ComboBox {accessible-label:"版の種類";enabled:root.metadata-operable;model:["版: 不明","出版社版","著者最終稿","投稿稿","プレプリント"];current-index<=>root.candidate-kind;selected(v)=>{root.candidate-dirty=true;}}
+            }
+            if root.candidate-source==5 : LineEdit {enabled:root.metadata-operable;text<=>root.candidate-source-name;placeholder-text:"情報源名";edited(v)=>{root.candidate-dirty=true;}}
+            HorizontalLayout {
+                spacing:6px;
+                LineEdit {enabled:root.metadata-operable;text<=>root.candidate-doi;placeholder-text:"候補のDOI";edited(v)=>{root.candidate-dirty=true;}}
+                LineEdit {enabled:root.metadata-operable;text<=>root.candidate-arxiv;placeholder-text:"候補のarXiv ID";edited(v)=>{root.candidate-dirty=true;}}
+            }
+            HorizontalLayout {
+                spacing:6px;
+                CheckBox {width:root.check-width;accessible-label:"タイトルを提示する";enabled:root.metadata-operable;text:"タイトル";checked<=>root.candidate-use-title;toggled=>{root.candidate-dirty=true;}}
+                LineEdit {accessible-label:"候補タイトル";enabled:root.metadata-operable && root.candidate-use-title;text<=>root.candidate-title;edited(v)=>{root.candidate-dirty=true;}}
+            }
+            HorizontalLayout {
+                spacing:6px;
+                CheckBox {width:root.check-width;accessible-label:"出版年を提示する";enabled:root.metadata-operable;text:"出版年";checked<=>root.candidate-use-year;toggled=>{root.candidate-dirty=true;}}
+                LineEdit {accessible-label:"候補の出版年";enabled:root.metadata-operable && root.candidate-use-year;text<=>root.candidate-year;edited(v)=>{root.candidate-dirty=true;}}
+            }
+            HorizontalLayout {
+                spacing:6px;
+                CheckBox {width:root.check-width;accessible-label:"掲載先を提示する";enabled:root.metadata-operable;text:"掲載先";checked<=>root.candidate-use-container;toggled=>{root.candidate-dirty=true;}}
+                LineEdit {accessible-label:"候補の掲載先";enabled:root.metadata-operable && root.candidate-use-container;text<=>root.candidate-container;edited(v)=>{root.candidate-dirty=true;}}
+            }
+            HorizontalLayout {
+                spacing:6px;
+                CheckBox {width:root.check-width;accessible-label:"出版社を提示する";enabled:root.metadata-operable;text:"出版社";checked<=>root.candidate-use-publisher;toggled=>{root.candidate-dirty=true;}}
+                LineEdit {accessible-label:"候補の出版社";enabled:root.metadata-operable && root.candidate-use-publisher;text<=>root.candidate-publisher;edited(v)=>{root.candidate-dirty=true;}}
+            }
+            CheckBox {accessible-label:"概要を提示する";enabled:root.metadata-operable;text:"概要";checked<=>root.candidate-use-abstract;toggled=>{root.candidate-dirty=true;}}
+            if root.candidate-use-abstract : TextEdit {accessible-label:"候補の概要";enabled:root.metadata-operable;text<=>root.candidate-abstract;min-height:100px;edited=>{root.candidate-dirty=true;}}
+            HorizontalLayout {
+                spacing:6px;
+                LineEdit {enabled:root.metadata-operable;text<=>root.candidate-record;placeholder-text:"記録ID（任意）";edited(v)=>{root.candidate-dirty=true;}}
+                LineEdit {enabled:root.metadata-operable;text<=>root.candidate-updated;placeholder-text:"情報源の更新日時（任意、RFC 3339）";edited(v)=>{root.candidate-dirty=true;}}
+            }
+        }
+    }
+    HorizontalLayout {
+        spacing:6px;
+        AppButton {text:"候補を登録";primary:true;enabled:root.metadata-operable;clicked=>{root.submit-candidate();}}
+        AppButton {kind:"outline";text:"入力を破棄して戻る";enabled:!root.busy && !root.about-open && !root.confirm-discard;clicked=>{root.cancel-candidate();}}
+        Rectangle {horizontal-stretch:1;}
+    }
+}

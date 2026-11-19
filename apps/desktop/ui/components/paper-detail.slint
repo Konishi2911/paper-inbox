@@ -1,0 +1,368 @@
+import {
+    VerticalBox,
+    HorizontalBox,
+    ComboBox,
+    LineEdit,
+    TextEdit,
+    ScrollView
+} from "std-widgets.slint";
+
+import { Theme } from "../theme.slint";
+import { LinkTarget, AttachmentRow, TagRow } from "../types.slint";
+import { AttachmentList } from "attachment-list.slint";
+import { DetailActions } from "detail-actions.slint";
+import { TagEditor } from "tag-editor.slint";
+import { AppButton } from "app-button.slint";
+
+// Read-only view of the saved paper. Personal values (reading status,
+// favorite, archive, notes) are changed in place; the parent saves them.
+export component PaperDetail inherits Rectangle {
+    in property <string> title;
+    in property <string> authors;
+    in property <string> authors-short;
+    in property <string> publication-summary;
+    in property <string> doi;
+    in property <string> arxiv-id;
+    in property <string> url;
+    in property <string> citation-key;
+    in property <string> bibtex;
+    in property <string> abstract-text;
+    in property <string> abstract-preview;
+    in property <bool> abstract-long;
+    in property <string> keywords-line;
+    in-out property <string> notes;
+    in-out property <bool> notes-editing;
+    in-out property <bool> dirty;
+    in property <bool> favorite: false;
+    in property <bool> archived: false;
+    in-out property <int> reading-status;
+
+    in property <bool> operable: true;
+    in property <bool> editable: true;
+    in property <string> identifier-warning;
+    in property <[AttachmentRow]> attachment-rows;
+    // Id of the PDF the main button opens; empty when none can be opened.
+    in property <string> primary-attachment;
+    // DOI, arXiv ID and URL on one muted line, selectable for manual copying.
+    in property <string> identifiers-line;
+    in property <[TagRow]> tag-rows;
+    in property <[TagRow]> tag-suggestions;
+
+    callback attach-requested();
+    callback tag-add-requested(string);
+    callback tag-remove-requested(string);
+    callback tag-input-changed(string);
+    callback attachment-open-requested(string);
+    callback attachment-detach-requested(string);
+    callback edit-requested();
+    callback metadata-requested();
+    callback reading-status-selected(int);
+    callback favorite-toggled();
+    callback archive-toggled();
+    callback notes-save-requested();
+    callback notes-cancel-requested();
+    callback link-requested(LinkTarget);
+    callback copied(string);
+
+    // Quick actions save immediately, so they wait while a note draft exists.
+    property <bool> quick-operable: root.editable && !root.dirty;
+    property <bool> authors-expanded: false;
+    property <bool> abstract-expanded: false;
+
+    background: Theme.surface;
+
+    VerticalBox {
+        padding: 20px;
+        spacing: 12px;
+
+        // Toolbar: frequent personal actions on the left, editing on the right.
+        HorizontalBox {
+            padding: 0px;
+            spacing: 6px;
+            ComboBox {
+                accessible-label: "読書状態";
+                width: 92px;
+                enabled: root.quick-operable;
+                model: ["未読", "読書中", "既読"];
+                current-index <=> root.reading-status;
+                selected(value) => {
+                    root.reading-status-selected(self.current-index);
+                }
+            }
+            AppButton {
+                accessible-label: root.favorite ? "お気に入りから外す" : "お気に入りに追加";
+                text: root.favorite ? "★" : "☆";
+                kind: "ghost";
+                width: 36px;
+                enabled: root.quick-operable;
+                clicked => {
+                    root.favorite-toggled();
+                }
+            }
+            Rectangle {
+                horizontal-stretch: 1;
+            }
+            AppButton {
+                text: root.archived ? "アーカイブ解除" : "アーカイブ";
+                kind: "ghost";
+                enabled: root.quick-operable;
+                clicked => {
+                    root.archive-toggled();
+                }
+            }
+            AppButton {
+                text: "書誌情報・版";
+                kind: "ghost";
+                enabled: root.operable;
+                clicked => {
+                    root.metadata-requested();
+                }
+            }
+            AppButton {
+                text: "編集";
+                kind: "outline";
+                enabled: root.editable;
+                clicked => {
+                    root.edit-requested();
+                }
+            }
+        }
+
+        Rectangle {
+            height: 1px;
+            background: Theme.divider;
+        }
+
+        ScrollView {
+            // Long unbreakable words (URLs, IDs) must not widen the content past the pane.
+            content-width: self.visible-width;
+            VerticalBox {
+                padding: 0px;
+                spacing: 10px;
+                alignment: start;
+
+                if root.archived : Text {
+                    text: "アーカイブ済み（通常の一覧には表示されません）";
+                    font-size: 12px;
+                    color: Theme.text-muted;
+                }
+
+                Text {
+                    text: root.title == "" ? "（タイトルなし）" : root.title;
+                    font-size: 22px;
+                    font-weight: 700;
+                    color: Theme.text-primary;
+                    wrap: word-wrap;
+                }
+
+                if root.authors != "" : HorizontalBox {
+                    padding: 0px;
+                    spacing: 8px;
+                    Text {
+                        text: root.authors-expanded ? root.authors : root.authors-short;
+                        horizontal-stretch: 1;
+                        font-size: 15px;
+                        color: Theme.text-primary;
+                        wrap: word-wrap;
+                    }
+                    if root.authors-short != root.authors : AppButton {
+                        text: root.authors-expanded ? "折りたたむ" : "全員を表示";
+                        kind: "ghost";
+                        clicked => {
+                            root.authors-expanded = !root.authors-expanded;
+                        }
+                    }
+                }
+
+                if root.publication-summary != "" : Text {
+                    text: root.publication-summary;
+                    color: Theme.text-secondary;
+                    wrap: word-wrap;
+                }
+
+                // Reading the paper, opening its page and copying what is cited most are one row.
+                if root.identifiers-line != "" : TextInput {
+                    accessible-label: "識別子";
+                    read-only: true;
+                    wrap: word-wrap;
+                    font-size: 12px;
+                    color: Theme.text-secondary;
+                    text: root.identifiers-line;
+                }
+                if root.identifier-warning != "" : Text {
+                    text: root.identifier-warning;
+                    color: Theme.warning;
+                    wrap: word-wrap;
+                }
+                DetailActions {
+                    wide: root.width >= 560px;
+                    citation-key: root.citation-key;
+                    bibtex: root.bibtex;
+                    doi: root.doi;
+                    arxiv-id: root.arxiv-id;
+                    url: root.url;
+                    has-pdf: root.attachment-rows.length > 0;
+                    pdf-openable: root.primary-attachment != "";
+                    open-operable: root.operable;
+                    attach-operable: root.quick-operable;
+                    open-pdf => {
+                        root.attachment-open-requested(root.primary-attachment);
+                    }
+                    attach-requested => {
+                        root.attach-requested();
+                    }
+                    link-requested(target) => {
+                        root.link-requested(target);
+                    }
+                    copied(what) => {
+                        root.copied(what);
+                    }
+                }
+
+                Rectangle {
+                    height: 1px;
+                    background: Theme.divider;
+                }
+
+                TagEditor {
+                    tags: root.tag-rows;
+                    suggestions: root.tag-suggestions;
+                    operable: root.quick-operable;
+                    add-requested(name) => {
+                        root.tag-add-requested(name);
+                    }
+                    remove-requested(id) => {
+                        root.tag-remove-requested(id);
+                    }
+                    input-changed(text) => {
+                        root.tag-input-changed(text);
+                    }
+                }
+                Rectangle {
+                    height: 1px;
+                    background: Theme.divider;
+                }
+
+                // Management of the attached files; opening the main one is in the row above.
+                if root.attachment-rows.length > 0 : AttachmentList {
+                    rows: root.attachment-rows;
+                    operable: root.quick-operable;
+                    attach-requested => {
+                        root.attach-requested();
+                    }
+                    open-requested(id) => {
+                        root.attachment-open-requested(id);
+                    }
+                    detach-requested(id) => {
+                        root.attachment-detach-requested(id);
+                    }
+                }
+                if root.attachment-rows.length > 0 : Rectangle {
+                    height: 1px;
+                    background: Theme.divider;
+                }
+
+                if root.abstract-text != "" : Rectangle {
+                    height: 1px;
+                    background: Theme.divider;
+                }
+                if root.abstract-text != "" : Text {
+                    text: "アブストラクト";
+                    font-size: 16px;
+                    font-weight: 600;
+                    color: Theme.text-primary;
+                }
+                if root.abstract-text != "" : Text {
+                    text: root.abstract-expanded ? root.abstract-text : root.abstract-preview;
+                    color: Theme.text-primary;
+                    wrap: word-wrap;
+                }
+                if root.abstract-long : HorizontalBox {
+                    padding: 0px;
+                    AppButton {
+                        text: root.abstract-expanded ? "折りたたむ" : "続きを表示";
+                        kind: "ghost";
+                        clicked => {
+                            root.abstract-expanded = !root.abstract-expanded;
+                        }
+                    }
+                    Rectangle {
+                        horizontal-stretch: 1;
+                    }
+                }
+                if root.keywords-line != "" : Text {
+                    text: "キーワード: " + root.keywords-line;
+                    color: Theme.text-secondary;
+                    wrap: word-wrap;
+                }
+
+                Rectangle {
+                    height: 1px;
+                    background: Theme.divider;
+                }
+
+                // Notes are personal metadata and are edited in place.
+                HorizontalBox {
+                    padding: 0px;
+                    spacing: 8px;
+                    Text {
+                        text: "メモ";
+                        font-size: 16px;
+                        font-weight: 600;
+                        vertical-alignment: center;
+                        color: Theme.text-primary;
+                    }
+                    if root.dirty && root.notes-editing : Text {
+                        text: "未保存";
+                        vertical-alignment: center;
+                        color: Theme.warning;
+                    }
+                    Rectangle {
+                        horizontal-stretch: 1;
+                    }
+                    if !root.notes-editing : AppButton {
+                        text: root.notes == "" ? "メモを書く" : "メモを編集";
+                        kind: "ghost";
+                        enabled: root.editable;
+                        clicked => {
+                            root.notes-editing = true;
+                        }
+                    }
+                    if root.notes-editing : AppButton {
+                        text: "メモを保存";
+                        primary: true;
+                        enabled: root.editable && root.dirty;
+                        clicked => {
+                            root.notes-save-requested();
+                        }
+                    }
+                    if root.notes-editing : AppButton {
+                        text: "取消";
+                        kind: "outline";
+                        enabled: root.operable;
+                        clicked => {
+                            root.notes-cancel-requested();
+                        }
+                    }
+                }
+                if root.notes-editing : TextEdit {
+                    accessible-label: "メモの入力";
+                    enabled: root.editable;
+                    text <=> root.notes;
+                    min-height: 120px;
+                    init => {
+                        self.focus();
+                    }
+                    edited => {
+                        root.dirty = true;
+                    }
+                }
+                if !root.notes-editing : Text {
+                    text: root.notes == "" ? "メモはありません。" : root.notes;
+                    color: root.notes == "" ? Theme.text-secondary : Theme.text-primary;
+                    wrap: word-wrap;
+                }
+            }
+        }
+    }
+}
