@@ -78,6 +78,8 @@ export component MainWindow inherits Window {
     callback suggest-key();
 
     in-out property <bool> busy:true;
+    // Requests sent to the worker whose reply has not arrived yet; `busy` stays on until all are back.
+    in-out property <int> pending-requests:0;
     in-out property <bool> ready:false;
     in-out property <string> status:"保存先を開いています…";
     in-out property <string> database-path;

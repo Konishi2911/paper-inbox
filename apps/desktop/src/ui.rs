@@ -1733,8 +1733,11 @@ fn dispatch(ui: &MainWindow, sender: &Sender<Request>, request: Request) {
     ui.set_busy(true);
     ui.set_status("処理しています…".into());
     if sender.send(request).is_err() {
-        ui.set_busy(false);
+        ui.set_busy(ui.get_pending_requests() > 0);
         ui.set_status("処理を続けられません。アプリを再起動してください。".into());
+    } else {
+        // Every request is answered by exactly one reply, which gives the count back.
+        ui.set_pending_requests(ui.get_pending_requests() + 1);
     }
 }
 pub fn form_from_ui(ui: &MainWindow) -> PaperForm {
@@ -2096,7 +2099,11 @@ fn apply_reply(ui: &MainWindow, reply: Reply) {
         ui.set_detail_view(view);
     }
     ui.set_status(reply.message.into());
-    ui.set_busy(false);
+    // Stay busy while another request is still being handled, so a reply that arrives early
+    // (for example a list refresh from typing in the search box) does not unlock the screen.
+    let pending = (ui.get_pending_requests() - 1).max(0);
+    ui.set_pending_requests(pending);
+    ui.set_busy(pending > 0);
 }
 
 fn warning_messages(prepared: &PreparedExport) -> String {
@@ -2197,12 +2204,34 @@ fn pdf_lookup_reply(mut reply: Reply, path: &std::path::Path, fill: bool) -> Rep
 
 #[cfg(test)]
 mod reply_contract {
-    use super::{EditorView, Reply, apply_reply};
+    use super::{EditorView, Reply, Request, apply_reply, dispatch};
     use crate::{
         DetailView, MainWindow,
         application::{AuthorInput, PaperForm},
     };
     use paper_core::model::PaperId;
+
+    /// A reply for one request must not clear `busy` while another request is still being
+    /// handled; otherwise the screen accepts input (and tests move on) before a save finishes.
+    #[test]
+    fn busy_lasts_until_every_pending_request_has_replied() {
+        i_slint_backend_testing::init_no_event_loop();
+        let w = MainWindow::new().unwrap();
+        let (sender, _receiver) = std::sync::mpsc::channel();
+        dispatch(&w, &sender, Request::Shutdown);
+        dispatch(&w, &sender, Request::Shutdown);
+        assert!(w.get_busy());
+        assert_eq!(w.get_pending_requests(), 2);
+        apply_reply(&w, Reply::default());
+        assert!(w.get_busy(), "one request is still pending");
+        apply_reply(&w, Reply::default());
+        assert!(!w.get_busy());
+        assert_eq!(w.get_pending_requests(), 0);
+        // A reply without a matching request (direct use in tests) never goes below zero.
+        apply_reply(&w, Reply::default());
+        assert_eq!(w.get_pending_requests(), 0);
+        assert!(!w.get_busy());
+    }
 
     #[test]
     fn only_a_complete_reload_leaves_existing_edit_mode() {
