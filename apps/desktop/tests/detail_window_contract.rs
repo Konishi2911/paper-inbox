@@ -31,6 +31,20 @@ fn wait(window: &MainWindow) {
     slint::run_event_loop_until_quit().unwrap();
 }
 
+/// Pasting into the search box starts its 300 ms "search while typing" timer, and clearing the
+/// text from code does not stop it. Without letting it run, the timer fires later inside some
+/// unrelated click, whose search request then disables the button being clicked.
+fn settle_search(window: &MainWindow) {
+    let timer = slint::Timer::default();
+    timer.start(
+        slint::TimerMode::SingleShot,
+        Duration::from_millis(400),
+        || slint::quit_event_loop().unwrap(),
+    );
+    slint::run_event_loop_until_quit().unwrap();
+    wait(window);
+}
+
 fn element(window: &MainWindow, label: &str) -> ElementHandle {
     let elements: Vec<_> = ElementHandle::find_by_accessible_label(window, label).collect();
     assert_eq!(elements.len(), 1, "unique visible control: {label}");
@@ -199,6 +213,7 @@ fn detail_quick_actions_copy_notes_and_form_shortcuts_keep_their_contracts() {
     assert_eq!(w.get_search_text(), "Smith2024");
     w.set_search_text("".into());
     assert_eq!(w.get_status(), "引用キーをコピーしました。");
+    settle_search(&w);
 
     // Less used copies are in the menu; they say what was copied and use the same clipboard.
     activate(&w, "その他の操作");
@@ -208,6 +223,7 @@ fn detail_quick_actions_copy_notes_and_form_shortcuts_keep_their_contracts() {
     control_chord(&w, "v");
     assert_eq!(w.get_search_text(), "10.1000/a");
     w.set_search_text("".into());
+    settle_search(&w);
 
     // Quick actions save one value and reload the detail.
     click(&w, "お気に入りに追加");
