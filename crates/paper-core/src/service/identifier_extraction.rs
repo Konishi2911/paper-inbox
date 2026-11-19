@@ -207,6 +207,15 @@ fn find_arxiv_ids(text: &str) -> Vec<(PaperIdentifier, bool)> {
             .map(char::from)
             .collect();
         let token = token.trim_end_matches(['.', '-', '/']);
+        // A link to the PDF ends in ".pdf", which is not part of the identifier.
+        let token = match token.len().checked_sub(4) {
+            Some(cut)
+                if token.is_char_boundary(cut) && token[cut..].eq_ignore_ascii_case(".pdf") =>
+            {
+                token[..cut].trim_end_matches(['.', '-', '/'])
+            }
+            _ => token,
+        };
         // The stamp is followed by a category such as "[cs.LG]"; the pattern check below keeps
         // only a well-formed identifier, so a year or page number after the word is not taken.
         if looks_like_arxiv(token)
@@ -329,6 +338,20 @@ mod tests {
         // An old-style archive may carry a subject class with a period: math.GT/0309136.
         let found = find_identifiers(&[], &pages(&["arXiv:math.GT/0309136 [math.GT] 8 Sep 2003"]));
         assert_eq!(ids(&found), ["arxiv:math.GT/0309136"]);
+        // A PDF link ends in ".pdf", which is not part of the identifier.
+        for (text, expected) in [
+            (
+                "https://arxiv.org/pdf/hep-th/9901001v12.pdf",
+                "arxiv:hep-th/9901001v12",
+            ),
+            (
+                "https://arxiv.org/pdf/2401.01234v2.PDF.",
+                "arxiv:2401.01234v2",
+            ),
+        ] {
+            let found = find_identifiers(&[], &pages(&[text]));
+            assert_eq!(ids(&found), [expected], "{text}");
+        }
         let found = find_identifiers(&[], &pages(&["Page 2401.01234 of 5 and arXiv 2024"]));
         assert!(found.is_empty(), "{found:?}");
     }
