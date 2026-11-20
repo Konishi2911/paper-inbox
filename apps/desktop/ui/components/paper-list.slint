@@ -74,7 +74,7 @@ export component PaperList inherits Rectangle {
             if root.bulk && !root.show-deleted : AppButton {small:true;enabled:root.operable;text:"BibTeX";clicked=>{root.bulk-bibtex();}}
             if root.bulk && !root.show-deleted : AppButton {small:true;kind:"danger";enabled:root.operable;text:"削除";clicked=>{root.confirm-bulk-delete = true;}}
             if root.bulk && root.show-deleted : AppButton {small:true;enabled:root.operable;text:"復元";clicked=>{root.bulk-delete(false);}}
-            if root.bulk : AppButton {small:true;kind:"ghost";accessible-label:"選択を解除";enabled:root.operable;text:"✕";clicked=>{root.clear-selection();}}
+            if root.bulk : AppButton {small:true;kind:"ghost";accessible-label:"選択を解除";enabled:root.operable;text:"解除";clicked=>{root.clear-selection();}}
         }
         HorizontalBox {
             // Five buttons share the row of the search box; they need the tighter spacing to fit
