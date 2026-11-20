@@ -252,7 +252,7 @@ fn bulk_changes_run_from_the_bar_and_delete_is_confirmed() {
 fn the_bar_fits_the_narrowest_list_and_leads_to_bibtex_output() {
     let (_sandbox, w, _controller) = open_window("bar", &["Alpha2026", "Bravo2026", "Charlie2026"]);
     let order = titles(&w);
-    w.set_paper_list_width(260.);
+    w.set_paper_list_width(320.);
     open(&w, &order[0]);
     click(&w, &order[1], true, false);
     // The list keeps 16px of padding on both sides; the bar must stay within it.
@@ -282,6 +282,14 @@ fn the_bar_fits_the_narrowest_list_and_leads_to_bibtex_output() {
             x + control.size().width
         );
     }
+
+    // The count is not squeezed out at the narrowest width.
+    let count = element(&w, "2件選択");
+    assert!(
+        count.size().width >= 40.,
+        "count label keeps room: {}",
+        count.size().width
+    );
 
     // The bar's BibTeX button is the way to the export settings, for exactly this selection.
     activate(&w, "BibTeX出力");
