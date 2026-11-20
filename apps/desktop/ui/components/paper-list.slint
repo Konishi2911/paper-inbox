@@ -71,10 +71,10 @@ export component PaperList inherits Rectangle {
             if !root.bulk : Rectangle {horizontal-stretch:1;}
             if !root.bulk : ComboBox {accessible-label:"並び順";width:150px;enabled:root.operable;model:["追加日の新しい順","タイトル順","出版年の新しい順"];current-index<=>root.sort-index;selected(index)=>{root.limit=50;root.search();}}
             if root.bulk : Text {text:root.selected-count+"件選択";font-weight:600;color:Theme.text-primary;vertical-alignment:center;horizontal-stretch:1;min-width:0px;overflow:elide;}
-            if root.bulk && !root.show-deleted : AppButton {small:true;enabled:root.operable;text:"BibTeX";clicked=>{root.bulk-bibtex();}}
+            if root.bulk && !root.show-deleted : AppButton {small:true;enabled:root.operable;text:"BibTeX出力";clicked=>{root.bulk-bibtex();}}
             if root.bulk && !root.show-deleted : AppButton {small:true;kind:"danger";enabled:root.operable;text:"削除";clicked=>{root.confirm-bulk-delete = true;}}
             if root.bulk && root.show-deleted : AppButton {small:true;enabled:root.operable;text:"復元";clicked=>{root.bulk-delete(false);}}
-            if root.bulk : AppButton {small:true;kind:"ghost";accessible-label:"選択を解除";enabled:root.operable;text:"解除";clicked=>{root.clear-selection();}}
+            if root.bulk : AppButton {small:true;kind:"ghost";accessible-label:"選択を解除";enabled:root.operable;icon:@image-url("../assets/icon/close.svg");clicked=>{root.clear-selection();}}
         }
         HorizontalBox {
             // Five buttons share the row of the search box; they need the tighter spacing to fit

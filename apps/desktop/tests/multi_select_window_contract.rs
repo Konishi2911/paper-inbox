@@ -262,7 +262,7 @@ fn the_bar_fits_the_narrowest_list_and_leads_to_bibtex_output() {
     let left = list.absolute_position().x + 16.;
     let right = list.absolute_position().x + list.size().width - 16.;
     for label in [
-        "BibTeX",
+        "BibTeX出力",
         "削除",
         "選択を解除",
         "選択した文献を未読にする",
@@ -284,7 +284,7 @@ fn the_bar_fits_the_narrowest_list_and_leads_to_bibtex_output() {
     }
 
     // The bar's BibTeX button is the way to the export settings, for exactly this selection.
-    activate(&w, "BibTeX");
+    activate(&w, "BibTeX出力");
     assert_eq!(w.get_detail_view(), DetailView::ExportSettings);
     assert_eq!(w.get_selected_count(), 2);
     // While the settings are open the selection can still be changed.
