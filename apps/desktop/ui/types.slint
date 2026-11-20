@@ -18,6 +18,9 @@ export enum NavigationAction {
     metadata-review,
     import-paper,
     attachment-cleanup,
+    // Ctrl/Shift click on a row, and Ctrl+A: change the selection of papers.
+    multi-select,
+    select-all,
 }
 
 export struct AuthorRow { kind:int, given:string, name:string, orcid:string }

@@ -14,7 +14,6 @@ export component Sidebar inherits Rectangle {
     in property <bool> can-open-about;
     in property <bool> can-reconnect;
 
-    in property <int> selected-count;
     in property <string> database-path;
     in property <[TagRow]> tag-rows;
     callback tag-toggled(string);
@@ -24,7 +23,6 @@ export component Sidebar inherits Rectangle {
     // and manual entry as a fallback.
     callback add-requested();
     callback library-requested(bool);
-    callback export-requested();
     callback cleanup-requested();
     callback about-requested();
     callback reconnect-requested();
@@ -101,25 +99,6 @@ export component Sidebar inherits Rectangle {
         Rectangle {
             height: 1px;
             background: Theme.divider;
-        }
-
-        // Export section
-        AppButton {
-            accessible-label: "BibTeX 出力";
-            kind: "ghost";
-            align-start: true;
-
-            text: root.collapsed
-                ? "出"
-                : "BibTeX 出力 ("
-                    + root.selected-count
-                    + ")";
-
-            enabled: root.operable;
-
-            clicked => {
-                root.export-requested();
-            }
         }
 
         // Files no paper uses any more are deleted only from this explicit screen.

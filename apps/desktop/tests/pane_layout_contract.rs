@@ -94,16 +94,6 @@ fn splitter_tracks_window_pointer_and_cards_fit_at_narrow_widths() {
                 "all card text must fit"
             );
         }
-        if export {
-            let check = ElementHandle::find_by_accessible_label(&w, "BibTeX 出力に含める")
-                .next()
-                .unwrap();
-            assert!(
-                check.absolute_position().y + check.size().height
-                    <= card.absolute_position().y + card.size().height + 1.,
-                "export checkbox fits its card"
-            );
-        }
     }
     w.set_detail_view(DetailView::PaperDetail);
     w.set_busy(true);

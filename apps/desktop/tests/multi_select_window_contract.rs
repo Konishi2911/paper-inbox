@@ -4,7 +4,7 @@ use paper_core::{
     command::LibraryCommand,
     model::{Bibliography, CitationKey, Paper, PaperId},
 };
-use paper_desktop::{DetailView, MainWindow, config::Config, ui};
+use paper_desktop::{DetailView, MainWindow, NavigationAction, config::Config, ui};
 use paper_storage::SqliteLibrary;
 use slint::{ComponentHandle, Model};
 use std::{
@@ -69,29 +69,12 @@ fn paper(key: &str) -> Paper {
     .unwrap()
 }
 
-/// Titles of the rows that are shown as selected, in list order.
-fn selected_titles(w: &MainWindow) -> Vec<String> {
-    w.get_papers()
-        .iter()
-        .filter(|p| p.selected)
-        .map(|p| p.title.to_string())
-        .collect()
-}
-fn titles(w: &MainWindow) -> Vec<String> {
-    w.get_papers().iter().map(|p| p.title.to_string()).collect()
-}
-/// A click with the given keys held, as the card reports it to the list.
-fn click(w: &MainWindow, title: &str, ctrl: bool, shift: bool) {
-    let id = w.get_papers().iter().find(|p| p.title == title).unwrap().id;
-    w.invoke_row_modified_click(id, ctrl, shift);
-}
-
-fn rows_are_selected_with_ctrl_and_shift_and_changed_together() {
+/// A library of papers with the given citation keys (their titles), and a window on it.
+fn open_window(prefix: &str, keys: &[&str]) -> (Sandbox, MainWindow, ui::Controller) {
     let sandbox =
-        Sandbox(std::env::temp_dir().join(format!("paper-inbox-multi-{}", PaperId::new())));
+        Sandbox(std::env::temp_dir().join(format!("paper-inbox-{prefix}-{}", PaperId::new())));
     std::fs::create_dir_all(&sandbox.0).unwrap();
     let database = sandbox.0.join("library.sqlite");
-    let keys = ["Alpha2026", "Bravo2026", "Charlie2026", "Delta2026"];
     {
         let store = SqliteLibrary::open_local(&database).unwrap();
         for key in keys {
@@ -103,96 +86,133 @@ fn rows_are_selected_with_ctrl_and_shift_and_changed_together() {
                 .unwrap();
         }
     }
-
     let w = MainWindow::new().unwrap();
     w.show().unwrap();
     w.window().set_size(slint::LogicalSize::new(1360., 900.));
-    let _controller = ui::attach_with_providers(
+    let controller = ui::attach_with_providers(
         &w,
-        Config {
-            database: database.clone(),
-        },
+        Config { database },
         Box::new(|_| Ok(vec![])),
         Box::new(|| None),
     );
     wait(&w);
+    (sandbox, w, controller)
+}
+
+/// Titles of the rows that are shown as selected, in list order.
+fn selected_titles(w: &MainWindow) -> Vec<String> {
+    w.get_papers()
+        .iter()
+        .filter(|p| p.selected)
+        .map(|p| p.title.to_string())
+        .collect()
+}
+fn titles(w: &MainWindow) -> Vec<String> {
+    w.get_papers().iter().map(|p| p.title.to_string()).collect()
+}
+/// A plain click on a row: it opens the paper, which is then the only one selected.
+fn open(w: &MainWindow, title: &str) {
+    activate(w, &format!("文献を開く: {title}"));
+    wait(w);
+}
+/// A click with Ctrl and/or Shift held, as the card reports it to the window.
+fn click(w: &MainWindow, title: &str, ctrl: bool, shift: bool) {
+    let id = w.get_papers().iter().find(|p| p.title == title).unwrap().id;
+    w.set_pending_ctrl(ctrl);
+    w.set_pending_shift(shift);
+    w.invoke_request_navigation(NavigationAction::MultiSelect, id);
+    wait(w);
+}
+fn select_all(w: &MainWindow) {
+    w.invoke_request_navigation(NavigationAction::SelectAll, "".into());
+    wait(w);
+}
+fn card_y(w: &MainWindow, title: &str) -> f32 {
+    element(w, &format!("文献を開く: {title}"))
+        .absolute_position()
+        .y
+}
+
+fn the_first_click_opens_and_selects_and_later_ones_extend_it() {
+    let (_sandbox, w, _controller) = open_window(
+        "multi",
+        &["Alpha2026", "Bravo2026", "Charlie2026", "Delta2026"],
+    );
     // Titles in the order the list shows them (newest first by default).
     let order = titles(&w);
     assert_eq!(order.len(), 4);
-    assert!(
-        absent(&w, "選択を解除"),
-        "no selection bar before selecting"
-    );
+    assert!(absent(&w, "選択を解除"), "no bulk bar before selecting");
+    // BibTeX output has no entry of its own: not in the sidebar, not on the cards.
+    assert!(absent(&w, "BibTeX 出力"));
+    assert!(absent(&w, "BibTeX 出力に含める"));
+    let before = card_y(&w, &order[0]);
 
-    // Ctrl toggles single rows and is how a selection grows and shrinks.
-    click(&w, &order[0], true, false);
+    // A plain click opens the paper and selects it alone. One paper is not a bulk selection.
+    open(&w, &order[0]);
+    assert_eq!(w.get_detail_view(), DetailView::PaperDetail);
+    assert_eq!(selected_titles(&w), vec![order[0].clone()]);
+    assert!(absent(&w, "選択を解除"), "one open paper shows no bulk bar");
+    assert_eq!(card_y(&w, &order[0]), before);
+
+    // Ctrl adds the next paper. The pane stops showing a single paper, and the list stays put
+    // while the bar replaces the title, search and filter rows.
     click(&w, &order[2], true, false);
     assert_eq!(w.get_selected_count(), 2);
     assert_eq!(
         selected_titles(&w),
         vec![order[0].clone(), order[2].clone()]
     );
+    assert_eq!(w.get_detail_view(), DetailView::Empty);
+    assert_eq!(w.get_editing_id(), "");
+    assert!(!absent(&w, "選択を解除"), "the bulk bar is shown");
+    assert_eq!(
+        card_y(&w, &order[0]),
+        before,
+        "the bar takes the place of the rows above the list"
+    );
+
+    // Ctrl toggles a paper out. One paper left is opened again.
     click(&w, &order[0], true, false);
     assert_eq!(selected_titles(&w), vec![order[2].clone()]);
+    assert_eq!(w.get_detail_view(), DetailView::PaperDetail);
+    assert_eq!(w.get_paper_title(), order[2]);
+    assert!(absent(&w, "選択を解除"));
 
-    // Ctrl+Shift adds the range from the anchor (the last Ctrl click, row 0) to what is
-    // already selected instead of replacing it.
-    click(&w, &order[0], true, false);
-    click(&w, &order[1], true, true);
-    assert_eq!(
-        selected_titles(&w),
-        vec![order[0].clone(), order[1].clone(), order[2].clone()]
-    );
-    assert!(!absent(&w, "選択を解除"), "the selection bar is shown");
-}
-
-fn a_range_runs_from_the_anchor_and_a_bulk_change_clears_the_selection() {
-    let sandbox =
-        Sandbox(std::env::temp_dir().join(format!("paper-inbox-bulk-{}", PaperId::new())));
-    std::fs::create_dir_all(&sandbox.0).unwrap();
-    let database = sandbox.0.join("library.sqlite");
-    {
-        let store = SqliteLibrary::open_local(&database).unwrap();
-        for key in ["Alpha2026", "Bravo2026", "Charlie2026", "Delta2026"] {
-            store
-                .commit_at(
-                    LibraryCommand::CreatePaper { paper: paper(key) },
-                    Utc::now(),
-                )
-                .unwrap();
-        }
-    }
-    let w = MainWindow::new().unwrap();
-    w.show().unwrap();
-    w.window().set_size(slint::LogicalSize::new(1360., 900.));
-    let _controller = ui::attach_with_providers(
-        &w,
-        Config {
-            database: database.clone(),
-        },
-        Box::new(|_| Ok(vec![])),
-        Box::new(|| None),
-    );
-    wait(&w);
-    let order = titles(&w);
-
-    // Anchor on row 1, then Shift to row 3: rows 1..=3.
-    click(&w, &order[1], true, false);
+    // Shift selects from the opened paper, the anchor, to the clicked one.
+    open(&w, &order[1]);
     click(&w, &order[3], false, true);
     assert_eq!(selected_titles(&w), order[1..].to_vec());
-    // Shifting back to row 0 re-draws the range from the same anchor: rows 0..=1.
+    // Shifting back to row 0 draws the range from the same anchor: rows 0..=1.
     click(&w, &order[0], false, true);
     assert_eq!(selected_titles(&w), order[..2].to_vec());
-    assert_eq!(w.get_selected_count(), 2);
+    // Ctrl+Shift adds a range to what is selected instead of replacing it.
+    click(&w, &order[3], true, true);
+    assert_eq!(w.get_selected_count(), 4);
 
-    // The bar names the count and offers the bulk actions.
+    // A plain click on a selected paper selects it alone and opens it.
+    open(&w, &order[2]);
+    assert_eq!(selected_titles(&w), vec![order[2].clone()]);
+    assert_eq!(w.get_detail_view(), DetailView::PaperDetail);
+}
+
+fn bulk_changes_run_from_the_bar_and_delete_is_confirmed() {
+    let (_sandbox, w, _controller) = open_window(
+        "bulk",
+        &["Alpha2026", "Bravo2026", "Charlie2026", "Delta2026"],
+    );
+    let order = titles(&w);
+
+    open(&w, &order[1]);
+    click(&w, &order[3], false, true);
+    assert_eq!(selected_titles(&w), order[1..].to_vec());
     activate(&w, "選択を解除");
     assert_eq!(w.get_selected_count(), 0);
     assert!(selected_titles(&w).is_empty());
 
     // Select all shown rows, then mark them favorite in one change.
-    w.invoke_select_all();
+    select_all(&w);
     assert_eq!(w.get_selected_count(), 4);
+    assert_eq!(w.get_detail_view(), DetailView::Empty);
     w.invoke_bulk_favorite(true);
     wait(&w);
     assert_eq!(
@@ -204,7 +224,7 @@ fn a_range_runs_from_the_anchor_and_a_bulk_change_clears_the_selection() {
     assert!(w.get_status().contains("4件に適用"), "{}", w.get_status());
 
     // Repeating the same change reports that nothing differed.
-    w.invoke_select_all();
+    select_all(&w);
     w.invoke_bulk_favorite(true);
     wait(&w);
     assert!(
@@ -213,9 +233,10 @@ fn a_range_runs_from_the_anchor_and_a_bulk_change_clears_the_selection() {
         w.get_status()
     );
 
-    // Delete needs a confirmation in the bar; cancelling changes nothing.
+    // Delete is asked once in the bar; cancelling changes nothing.
     click(&w, &order[0], true, false);
     click(&w, &order[1], true, false);
+    assert_eq!(w.get_selected_count(), 2);
     activate(&w, "削除");
     assert!(!absent(&w, "削除する"));
     activate(&w, "キャンセル");
@@ -228,37 +249,56 @@ fn a_range_runs_from_the_anchor_and_a_bulk_change_clears_the_selection() {
     assert_eq!(w.get_selected_count(), 0);
 }
 
-fn a_new_search_or_sort_drops_the_selection_but_loading_more_keeps_it() {
-    let sandbox =
-        Sandbox(std::env::temp_dir().join(format!("paper-inbox-drop-{}", PaperId::new())));
-    std::fs::create_dir_all(&sandbox.0).unwrap();
-    let database = sandbox.0.join("library.sqlite");
-    {
-        let store = SqliteLibrary::open_local(&database).unwrap();
-        for key in ["Alpha2026", "Bravo2026", "Charlie2026"] {
-            store
-                .commit_at(
-                    LibraryCommand::CreatePaper { paper: paper(key) },
-                    Utc::now(),
-                )
-                .unwrap();
-        }
+fn the_bar_fits_the_narrowest_list_and_leads_to_bibtex_output() {
+    let (_sandbox, w, _controller) = open_window("bar", &["Alpha2026", "Bravo2026", "Charlie2026"]);
+    let order = titles(&w);
+    w.set_paper_list_width(260.);
+    open(&w, &order[0]);
+    click(&w, &order[1], true, false);
+    // The list keeps 16px of padding on both sides; the bar must stay within it.
+    let list = ElementHandle::find_by_element_type_name(&w, "PaperList")
+        .next()
+        .unwrap();
+    let left = list.absolute_position().x + 16.;
+    let right = list.absolute_position().x + list.size().width - 16.;
+    for label in [
+        "BibTeX",
+        "削除",
+        "選択を解除",
+        "選択した文献を未読にする",
+        "選択した文献を読書中にする",
+        "選択した文献を読了にする",
+        "お気に入りにする",
+        "お気に入りを外す",
+        "選択した文献にタグを付ける",
+        "アーカイブ",
+        "アーカイブ解除",
+    ] {
+        let control = element(&w, label);
+        let x = control.absolute_position().x;
+        assert!(
+            x >= left - 1. && x + control.size().width <= right + 1.,
+            "{label} stays inside the list ({x}..{} in {left}..{right})",
+            x + control.size().width
+        );
     }
-    let w = MainWindow::new().unwrap();
-    w.show().unwrap();
-    w.window().set_size(slint::LogicalSize::new(1360., 900.));
-    let _controller = ui::attach_with_providers(
-        &w,
-        Config {
-            database: database.clone(),
-        },
-        Box::new(|_| Ok(vec![])),
-        Box::new(|| None),
-    );
-    wait(&w);
+
+    // The bar's BibTeX button is the way to the export settings, for exactly this selection.
+    activate(&w, "BibTeX");
+    assert_eq!(w.get_detail_view(), DetailView::ExportSettings);
+    assert_eq!(w.get_selected_count(), 2);
+    // While the settings are open the selection can still be changed.
+    click(&w, &order[2], true, false);
+    assert_eq!(w.get_detail_view(), DetailView::ExportSettings);
+    assert_eq!(w.get_selected_count(), 3);
+}
+
+fn a_new_search_or_filter_drops_the_selection() {
+    let (_sandbox, w, _controller) =
+        open_window("drop", &["Alpha2026", "Bravo2026", "Charlie2026"]);
     let order = titles(&w);
 
-    click(&w, &order[0], true, false);
+    open(&w, &order[0]);
     assert_eq!(w.get_selected_count(), 1);
     // The search button is a change of what the list shows.
     activate(&w, "検索");
@@ -266,29 +306,25 @@ fn a_new_search_or_sort_drops_the_selection_but_loading_more_keeps_it() {
     assert_eq!(w.get_selected_count(), 0);
     assert!(selected_titles(&w).is_empty());
 
-    // A filter chip is one too.
-    click(&w, &order[0], true, false);
+    // A filter chip is one too. (With several papers selected the bar hides the chips, so the
+    // selection here is the one opened paper.)
+    open(&w, &order[1]);
+    assert_eq!(w.get_selected_count(), 1);
     activate(&w, "未読だけ表示");
     wait(&w);
     assert_eq!(w.get_selected_count(), 0);
     activate(&w, "未読だけ表示");
     wait(&w);
-
-    // Opening a paper with a plain click ends the selection.
-    click(&w, &order[0], true, false);
-    activate(&w, &format!("文献を開く: {}", order[1]));
-    wait(&w);
-    assert_eq!(w.get_detail_view(), DetailView::PaperDetail);
-    assert_eq!(w.get_selected_count(), 0);
 }
 
 #[test]
 fn multi_selection_in_the_window() {
     // The testing platform can be set once per process, so the scenarios share one test.
     i_slint_backend_testing::init_integration_test_with_system_time();
-    rows_are_selected_with_ctrl_and_shift_and_changed_together();
-    a_range_runs_from_the_anchor_and_a_bulk_change_clears_the_selection();
-    a_new_search_or_sort_drops_the_selection_but_loading_more_keeps_it();
+    the_first_click_opens_and_selects_and_later_ones_extend_it();
+    bulk_changes_run_from_the_bar_and_delete_is_confirmed();
+    the_bar_fits_the_narrowest_list_and_leads_to_bibtex_output();
+    a_new_search_or_filter_drops_the_selection();
     real_input_selects_rows_and_keys_act_on_the_list();
 }
 
@@ -296,33 +332,8 @@ fn multi_selection_in_the_window() {
 /// reach the list only when it has the focus (a click on a row gives it).
 fn real_input_selects_rows_and_keys_act_on_the_list() {
     use slint::platform::{Key, PointerEventButton, WindowEvent};
-    let sandbox =
-        Sandbox(std::env::temp_dir().join(format!("paper-inbox-keys-{}", PaperId::new())));
-    std::fs::create_dir_all(&sandbox.0).unwrap();
-    let database = sandbox.0.join("library.sqlite");
-    {
-        let store = SqliteLibrary::open_local(&database).unwrap();
-        for key in ["Alpha2026", "Bravo2026", "Charlie2026"] {
-            store
-                .commit_at(
-                    LibraryCommand::CreatePaper { paper: paper(key) },
-                    Utc::now(),
-                )
-                .unwrap();
-        }
-    }
-    let w = MainWindow::new().unwrap();
-    w.show().unwrap();
-    w.window().set_size(slint::LogicalSize::new(1360., 900.));
-    let _controller = ui::attach_with_providers(
-        &w,
-        Config {
-            database: database.clone(),
-        },
-        Box::new(|_| Ok(vec![])),
-        Box::new(|| None),
-    );
-    wait(&w);
+    let (_sandbox, w, _controller) =
+        open_window("keys", &["Alpha2026", "Bravo2026", "Charlie2026"]);
     let order = titles(&w);
     let card_center = |title: &str| {
         let card = element(&w, &format!("文献を開く: {title}"));
@@ -341,6 +352,7 @@ fn real_input_selects_rows_and_keys_act_on_the_list() {
             position,
             button: PointerEventButton::Left,
         });
+        wait(&w);
     };
     let key = |key: Key| {
         w.window()
@@ -351,16 +363,17 @@ fn real_input_selects_rows_and_keys_act_on_the_list() {
             .dispatch_event(WindowEvent::KeyReleased { text: key.into() });
     };
 
-    // Ctrl held: the click selects and does not open the paper.
-    key(Key::Control);
+    // A plain click opens the first paper; Ctrl-click adds another and does not open it.
     press(card_center(&order[0]));
+    assert_eq!(w.get_detail_view(), DetailView::PaperDetail);
+    key(Key::Control);
     press(card_center(&order[2]));
     key_up(Key::Control);
     assert_eq!(
         selected_titles(&w),
         vec![order[0].clone(), order[2].clone()]
     );
-    assert_ne!(w.get_detail_view(), DetailView::PaperDetail);
+    assert_eq!(w.get_detail_view(), DetailView::Empty);
 
     // Escape, with the list focused by the click above, drops the selection.
     key(Key::Escape);
@@ -374,6 +387,7 @@ fn real_input_selects_rows_and_keys_act_on_the_list() {
         .dispatch_event(WindowEvent::KeyPressed { text: "a".into() });
     w.window()
         .dispatch_event(WindowEvent::KeyReleased { text: "a".into() });
+    wait(&w);
     key_up(Key::Control);
     assert_eq!(w.get_selected_count(), 3);
 
@@ -389,9 +403,8 @@ fn real_input_selects_rows_and_keys_act_on_the_list() {
         "shift range from the first click"
     );
 
-    // A plain click opens the paper and ends the selection.
+    // A plain click opens one paper and selects only it.
     press(card_center(&order[1]));
-    wait(&w);
     assert_eq!(w.get_detail_view(), DetailView::PaperDetail);
-    assert_eq!(w.get_selected_count(), 0);
+    assert_eq!(selected_titles(&w), vec![order[1].clone()]);
 }

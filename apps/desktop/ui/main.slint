@@ -259,12 +259,12 @@ export component MainWindow inherits Window {
     in-out property <bool> confirm-delete:false;
     property <NavigationAction> pending-action;
     property <string> pending-id;
-    callback select-paper(string,bool);
+    // Keys held for a selection change that waits for the unsaved-changes question.
+    in-out property <bool> pending-ctrl;
+    in-out property <bool> pending-shift;
     // Multi-selection of papers in the list. The ids and the anchor row of a Shift range are
     // kept by Rust; the list only shows them.
     in-out property <string> selection-anchor;
-    callback row-modified-click(string,bool,bool);
-    callback select-all();
     callback clear-selection();
     callback bulk-reading-status(int);
     callback bulk-favorite(bool);
@@ -339,7 +339,6 @@ export component MainWindow inherits Window {
                 collapsed: root.sidebar-collapsed;
                 operable: root.operable;
 
-                selected-count: root.selected-count;
                 database-path: root.database-path;
 
                 can-open-about: !root.about-open
@@ -364,7 +363,6 @@ export component MainWindow inherits Window {
                     root.search();
                 }
 
-                export-requested => { root.toggle-export(); }
                 cleanup-requested => { root.request-navigation(NavigationAction.attachment-cleanup,""); }
                 tag-rows: root.tag-rows;
                 tag-toggled(id) => { root.clear-selection(); root.toggle-tag-filter(id); }
@@ -376,31 +374,29 @@ export component MainWindow inherits Window {
                 min-width: root.paper-list-min-width;
                 horizontal-stretch: 0;
                 editing-id : root.editing-id;
-                export-settings-open : root.export-settings-open || (root.detail-view==DetailView.export-preview && root.preview-return-view==DetailView.export-settings);
                 include-archived <=> root.include-archived;
                 filter-unread <=> root.filter-unread;
                 filter-favorite <=> root.filter-favorite;
                 filter-pdf <=> root.filter-pdf;
                 limit <=> root.limit;
                 load-more()=>{root.limit += 50; root.search();}
-                // Opening a paper by a plain click ends a multi-selection, except while choosing
-                // papers for BibTeX output, where the checked papers are the selection.
-                opened(arg0)=>{
-                    if (root.detail-view != DetailView.export-settings && root.detail-view != DetailView.export-preview) {
-                        root.clear-selection();
-                    }
-                    root.open-paper(arg0);
-                }
+                // A plain click opens the paper and makes it the only selected one (done in Rust when the paper is opened).
+                opened(arg0)=>{root.open-paper(arg0);}
                 operable : root.operable;
                 papers : root.papers;
                 // Every search the list asks for is a change of what it shows (text, sort or
                 // filter), which drops the selection. Loading the next batch is not one.
                 search()=>{root.clear-selection(); root.search();}
                 search-text <=> root.search-text;
-                select-paper(arg0,arg1)=>{root.select-paper(arg0,arg1);}
                 selected-count : root.selected-count;
-                row-modified-click(id,ctrl,shift)=>{root.row-modified-click(id,ctrl,shift);}
-                select-all()=>{root.select-all();}
+                row-modified-click(id,ctrl,shift)=>{
+                    if (root.operable) {
+                        root.pending-ctrl = ctrl;
+                        root.pending-shift = shift;
+                        root.request-navigation(NavigationAction.multi-select, id);
+                    }
+                }
+                select-all()=>{if (root.operable) { root.request-navigation(NavigationAction.select-all, ""); }}
                 clear-selection()=>{root.clear-selection();}
                 bulk-reading-status(status)=>{root.bulk-reading-status(status);}
                 bulk-favorite(on)=>{root.bulk-favorite(on);}
@@ -559,6 +555,7 @@ export component MainWindow inherits Window {
                     }
                     if root.detail-view==DetailView.empty || root.detail-view==DetailView.paper-detail || root.detail-view==DetailView.paper-editor : VerticalBox {
                         if root.detail-view==DetailView.empty : EmptyState {
+                            selected-count: root.selected-count;
                             library-empty: root.total == 0 && root.search-text == "" && !root.show-deleted;
                             operable: root.operable;
                             add-requested => {root.request-navigation(NavigationAction.import-paper,"");}

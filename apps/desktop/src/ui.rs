@@ -21,6 +21,8 @@ use std::{
 };
 
 enum Request {
+    /// Several papers are selected: no single paper stays open.
+    Close,
     BeginLookup(bool),
     FetchLookup(String),
     ConfirmLookup(String, String, LookupUserInput, Option<PathBuf>),
@@ -446,6 +448,11 @@ impl Worker {
                     ..Default::default()
                 },
             },
+            Request::Close => {
+                self.editing = None;
+                self.review = None;
+                Reply::default()
+            }
             Request::New => {
                 self.editing = None;
                 self.review = None;
@@ -1042,6 +1049,61 @@ fn set_selection(ui: &MainWindow, ids: Vec<slint::SharedString>) {
     }
     ui.set_selected_ids(ModelRc::new(VecModel::from(ids)));
 }
+/// Applies a Ctrl/Shift click on row `id`, or Ctrl+A, after any unsaved edit was settled. With two or
+/// more papers selected no single paper stays open; with one, that paper is opened.
+fn change_selection(
+    ui: &MainWindow,
+    tx: &Sender<Request>,
+    action: NavigationAction,
+    id: &slint::SharedString,
+) {
+    let rows: Vec<_> = ui.get_papers().iter().map(|p| p.id).collect();
+    let mut selected: Vec<_> = ui.get_selected_ids().iter().collect();
+    let mut anchor = ui.get_selection_anchor();
+    let open = ui.get_editing_id();
+    // The open paper counts as selected even after a search emptied the selection.
+    if selected.is_empty() && !open.is_empty() && rows.contains(&open) {
+        selected.push(open.clone());
+        if anchor.is_empty() {
+            anchor = open.clone();
+        }
+    }
+    let next = if action == NavigationAction::SelectAll {
+        rows
+    } else {
+        let (next, anchor_after) = clicked_selection(
+            &rows,
+            &selected,
+            anchor.as_str(),
+            id,
+            ui.get_pending_ctrl(),
+            ui.get_pending_shift(),
+        );
+        anchor = anchor_after;
+        next
+    };
+    ui.set_selection_anchor(anchor);
+    set_selection(ui, next.clone());
+    // Choosing papers for export keeps the export settings on screen.
+    if ui.get_detail_view() == DetailView::ExportSettings {
+        return;
+    }
+    match next.as_slice() {
+        [] => {}
+        [only] => {
+            if *only != open
+                && let Ok(uuid) = uuid::Uuid::parse_str(only)
+            {
+                dispatch(ui, tx, Request::Open(PaperId::from_uuid(uuid)));
+            }
+        }
+        _ => {
+            ui.set_editing_id("".into());
+            ui.set_detail_view(DetailView::Empty);
+            dispatch(ui, tx, Request::Close);
+        }
+    }
+}
 /// The selection after a click on `id` with the given keys held. Shift selects the rows between
 /// the anchor and `id` (with Ctrl, in addition to what is selected); Ctrl toggles `id`.
 /// `rows` is the order of the loaded rows. The new anchor is returned with the selection.
@@ -1243,12 +1305,20 @@ pub fn attach_with_providers(
                     ui.set_ready(false);
                     Request::Initialize
                 }
+                NavigationAction::MultiSelect | NavigationAction::SelectAll => {
+                    change_selection(&ui, &tx, action, &id);
+                    return;
+                }
                 NavigationAction::OpenPaper | NavigationAction::MetadataReview => {
                     match uuid::Uuid::parse_str(&id) {
                         Ok(id) => {
                             if action == NavigationAction::MetadataReview {
                                 Request::ReviewMetadata(PaperId::from_uuid(id))
                             } else {
+                                // A plain click: the opened paper is the only one selected, and the anchor of a later Shift range.
+                                let shown: slint::SharedString = id.to_string().into();
+                                ui.set_selection_anchor(shown.clone());
+                                set_selection(&ui, vec![shown]);
                                 Request::Open(PaperId::from_uuid(id))
                             }
                         }
@@ -1624,45 +1694,6 @@ pub fn attach_with_providers(
     ui.on_delete_paper(move |deleted| {
         if let Some(ui) = weak.upgrade() {
             dispatch(&ui, &tx, Request::Delete(deleted));
-        }
-    });
-    let weak = ui.as_weak();
-    ui.on_select_paper(move |id, selected| {
-        if let Some(ui) = weak.upgrade() {
-            let mut ids: Vec<_> = ui.get_selected_ids().iter().collect();
-            if selected {
-                if !ids.contains(&id) {
-                    ids.push(id.clone());
-                }
-                ui.set_selection_anchor(id);
-            } else {
-                ids.retain(|v| v != &id);
-            }
-            set_selection(&ui, ids);
-        }
-    });
-    let weak = ui.as_weak();
-    ui.on_row_modified_click(move |id, ctrl, shift| {
-        if let Some(ui) = weak.upgrade() {
-            let rows: Vec<_> = ui.get_papers().iter().map(|p| p.id).collect();
-            let selected: Vec<_> = ui.get_selected_ids().iter().collect();
-            let (next, anchor) = clicked_selection(
-                &rows,
-                &selected,
-                ui.get_selection_anchor().as_str(),
-                &id,
-                ctrl,
-                shift,
-            );
-            ui.set_selection_anchor(anchor);
-            set_selection(&ui, next);
-        }
-    });
-    let weak = ui.as_weak();
-    ui.on_select_all(move || {
-        if let Some(ui) = weak.upgrade() {
-            let rows: Vec<_> = ui.get_papers().iter().map(|p| p.id).collect();
-            set_selection(&ui, rows);
         }
     });
     let weak = ui.as_weak();

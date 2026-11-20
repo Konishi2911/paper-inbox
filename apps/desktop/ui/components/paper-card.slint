@@ -1,7 +1,6 @@
 import {
     VerticalBox,
-    HorizontalBox,
-    CheckBox
+    HorizontalBox
 } from "std-widgets.slint";
 
 import { Theme } from "../theme.slint";
@@ -19,13 +18,12 @@ export component PaperCard inherits Rectangle {
     in property <bool> active: false;
     in property <bool> selected: false;
     in property <bool> operable: true;
-    in property <bool> export-mode: false;
 
     // Callbacks
+    // A plain click: opens the paper, which is also the only paper selected.
     callback opened();
-    // A click made with Ctrl (Cmd on macOS) and/or Shift held: it selects instead of opening.
+    // A click made with Ctrl (Cmd on macOS) and/or Shift held: it changes the selection.
     callback modified-click(bool, bool);
-    callback selection-changed(bool);
 
     // Modifier keys as they were when the button went down; `clicked` does not carry them.
     private property <bool> ctrl-down: false;
@@ -51,7 +49,7 @@ export component PaperCard inherits Rectangle {
         easing: ease-out;
     }
 
-    preferred-height: root.export-mode ? 126px : 90px;
+    preferred-height: 90px;
 
     // Content
     VerticalBox {
@@ -118,7 +116,8 @@ export component PaperCard inherits Rectangle {
                         color: Theme.text-muted;
                     }
                     // A mark besides the color, so a selection is not told by color alone.
-                    if root.selected : Text {
+                    // The mark is for several papers; the one that is open already shows as the active card.
+                    if root.selected && !root.active : Text {
                         text: "✓ 選択中";
                         font-size: 12px;
                         font-weight: 600;
@@ -148,22 +147,6 @@ export component PaperCard inherits Rectangle {
             }
         }
 
-        if root.export-mode : HorizontalBox {
-            padding-left: 8px;
-            padding-right: 8px;
-            padding-top: 8px;
-            padding-bottom: 4px;
-
-            CheckBox {
-                enabled: root.operable;
-                text: "BibTeX 出力に含める";
-                checked: root.selected;
-
-                toggled => {
-                    root.selection-changed(self.checked);
-                }
-            }
-        }
     }
 
     // Accessibility
