@@ -37,9 +37,8 @@ export component Sidebar inherits Rectangle {
         AppButton {
             accessible-label: "文献を追加";
 
-            text: root.collapsed
-                ? "＋"
-                : "＋ 文献を追加";
+            icon: @image-url("../assets/icon/add.svg");
+            text: root.collapsed ? "" : "文献を追加";
 
             primary: true;
             enabled: root.operable;
@@ -55,10 +54,8 @@ export component Sidebar inherits Rectangle {
         }
 
         // Library section
-        Text {
-            text: root.collapsed
-                ? "本"
-                : "ライブラリ";
+        if !root.collapsed : Text {
+            text: "ライブラリ";
 
             color: Theme.text-muted;
             font-weight: 600;
@@ -69,9 +66,8 @@ export component Sidebar inherits Rectangle {
             kind: "ghost";
             align-start: true;
 
-            text: root.collapsed
-                ? "全"
-                : "すべての文献";
+            icon: @image-url("../assets/icon/library_books.svg");
+            text: root.collapsed ? "" : "すべての文献";
 
             enabled: root.operable;
 
@@ -85,9 +81,8 @@ export component Sidebar inherits Rectangle {
             kind: "ghost";
             align-start: true;
 
-            text: root.collapsed
-                ? "削"
-                : "削除済み";
+            icon: @image-url("../assets/icon/delete.svg");
+            text: root.collapsed ? "" : "削除済み";
 
             enabled: root.operable;
 
@@ -107,9 +102,8 @@ export component Sidebar inherits Rectangle {
             kind: "ghost";
             align-start: true;
 
-            text: root.collapsed
-                ? "整"
-                : "未使用PDFの整理";
+            icon: @image-url("../assets/icon/cleaning_services.svg");
+            text: root.collapsed ? "" : "未使用PDFの整理";
 
             enabled: root.operable;
 
@@ -165,9 +159,8 @@ export component Sidebar inherits Rectangle {
             kind: "ghost";
             align-start: true;
 
-            text: root.collapsed
-                ? "i"
-                : "このアプリについて";
+            icon: @image-url("../assets/icon/info.svg");
+            text: root.collapsed ? "" : "このアプリについて";
 
             enabled: root.can-open-about;
 
@@ -182,9 +175,8 @@ export component Sidebar inherits Rectangle {
             kind: "ghost";
             align-start: true;
 
-            text: root.collapsed
-                ? "↻"
-                : "保存先に再接続";
+            icon: @image-url("../assets/icon/sync.svg");
+            text: root.collapsed ? "" : "保存先に再接続";
 
             enabled: root.can-reconnect;
 
