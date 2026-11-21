@@ -96,6 +96,47 @@ pub(super) fn create(
     Ok(result)
 }
 
+/// Gives the tag a new name. Another tag with the same folded name refuses it (the caller
+/// decides whether that means merging); changing only case, width or spacing of the tag's own
+/// name is allowed. The id and the assignments stay, and papers' snapshots are not touched.
+pub(super) fn rename(
+    store: &SqliteLibrary,
+    db: &Connection,
+    tag_id: TagId,
+    new_name: String,
+    now: DateTime<Utc>,
+) -> Result<CommitResult> {
+    let mut result = CommitResult::default();
+    known_tag(db, tag_id)?;
+    let (name, key) = normalize_tag_name(&new_name).map_err(name_error)?;
+    let taken: bool = db.query_row(
+        "SELECT EXISTS(SELECT 1 FROM tags WHERE name_key=?1 AND id<>?2)",
+        params![key, tag_id.to_string()],
+        |r| r.get(0),
+    )?;
+    if taken {
+        return Err(StorageError::InvalidOperation(
+            "a tag with this name already exists",
+        ));
+    }
+    let current: String = db.query_row(
+        "SELECT name FROM tags WHERE id=?1",
+        [tag_id.to_string()],
+        |r| r.get(0),
+    )?;
+    if current == name {
+        return Err(StorageError::InvalidOperation(
+            "the tag already has this name",
+        ));
+    }
+    db.execute(
+        "UPDATE tags SET name=?1, name_key=?2 WHERE id=?3",
+        params![name, key, tag_id.to_string()],
+    )?;
+    tag_event(store, db, "TagRenamed", None, tag_id, now, &mut result)?;
+    Ok(result)
+}
+
 fn known_tag(db: &Connection, tag_id: TagId) -> Result<()> {
     let known: bool = db.query_row(
         "SELECT EXISTS(SELECT 1 FROM tags WHERE id=?1)",
@@ -261,6 +302,7 @@ pub(super) fn read_event(
     };
     match kind {
         "TagCreated" => Ok(SyncOperation::TagCreated(read(db, &tag)?)),
+        "TagRenamed" => Ok(SyncOperation::TagRenamed(read(db, &tag)?)),
         "TagAdded" => Ok(SyncOperation::TagAdded {
             paper_id: paper_id()?,
             tag_id: sql::decode(tag)?,

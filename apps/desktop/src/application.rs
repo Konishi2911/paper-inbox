@@ -728,6 +728,42 @@ impl Application {
         Ok(TagAssignment { tag, created })
     }
 
+    /// Renames a tag everywhere it is used; its papers keep it. A name that another tag already
+    /// has is refused with that tag's name in the message, since the two would have to be merged.
+    pub fn rename_tag(&self, tag_id: TagId, name: &str) -> Result<Tag, AppError> {
+        let (display, key) = normalize_tag_name(name)
+            .map_err(|e| AppError::Input(tag_name_message(e).to_owned()))?;
+        let tags: Vec<Tag> = self.store.tags(true)?.into_iter().map(|c| c.tag).collect();
+        let current = tags
+            .iter()
+            .find(|t| t.id == tag_id)
+            .ok_or_else(|| AppError::Input("このタグは見つかりません。".into()))?;
+        if let Some(other) = tags
+            .iter()
+            .find(|t| t.id != tag_id && t.key().ok().as_deref() == Some(key.as_str()))
+        {
+            return Err(AppError::Input(format!(
+                "タグ「{}」はすでにあります。別の名前にしてください。",
+                other.name
+            )));
+        }
+        if current.name == display {
+            return Err(AppError::Input("名前が変わっていません。".into()));
+        }
+        self.store.commit_batch_at(
+            vec![LibraryCommand::RenameTag {
+                tag_id,
+                name: display.clone(),
+            }],
+            &[],
+            Utc::now(),
+        )?;
+        Ok(Tag {
+            id: tag_id,
+            name: display,
+        })
+    }
+
     pub fn remove_tag(&self, state: &PaperEditState, tag_id: TagId) -> Result<(), AppError> {
         self.store.commit_batch_at(
             vec![LibraryCommand::RemoveTag {
