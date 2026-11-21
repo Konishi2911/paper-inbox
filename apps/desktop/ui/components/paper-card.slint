@@ -24,6 +24,13 @@ export component PaperCard inherits Rectangle {
     callback opened();
     // A click made with Ctrl (Cmd on macOS) and/or Shift held: it changes the selection.
     callback modified-click(bool, bool);
+    // This card became the open one (y on the window, height): the list scrolls it into view.
+    callback became-active(length, length);
+    changed active => {
+        if (self.active) {
+            root.became-active(self.absolute-position.y, self.height);
+        }
+    }
 
     // Modifier keys as they were when the button went down; `clicked` does not carry them.
     private property <bool> ctrl-down: false;

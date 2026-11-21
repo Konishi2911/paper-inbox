@@ -4,6 +4,13 @@ import { Theme } from "../theme.slint";
 import { PaperRow } from "../types.slint";
 import { AppButton, Chip } from "app-button.slint";
 
+// The search box. An element inside `if` cannot be named from outside, so the list asks for
+// focus by changing `focus-request` and the box takes it by itself.
+component SearchField inherits LineEdit {
+    in property <int> focus-request;
+    changed focus-request => { self.focus(); }
+}
+
 export component PaperList inherits Rectangle {
     in property <string> editing-id;
     in-out property <bool> include-archived;
@@ -38,6 +45,19 @@ export component PaperList inherits Rectangle {
     in property <bool> show-deleted;
     in-out property <int> sort-index;
     in property <int> total;
+
+    callback step(int);
+    // Raised by "/" in the list; the search box focuses itself when it changes.
+    private property <int> search-focus-tick: 0;
+
+    // Scroll so that a card at window position y (height h) is fully inside the list.
+    function reveal(y: length, h: length) {
+        if (y - scroll.absolute-position.y < 0px) {
+            scroll.content-y = scroll.content-y - (y - scroll.absolute-position.y);
+        } else if (y - scroll.absolute-position.y + h > scroll.height) {
+            scroll.content-y = scroll.content-y - (y - scroll.absolute-position.y + h - scroll.height);
+        }
+    }
 
     pure function more-wanted() -> bool {
         return root.operable && root.papers.length < root.total && root.papers.length >= root.limit
@@ -80,7 +100,7 @@ export component PaperList inherits Rectangle {
             // Five buttons share the row of the search box; they need the tighter spacing to fit
             // the narrowest list.
             height:36px;padding:0px;spacing:root.bulk && !root.show-deleted ? 3px : 8px;
-            if !root.bulk || root.show-deleted : LineEdit {accessible-label:"文献を検索";text<=>root.search-text;placeholder-text:"タイトル・著者・引用キーを検索";accepted=>{typing.running=false;root.limit=50;root.search();} edited=>{typing.running=false;typing.running=true;}}
+            if !root.bulk || root.show-deleted : SearchField {accessible-label:"文献を検索";focus-request:root.search-focus-tick;text<=>root.search-text;placeholder-text:"タイトル・著者・引用キーを検索";accepted=>{typing.running=false;root.limit=50;root.search();} edited=>{typing.running=false;typing.running=true;}}
             if !root.bulk || root.show-deleted : AppButton {enabled:root.operable;text:"検索";clicked=>{root.limit=50;root.search();}}
             if root.bulk && !root.show-deleted : AppButton {small:true;accessible-label:"選択した文献を未読にする";enabled:root.operable;text:"未読";clicked=>{root.bulk-reading-status(0);}}
             if root.bulk && !root.show-deleted : AppButton {small:true;accessible-label:"選択した文献を読書中にする";enabled:root.operable;text:"読書中";clicked=>{root.bulk-reading-status(1);}}
@@ -126,6 +146,14 @@ export component PaperList inherits Rectangle {
                     root.clear-selection();
                     return accept;
                 }
+                // Up/Down open the neighbor (as a click would) and "/" moves to the search box.
+                // Keys with a modifier are left alone for the platform and for later shortcuts.
+                if (root.operable && !event.modifiers.control && !event.modifiers.meta
+                    && !event.modifiers.alt && !event.modifiers.shift) {
+                    if (event.text == Key.DownArrow) { root.step(1); return accept; }
+                    if (event.text == Key.UpArrow) { root.step(-1); return accept; }
+                    if (event.text == "/") { root.search-focus-tick += 1; return accept; }
+                }
                 return reject;
             }
         scroll := ScrollView {
@@ -147,6 +175,7 @@ export component PaperList inherits Rectangle {
                     active: root.editing-id == row.id;
                     selected: row.selected;
                     operable: root.operable;
+                    became-active(y, h) => {root.reveal(y, h);}
                     opened => {list-keys.focus();root.opened(row.id);}
                     modified-click(ctrl, shift) => {list-keys.focus();root.row-modified-click(row.id, ctrl, shift);}
                 }

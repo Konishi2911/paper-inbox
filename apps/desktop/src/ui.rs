@@ -1032,6 +1032,27 @@ fn bulk_message(label: &str, outcome: BulkOutcome) -> String {
         )
     }
 }
+/// The paper Up (-1) or Down (+1) opens: the neighbor of the open paper, without wrapping. With
+/// no paper open, Down gives the first row and Up the last. Nothing while several are selected
+/// (no paper is open then; Esc drops the selection first) or when the list is empty.
+fn stepped_paper(ui: &MainWindow, delta: i32) -> Option<slint::SharedString> {
+    if ui.get_selected_count() >= 2 {
+        return None;
+    }
+    let rows = ui.get_papers();
+    let count = rows.row_count();
+    let open = ui.get_editing_id();
+    let current = (0..count).find(|&i| rows.row_data(i).is_some_and(|row| row.id == open));
+    let target = match current {
+        Some(i) => i.checked_add_signed(delta as isize)?,
+        None if delta > 0 => 0,
+        None => count.checked_sub(1)?,
+    };
+    if target >= count {
+        return None;
+    }
+    rows.row_data(target).map(|row| row.id)
+}
 /// Shows exactly these papers as selected, in the count, the id list and every loaded row.
 fn set_selection(ui: &MainWindow, ids: Vec<slint::SharedString>) {
     ui.set_selected_count(ids.len() as i32);
@@ -1701,6 +1722,14 @@ pub fn attach_with_providers(
         if let Some(ui) = weak.upgrade() {
             ui.set_selection_anchor("".into());
             set_selection(&ui, vec![]);
+        }
+    });
+    let weak = ui.as_weak();
+    ui.on_step_paper(move |delta| {
+        if let Some(ui) = weak.upgrade()
+            && let Some(id) = stepped_paper(&ui, delta)
+        {
+            ui.invoke_open_paper(id);
         }
     });
     let tx = sender.clone();

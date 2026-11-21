@@ -266,6 +266,9 @@ export component MainWindow inherits Window {
     // kept by Rust; the list only shows them.
     in-out property <string> selection-anchor;
     callback clear-selection();
+    // Up/Down in the list: open the previous (-1) or next (+1) paper. Rust finds the neighbor,
+    // since a Slint expression cannot walk the rows.
+    callback step-paper(int);
     callback bulk-reading-status(int);
     callback bulk-favorite(bool);
     callback bulk-archive(bool);
@@ -398,6 +401,7 @@ export component MainWindow inherits Window {
                 }
                 select-all()=>{if (root.operable) { root.request-navigation(NavigationAction.select-all, ""); }}
                 clear-selection()=>{root.clear-selection();}
+                step(delta)=>{if (root.operable) { root.step-paper(delta); }}
                 bulk-reading-status(status)=>{root.bulk-reading-status(status);}
                 bulk-favorite(on)=>{root.bulk-favorite(on);}
                 bulk-archive(on)=>{root.bulk-archive(on);}
