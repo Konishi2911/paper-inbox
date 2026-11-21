@@ -1,0 +1,13 @@
+// Durations of every animation in the app, in one place. `enabled` switches them all off at
+// once: the durations become 0, so a change lands in its final state at once. Rust sets it
+// from the environment (see `ui::attach`), which is also the way for tests and for people who
+// want less motion.
+export global Motion {
+    in-out property <bool> enabled: true;
+    // Hover, press and on/off of small controls.
+    out property <duration> fast: root.enabled ? 100ms : 0ms;
+    // Things that appear or change place.
+    out property <duration> base: root.enabled ? 160ms : 0ms;
+    // Large areas, such as the sidebar.
+    out property <duration> slow: root.enabled ? 240ms : 0ms;
+}

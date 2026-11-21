@@ -1268,6 +1268,10 @@ pub fn attach_with_providers(
     lookup_provider: LookupProvider,
     file_picker: FilePicker,
 ) -> Controller {
+    // Less motion: set PAPER_INBOX_REDUCE_MOTION=1 and every animation lands at once.
+    if std::env::var("PAPER_INBOX_REDUCE_MOTION").is_ok_and(|v| !v.is_empty() && v != "0") {
+        ui.global::<crate::Motion>().set_enabled(false);
+    }
     ui.set_database_path(config.database.to_string_lossy().as_ref().into());
     let (sender, receiver) = mpsc::channel();
     let weak = ui.as_weak();

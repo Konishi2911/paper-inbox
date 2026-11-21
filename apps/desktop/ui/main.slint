@@ -7,6 +7,8 @@ import { CleanupView } from "views/cleanup-view.slint";
 import { AboutDialog } from "dialogs/about-dialog.slint";
 import { VerticalBox, HorizontalBox } from "std-widgets.slint";
 import { Theme } from "theme.slint";
+import { Motion } from "motion.slint";
+import { FadeIn } from "components/fade-in.slint";
 import { PaperList } from "components/paper-list.slint";
 import { Sidebar } from "components/sidebar.slint";
 import { EmptyState } from "components/empty-state.slint";
@@ -16,6 +18,7 @@ import { PaperEditor } from "components/paper-editor.slint";
 import { AttachmentRow, DuplicateRow, TagRow, DiffInputField, DiffResolution, DiffFilter, DiffBulkAction, DetailView, AuthorAction, NavigationAction, AuthorRow, PaperRow, LookupField, LinkTarget, CandidateRow, ProposalRow, VersionRow } from "types.slint";
 import { AppButton } from "components/app-button.slint";
 
+export { Motion } from "motion.slint";
 export { AttachmentRow, DuplicateRow, TagRow, DiffInputField, DiffResolution, DiffFilter, DiffBulkAction, DetailView, AuthorAction, NavigationAction, AuthorRow, PaperRow, LookupField, LinkTarget, CandidateRow, ProposalRow, VersionRow } from "types.slint";
 
 export component MainWindow inherits Window {
@@ -231,6 +234,22 @@ export component MainWindow inherits Window {
 
     // A file is being dragged over the window (set from the OS drag events in Rust).
     in-out property <bool> drop-hover:false;
+    // True for one frame after the detail view changes; the veil over the pane follows it.
+    private property <bool> pane-veil: false;
+    changed detail-view => {
+        if (Motion.enabled) {
+            root.pane-veil = true;
+            veil-timer.running = true;
+        }
+    }
+    veil-timer := Timer {
+        interval: 16ms;
+        running: false;
+        triggered => {
+            self.running = false;
+            root.pane-veil = false;
+        }
+    }
     // A dropped PDF is attached to the paper on screen only when the attach button would work.
     out property <bool> can-drop-attach:
         root.detail-view == DetailView.paper-detail
@@ -679,6 +698,21 @@ export component MainWindow inherits Window {
 
                     }
                 }
+                // A veil of the pane color over the pane. When another screen replaces the one on
+                // screen (the detail view changes) it is made opaque at once and then fades out,
+                // so the new screen fades in. It lies over the content, not in its layout, and
+                // takes no input.
+                veil := Rectangle {
+                    x:0px;y:0px;width:parent.width;height:parent.height;
+                    background:Theme.surface;
+                    states [
+                        covering when root.pane-veil : {opacity:1.0;}
+                        clear when !root.pane-veil : {
+                            opacity:0.0;
+                            in {animate opacity {duration:Motion.base;easing:ease-out;}}
+                        }
+                    ]
+                }
             }
         }
         Rectangle {height:1px;background:Theme.border;}
@@ -688,7 +722,7 @@ export component MainWindow inherits Window {
         }
     }
     // Shown only while a file is dragged over the window. It takes no input of its own.
-    if root.drop-hover : Rectangle {
+    if root.drop-hover : FadeIn {
         x:0px;y:0px;width:parent.width;height:parent.height;
         background:Theme.overlay;
         Rectangle {
@@ -711,7 +745,7 @@ export component MainWindow inherits Window {
             }
         }
     }
-    if root.about-open : Rectangle {
+    if root.about-open : FadeIn {
         x:0px;y:0px;width:parent.width;height:parent.height;background:Theme.overlay;
         TouchArea {}
         AboutDialog {

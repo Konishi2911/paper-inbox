@@ -1,0 +1,19 @@
+import { Motion } from "../motion.slint";
+
+// A box that fades in when it is created, with its children placed freely (not in a layout).
+// It is for things that appear inside an `if` (overlays): the `if` creates a new one each
+// time, so `init` starts the fade. `appear` starts as a plain constant, not a binding, so
+// setting it in `init` is a change that animates; an opacity bound to a condition would be
+// evaluated only after `init` and would show its final value at once.
+export component FadeIn inherits Rectangle {
+    private property <float> appear: 0;
+    opacity: root.appear;
+    animate appear {
+        duration: Motion.base;
+        easing: ease-out;
+    }
+    init => {
+        root.appear = 1;
+    }
+    @children
+}

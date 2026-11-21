@@ -4,6 +4,7 @@ import {
 } from "std-widgets.slint";
 
 import { Theme } from "../theme.slint";
+import { Motion } from "../motion.slint";
 
 export component PaperCard inherits Rectangle {
     // Input properties
@@ -52,7 +53,7 @@ export component PaperCard inherits Rectangle {
         );
 
     animate background, border-color {
-        duration: 100ms;
+        duration: Motion.fast;
         easing: ease-out;
     }
 
