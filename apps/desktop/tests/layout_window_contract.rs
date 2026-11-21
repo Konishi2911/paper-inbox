@@ -68,6 +68,8 @@ fn three_panes_support_direct_clicks_collapsing_export_and_protected_navigation(
         paper_core::model::PaperId::new()
     ));
     let window = MainWindow::new().unwrap();
+    // This test checks where things end up; the sidebar animation has its own test.
+    window.global::<paper_desktop::Motion>().set_enabled(false);
     window.show().unwrap();
     window
         .window()

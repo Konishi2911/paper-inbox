@@ -197,8 +197,15 @@ export component MainWindow inherits Window {
     // Pane layout
     in-out property <length> paper-list-width: 380px;
 
+    // The sidebar width follows its state over time. Its labels and the tag list follow the
+    // animated width, not the state: they go away before the bar gets too narrow for them and
+    // come back when it is wide enough, so no label is ever squeezed into an ellipsis.
     property <length> sidebar-width:
         root.sidebar-collapsed ? 64px : 208px;
+    animate sidebar-width {
+        duration: Motion.slow;
+        easing: ease-in-out;
+    }
 
     property <length> paper-list-min-width: 320px;
     property <length> paper-detail-min-width: 360px;
@@ -358,7 +365,7 @@ export component MainWindow inherits Window {
             Sidebar {
                 width: root.sidebar-width;
 
-                collapsed: root.sidebar-collapsed;
+                collapsed: root.sidebar-width < 190px;
                 operable: root.operable;
 
                 database-path: root.database-path;
