@@ -181,6 +181,7 @@ fn up_and_down_open_neighbors_and_slash_goes_to_search() {
         "a slash typed in the box is only text"
     );
     w.set_search_text("".into());
+    settle(&w);
 
     // Two or more selected: no paper is open, so the arrows do nothing until Esc.
     open(&w, &order[0]);
@@ -215,10 +216,27 @@ fn up_and_down_open_neighbors_and_slash_goes_to_search() {
     key(&w, Key::DownArrow);
     assert!(
         w.get_confirm_discard(),
-        "Down asks before leaving the draft"
+        "Down asks before leaving the draft: editing={:?} selected={} dirty={} view={:?} title={}",
+        w.get_editing_id(),
+        w.get_selected_count(),
+        w.get_dirty(),
+        w.get_detail_view(),
+        w.get_paper_title()
     );
     assert_eq!(open_title(&w), "Unsaved draft");
     activate(&w, "編集を続ける");
     assert!(!w.get_confirm_discard());
     assert_eq!(open_title(&w), "Unsaved draft");
+}
+
+/// Lets the search-as-you-type delay (300ms) run out and its search finish.
+fn settle(w: &MainWindow) {
+    let timer = slint::Timer::default();
+    timer.start(
+        slint::TimerMode::SingleShot,
+        Duration::from_millis(450),
+        || slint::quit_event_loop().unwrap(),
+    );
+    slint::run_event_loop_until_quit().unwrap();
+    wait(w);
 }
