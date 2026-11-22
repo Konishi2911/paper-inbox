@@ -41,6 +41,7 @@ enum Request {
     Quick(QuickChange),
     AddTag(String),
     RemoveTag(TagId),
+    RenameTag(TagId, String),
     Delete(bool),
     /// One change to every selected paper, in a single transaction.
     // The bool says whether the selection stays (a menu change on one card leaves it alone).
@@ -108,6 +109,8 @@ struct Reply {
     cleanup: Option<(usize, u64)>,
     /// A bulk change was applied, so the selection that chose its papers is over.
     clear_selection: bool,
+    /// How a tag rename ended: Ok closes the dialog, Err keeps it open and shows the reason.
+    rename: Option<Result<(), String>>,
 }
 struct AttachmentView {
     id: String,
@@ -582,6 +585,37 @@ impl Worker {
                     },
                 }
             }
+            Request::RenameTag(tag_id, name) => match app.rename_tag(tag_id, &name) {
+                Ok(tag) => {
+                    // The lists and the open paper's tag chips are read again; the open paper itself
+                    // is not reloaded, so an unsaved edit is not lost.
+                    let mut reply = Reply {
+                        message: format!("タグの名前を「{}」に変更しました。", tag.name),
+                        rename: Some(Ok(())),
+                        ..Default::default()
+                    };
+                    match app.list(&self.query) {
+                        Ok(list) => reply.list = Some(list),
+                        Err(e) => reply
+                            .message
+                            .push_str(&format!(" 一覧の更新に失敗しました: {e}")),
+                    }
+                    if let Some(id) = self.editing.as_ref().map(|s| s.paper.id()) {
+                        match app.paper_tags(id) {
+                            Ok(tags) => reply.paper_tags = Some(tags),
+                            Err(e) => reply
+                                .message
+                                .push_str(&format!(" タグを読み込めません: {e}")),
+                        }
+                    }
+                    reply
+                }
+                Err(e) => Reply {
+                    message: e.to_string(),
+                    rename: Some(Err(e.to_string())),
+                    ..Default::default()
+                },
+            },
             Request::Delete(deleted) => {
                 let Some(state) = &self.editing else {
                     return Reply {
@@ -1586,6 +1620,20 @@ pub fn attach_with_providers(
     });
     let tx = sender.clone();
     let weak = ui.as_weak();
+    ui.on_rename_tag(move |id, name| {
+        if let Some(ui) = weak.upgrade() {
+            match uuid::Uuid::parse_str(&id) {
+                Ok(id) => dispatch(
+                    &ui,
+                    &tx,
+                    Request::RenameTag(TagId::from_uuid(id), name.to_string()),
+                ),
+                Err(_) => ui.set_rename_error("タグを確認できません。".into()),
+            }
+        }
+    });
+    let tx = sender.clone();
+    let weak = ui.as_weak();
     ui.on_remove_tag(move |id| {
         if let Some(ui) = weak.upgrade() {
             match uuid::Uuid::parse_str(&id) {
@@ -2320,6 +2368,14 @@ fn apply_reply(ui: &MainWindow, reply: Reply) {
                 .unwrap_or_default(),
         );
         ui.set_attachment_rows(ModelRc::new(VecModel::from(rows)));
+    }
+    match reply.rename {
+        Some(Ok(())) => {
+            ui.set_rename_error("".into());
+            ui.set_rename_open(false);
+        }
+        Some(Err(message)) => ui.set_rename_error(message.into()),
+        None => {}
     }
     if let Some(tags) = reply.paper_tags {
         ui.set_paper_tag_rows(ModelRc::new(VecModel::from(

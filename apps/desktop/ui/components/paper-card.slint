@@ -139,6 +139,28 @@ export component PaperCard inherits Rectangle {
                 }
             }
 
+            card-touch := TouchArea {
+                enabled: root.operable;
+                mouse-cursor: pointer;
+
+                pointer-event(event) => {
+                    if (event.kind == PointerEventKind.down) {
+                        root.ctrl-down = event.modifiers.control || event.modifiers.meta;
+                        root.shift-down = event.modifiers.shift;
+                    }
+                }
+
+                clicked => {
+                    if (root.ctrl-down || root.shift-down) {
+                        root.modified-click(root.ctrl-down, root.shift-down);
+                    } else {
+                        root.opened();
+                    }
+                }
+            }
+
+            // After the TouchArea, so it is in front of it: a right click would otherwise be taken
+            // by the TouchArea. Left clicks are ignored here and reach the TouchArea.
             ContextMenuArea {
                 enabled: root.operable;
                 Menu {
@@ -194,26 +216,6 @@ export component PaperCard inherits Rectangle {
                         title: "引用キーをコピー";
                         enabled: root.citation-key != "";
                         activated => { root.menu-action(RowAction.copy-key); }
-                    }
-                }
-            }
-
-            card-touch := TouchArea {
-                enabled: root.operable;
-                mouse-cursor: pointer;
-
-                pointer-event(event) => {
-                    if (event.kind == PointerEventKind.down) {
-                        root.ctrl-down = event.modifiers.control || event.modifiers.meta;
-                        root.shift-down = event.modifiers.shift;
-                    }
-                }
-
-                clicked => {
-                    if (root.ctrl-down || root.shift-down) {
-                        root.modified-click(root.ctrl-down, root.shift-down);
-                    } else {
-                        root.opened();
                     }
                 }
             }

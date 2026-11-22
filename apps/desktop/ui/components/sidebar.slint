@@ -17,6 +17,8 @@ export component Sidebar inherits Rectangle {
     in property <string> database-path;
     in property <[TagRow]> tag-rows;
     callback tag-toggled(string);
+    // The id and name of a tag whose rename was asked for in its right-click menu.
+    callback tag-rename-requested(string, string);
 
     // Callbacks
     // A single entry point: the add screen offers identifier lookup first
@@ -138,6 +140,19 @@ export component Sidebar inherits Rectangle {
                             enabled: root.operable;
                             clicked => {
                                 root.tag-toggled(tag.id);
+                            }
+                        }
+                        if tag.count > 0 || tag.selected : ContextMenuArea {
+                            enabled: root.operable;
+                            Menu {
+                                MenuItem {
+                                    title: tag.selected ? "絞り込みを解除" : "このタグで絞り込む";
+                                    activated => { root.tag-toggled(tag.id); }
+                                }
+                                MenuItem {
+                                    title: "名前を変更…";
+                                    activated => { root.tag-rename-requested(tag.id, tag.name); }
+                                }
                             }
                         }
                     }

@@ -5,6 +5,7 @@ import { ImportView } from "views/import-view.slint";
 import { ExportView } from "views/export-view.slint";
 import { CleanupView } from "views/cleanup-view.slint";
 import { AboutDialog } from "dialogs/about-dialog.slint";
+import { TagRenameDialog } from "dialogs/tag-rename-dialog.slint";
 import { VerticalBox, HorizontalBox } from "std-widgets.slint";
 import { Theme } from "theme.slint";
 import { Motion } from "motion.slint";
@@ -36,6 +37,13 @@ export component MainWindow inherits Window {
     in-out property <DetailView> export-return-view:DetailView.empty;
     in-out property <DetailView> preview-return-view:DetailView.empty;
     in-out property <bool> about-open:false;
+    // The dialog that renames a tag, and what it shows.
+    in-out property <bool> rename-open: false;
+    in-out property <string> rename-tag-id;
+    in-out property <string> rename-old-name;
+    in-out property <string> rename-text;
+    in-out property <string> rename-error;
+    callback rename-tag(string, string);
     in-out property <bool> sidebar-collapsed:false;
     out property <bool> export-settings-open: root.detail-view==DetailView.export-settings;
     out property <bool> cleanup-open: root.detail-view==DetailView.attachment-cleanup;
@@ -223,6 +231,7 @@ export component MainWindow inherits Window {
         && !root.confirm-discard
         && !root.confirm-delete
         && !root.about-open
+        && !root.rename-open
         && !root.export-confirm;
     property <bool> delete-confirm-operable:
         root.ready
@@ -423,6 +432,13 @@ export component MainWindow inherits Window {
                 cleanup-requested => { root.request-navigation(NavigationAction.attachment-cleanup,""); }
                 tag-rows: root.tag-rows;
                 tag-toggled(id) => { root.clear-selection(); root.toggle-tag-filter(id); }
+                tag-rename-requested(id, name) => {
+                    root.rename-tag-id = id;
+                    root.rename-old-name = name;
+                    root.rename-text = name;
+                    root.rename-error = "";
+                    root.rename-open = true;
+                }
                 about-requested => { root.about-open = true; }
                 reconnect-requested => { root.request-navigation(NavigationAction.reconnect,""); }
             }
@@ -677,6 +693,13 @@ export component MainWindow inherits Window {
                             tag-suggestions: root.tag-suggestions;
                             tag-add-requested(name) => { root.add-tag(name); }
                             tag-remove-requested(id) => { root.remove-tag(id); }
+                            tag-rename-requested(id, name) => {
+                                root.rename-tag-id = id;
+                                root.rename-old-name = name;
+                                root.rename-text = name;
+                                root.rename-error = "";
+                                root.rename-open = true;
+                            }
                             tag-input-changed(text) => { root.tag-input-changed(text); }
                             copied(what) => { root.status = what + "をコピーしました。"; }
                             attach-requested => { root.attach-pdf(); }
@@ -785,6 +808,20 @@ export component MainWindow inherits Window {
             }
         }
     }
+    if root.rename-open : FadeIn {
+        x:0px;y:0px;width:parent.width;height:parent.height;background:Theme.overlay;
+        TouchArea {}
+        TagRenameDialog {
+            x:(parent.width - self.width) / 2;
+            y:(parent.height - self.height) / 2;
+            text <=> root.rename-text;
+            error: root.rename-error;
+            old-name: root.rename-old-name;
+            submitted(name) => { root.rename-tag(root.rename-tag-id, name); }
+            cancelled => { root.rename-open = false; }
+        }
+    }
+
     if root.about-open : FadeIn {
         x:0px;y:0px;width:parent.width;height:parent.height;background:Theme.overlay;
         TouchArea {}

@@ -52,6 +52,7 @@ export component PaperDetail inherits Rectangle {
     callback attach-requested();
     callback tag-add-requested(string);
     callback tag-remove-requested(string);
+    callback tag-rename-requested(string, string);
     callback tag-input-changed(string);
     callback attachment-open-requested(string);
     callback attachment-detach-requested(string);
@@ -238,6 +239,10 @@ export component PaperDetail inherits Rectangle {
                     }
                     remove-requested(id) => {
                         root.tag-remove-requested(id);
+                    }
+                    can-rename: true;
+                    rename-requested(id, name) => {
+                        root.tag-rename-requested(id, name);
                     }
                     input-changed(text) => {
                         root.tag-input-changed(text);
