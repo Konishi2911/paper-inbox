@@ -1,7 +1,7 @@
 use crate::export::{self, PreparedExport};
 use crate::{
     AttachmentRow, AuthorAction, AuthorRow, DetailView, LinkTarget, LookupField, MainWindow,
-    NavigationAction, PaperRow, TagRow,
+    NavigationAction, PaperRow, RowAction, TagRow,
     application::{
         Application, AuthorInput, BulkChange, BulkOutcome, PaperForm, QuickChange,
         tag_name_message, tag_suggestions,
@@ -43,7 +43,8 @@ enum Request {
     RemoveTag(TagId),
     Delete(bool),
     /// One change to every selected paper, in a single transaction.
-    Bulk(Vec<PaperId>, BulkChange),
+    // The bool says whether the selection stays (a menu change on one card leaves it alone).
+    Bulk(Vec<PaperId>, BulkChange, bool),
     ReviewMetadata(PaperId),
     SubmitCandidate(crate::metadata::CandidateForm),
     AssociateCandidate(CandidateId),
@@ -604,7 +605,7 @@ impl Worker {
                     },
                 }
             }
-            Request::Bulk(ids, change) => {
+            Request::Bulk(ids, change, keep_selection) => {
                 let editing = self.editing.as_ref().map(|s| s.paper.id());
                 let label = bulk_label(&change);
                 match app.bulk_update(&ids, change) {
@@ -629,7 +630,7 @@ impl Worker {
                                 reply
                             }
                         };
-                        reply.clear_selection = true;
+                        reply.clear_selection = !keep_selection;
                         reply
                     }
                     // Nothing was changed, and the selection stays so it can be corrected.
@@ -1008,7 +1009,46 @@ fn dispatch_bulk(ui: &MainWindow, tx: &Sender<Request>, change: BulkChange) {
         );
         return;
     }
-    dispatch(ui, tx, Request::Bulk(ids, change));
+    dispatch(ui, tx, Request::Bulk(ids, change, false));
+}
+/// A change chosen in a card's right-click menu. It applies to the whole selection when the card is
+/// one of two or more selected papers, and to that card alone otherwise; the selection and the open
+/// paper stay as they are. An unsaved edit of an affected paper stops it, as for a bulk change.
+fn dispatch_row_action(ui: &MainWindow, tx: &Sender<Request>, id: &str, action: RowAction) {
+    let change = match action {
+        RowAction::FavoriteOn => BulkChange::Favorite(true),
+        RowAction::FavoriteOff => BulkChange::Favorite(false),
+        RowAction::StatusUnread => BulkChange::ReadingStatus(ReadingStatus::Unread),
+        RowAction::StatusReading => BulkChange::ReadingStatus(ReadingStatus::Reading),
+        RowAction::StatusRead => BulkChange::ReadingStatus(ReadingStatus::Read),
+        RowAction::Archive => BulkChange::Archived(true),
+        RowAction::Unarchive => BulkChange::Archived(false),
+        // Opening and copying are handled in the window.
+        RowAction::Open | RowAction::CopyKey => return,
+    };
+    let selected: Vec<_> = ui.get_selected_ids().iter().collect();
+    let in_selection = selected.len() >= 2 && selected.iter().any(|s| s.as_str() == id);
+    let targets: Vec<&str> = if in_selection {
+        selected.iter().map(|s| s.as_str()).collect()
+    } else {
+        vec![id]
+    };
+    let ids = targets
+        .iter()
+        .map(|s| uuid::Uuid::parse_str(s).map(PaperId::from_uuid))
+        .collect::<Result<Vec<_>, _>>();
+    let Ok(ids) = ids else {
+        ui.set_status("選択内容を確認してください。".into());
+        return;
+    };
+    let editing = ui.get_editing_id();
+    if ui.get_dirty() && ids.iter().any(|id| id.to_string() == editing.as_str()) {
+        ui.set_status(
+            "編集中の文献が含まれています。保存または破棄してから操作してください。".into(),
+        );
+        return;
+    }
+    dispatch(ui, tx, Request::Bulk(ids, change, !in_selection));
 }
 fn bulk_label(change: &BulkChange) -> &'static str {
     match change {
@@ -1767,6 +1807,13 @@ pub fn attach_with_providers(
     ui.on_bulk_tag(move |name| {
         if let Some(ui) = weak.upgrade() {
             dispatch_bulk(&ui, &tx, BulkChange::AddTag(name.into()));
+        }
+    });
+    let tx = sender.clone();
+    let weak = ui.as_weak();
+    ui.on_row_action(move |id, action| {
+        if let Some(ui) = weak.upgrade() {
+            dispatch_row_action(&ui, &tx, id.as_str(), action);
         }
     });
     let tx = sender.clone();

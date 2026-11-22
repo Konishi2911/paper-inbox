@@ -1,7 +1,7 @@
 import { VerticalBox, HorizontalBox, LineEdit, TextEdit, ComboBox, CheckBox, ScrollView } from "std-widgets.slint";
 import { PaperCard } from "paper-card.slint";
 import { Theme } from "../theme.slint";
-import { PaperRow } from "../types.slint";
+import { PaperRow, RowAction } from "../types.slint";
 import { AppButton, Chip } from "app-button.slint";
 
 // The search box. An element inside `if` cannot be named from outside, so the list asks for
@@ -36,6 +36,8 @@ export component PaperList inherits Rectangle {
     callback bulk-tag(string);
     callback bulk-bibtex();
     callback bulk-delete(bool);
+    // A choice in a card's right-click menu: (id of the card, what to do).
+    callback row-action(string, RowAction);
     // Two or more papers are selected: the rows above the list become the bulk-change bar. One
     // selected paper is only the paper that is open.
     private property <bool> bulk: root.selected-count >= 2;
@@ -79,6 +81,8 @@ export component PaperList inherits Rectangle {
     }
 
     background: Theme.list-background;
+    // Holds the text to copy: a widget can only copy text it holds.
+    key-source := TextInput { visible: false; width: 0px; height: 0px; read-only: true; }
     VerticalBox {
         padding:16px;spacing:10px;
         // The three rows above the list keep one height each. With two or more papers selected
@@ -177,6 +181,16 @@ export component PaperList inherits Rectangle {
                     operable: root.operable;
                     became-active(y, h) => {root.reveal(y, h);}
                     opened => {list-keys.focus();root.opened(row.id);}
+                    menu-count: row.selected && root.selected-count >= 2 ? root.selected-count : 1;
+                    menu-action(action) => {
+                        if (action == RowAction.copy-key) {
+                            key-source.text = row.citation-key;
+                            key-source.select-all();
+                            key-source.copy();
+                            key-source.clear-selection();
+                        }
+                        root.row-action(row.id, action);
+                    }
                     modified-click(ctrl, shift) => {list-keys.focus();root.row-modified-click(row.id, ctrl, shift);}
                 }
                 if root.papers.length==0 : Text {text:root.search-text!="" ? "一致する文献がありません。検索語を変えてください。" : (root.show-deleted ? "削除済みの文献はありません。" : "文献がまだありません。左のメニューから登録しましょう。");wrap:word-wrap;color:Theme.text-secondary;}

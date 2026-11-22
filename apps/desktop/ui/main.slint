@@ -16,11 +16,11 @@ import { EmptyState } from "components/empty-state.slint";
 import { Splitter } from "components/splitter.slint";
 import { PaperDetail } from "components/paper-detail.slint";
 import { PaperEditor } from "components/paper-editor.slint";
-import { AttachmentRow, DuplicateRow, TagRow, DiffInputField, DiffResolution, DiffFilter, DiffBulkAction, DetailView, AuthorAction, NavigationAction, AuthorRow, PaperRow, LookupField, LinkTarget, CandidateRow, ProposalRow, VersionRow } from "types.slint";
+import { AttachmentRow, DuplicateRow, TagRow, DiffInputField, DiffResolution, DiffFilter, DiffBulkAction, DetailView, AuthorAction, NavigationAction, RowAction, AuthorRow, PaperRow, LookupField, LinkTarget, CandidateRow, ProposalRow, VersionRow } from "types.slint";
 import { AppButton } from "components/app-button.slint";
 
 export { Motion } from "motion.slint";
-export { AttachmentRow, DuplicateRow, TagRow, DiffInputField, DiffResolution, DiffFilter, DiffBulkAction, DetailView, AuthorAction, NavigationAction, AuthorRow, PaperRow, LookupField, LinkTarget, CandidateRow, ProposalRow, VersionRow } from "types.slint";
+export { AttachmentRow, DuplicateRow, TagRow, DiffInputField, DiffResolution, DiffFilter, DiffBulkAction, DetailView, AuthorAction, NavigationAction, RowAction, AuthorRow, PaperRow, LookupField, LinkTarget, CandidateRow, ProposalRow, VersionRow } from "types.slint";
 
 export component MainWindow inherits Window {
     title:"Paper Inbox";
@@ -325,6 +325,8 @@ export component MainWindow inherits Window {
     callback bulk-archive(bool);
     callback bulk-tag(string);
     callback bulk-delete(bool);
+    // A card's right-click menu asked for a change (id of the card, what). Rust finds the papers it applies to.
+    callback row-action(string, RowAction);
     callback prepare-export();
     callback confirm-export();
     callback cancel-export();
@@ -459,6 +461,11 @@ export component MainWindow inherits Window {
                 bulk-archive(on)=>{root.bulk-archive(on);}
                 bulk-tag(name)=>{root.bulk-tag(name);}
                 bulk-delete(on)=>{root.bulk-delete(on);}
+                row-action(id, action)=>{
+                    if (action == RowAction.copy-key) { root.status = "引用キーをコピーしました。"; }
+                    else if (action == RowAction.open) { root.open-paper(id); }
+                    else { root.row-action(id, action); }
+                }
                 bulk-bibtex()=>{
                     if (root.detail-view != DetailView.export-settings) { root.toggle-export(); }
                 }

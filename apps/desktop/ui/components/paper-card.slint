@@ -5,6 +5,7 @@ import {
 
 import { Theme } from "../theme.slint";
 import { Motion } from "../motion.slint";
+import { RowAction } from "../types.slint";
 
 export component PaperCard inherits Rectangle {
     // Input properties
@@ -25,6 +26,10 @@ export component PaperCard inherits Rectangle {
     callback opened();
     // A click made with Ctrl (Cmd on macOS) and/or Shift held: it changes the selection.
     callback modified-click(bool, bool);
+    // A choice in the right-click menu.
+    callback menu-action(RowAction);
+    // How many papers a menu choice applies to: this one, or the whole selection when this card is part of it.
+    in property <int> menu-count: 1;
     // This card became the open one (y on the window, height): the list scrolls it into view.
     callback became-active(length, length);
     changed active => {
@@ -130,6 +135,65 @@ export component PaperCard inherits Rectangle {
                         font-size: 12px;
                         font-weight: 600;
                         color: Theme.selection-border;
+                    }
+                }
+            }
+
+            ContextMenuArea {
+                enabled: root.operable;
+                Menu {
+                    if root.menu-count == 1 : MenuItem {
+                        title: "開く";
+                        activated => { root.menu-action(RowAction.open); }
+                    }
+                    if root.menu-count == 1 : MenuSeparator {}
+                    if root.menu-count == 1 && !root.favorite : MenuItem {
+                        title: "お気に入りにする";
+                        activated => { root.menu-action(RowAction.favorite-on); }
+                    }
+                    if root.menu-count == 1 && root.favorite : MenuItem {
+                        title: "お気に入りを外す";
+                        activated => { root.menu-action(RowAction.favorite-off); }
+                    }
+                    if root.menu-count > 1 : MenuItem {
+                        title: root.menu-count + "件をお気に入りにする";
+                        activated => { root.menu-action(RowAction.favorite-on); }
+                    }
+                    if root.menu-count > 1 : MenuItem {
+                        title: root.menu-count + "件のお気に入りを外す";
+                        activated => { root.menu-action(RowAction.favorite-off); }
+                    }
+                    Menu {
+                        title: root.menu-count > 1 ? root.menu-count + "件の読書状態" : "読書状態";
+                        MenuItem {
+                            title: "未読";
+                            enabled: root.menu-count > 1 || root.reading-status != 0;
+                            activated => { root.menu-action(RowAction.status-unread); }
+                        }
+                        MenuItem {
+                            title: "読書中";
+                            enabled: root.menu-count > 1 || root.reading-status != 1;
+                            activated => { root.menu-action(RowAction.status-reading); }
+                        }
+                        MenuItem {
+                            title: "読了";
+                            enabled: root.menu-count > 1 || root.reading-status != 2;
+                            activated => { root.menu-action(RowAction.status-read); }
+                        }
+                    }
+                    MenuItem {
+                        title: root.menu-count > 1 ? root.menu-count + "件をアーカイブ" : "アーカイブ";
+                        activated => { root.menu-action(RowAction.archive); }
+                    }
+                    MenuItem {
+                        title: root.menu-count > 1 ? root.menu-count + "件をアーカイブから戻す" : "アーカイブから戻す";
+                        activated => { root.menu-action(RowAction.unarchive); }
+                    }
+                    if root.menu-count == 1 : MenuSeparator {}
+                    if root.menu-count == 1 : MenuItem {
+                        title: "引用キーをコピー";
+                        enabled: root.citation-key != "";
+                        activated => { root.menu-action(RowAction.copy-key); }
                     }
                 }
             }
