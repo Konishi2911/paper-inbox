@@ -9,6 +9,7 @@ import { VerticalBox, HorizontalBox } from "std-widgets.slint";
 import { Theme } from "theme.slint";
 import { Motion } from "motion.slint";
 import { FadeIn } from "components/fade-in.slint";
+import { BusyBar } from "components/busy-bar.slint";
 import { PaperList } from "components/paper-list.slint";
 import { Sidebar } from "components/sidebar.slint";
 import { EmptyState } from "components/empty-state.slint";
@@ -257,6 +258,30 @@ export component MainWindow inherits Window {
             root.pane-veil = false;
         }
     }
+    // The busy bar appears only for work that lasts longer than 150ms, so short work does not
+    // make it flash.
+    private property <bool> busy-shown: false;
+    changed busy => {
+        if (root.busy) {
+            busy-timer.running = true;
+        } else {
+            busy-timer.running = false;
+            root.busy-shown = false;
+        }
+    }
+    busy-timer := Timer {
+        interval: 150ms;
+        running: false;
+        triggered => {
+            self.running = false;
+            root.busy-shown = root.busy;
+        }
+    }
+    init => {
+        if (root.busy) {
+            busy-timer.running = true;
+        }
+    }
     // A dropped PDF is attached to the paper on screen only when the attach button would work.
     out property <bool> can-drop-attach:
         root.detail-view == DetailView.paper-detail
@@ -360,6 +385,7 @@ export component MainWindow inherits Window {
             Text {text:"Paper Inbox";font-size:20px;vertical-alignment:center;font-weight:700;color:Theme.text-primary;}
             Text {text:root.busy ? "処理中…" : "";horizontal-alignment:right;vertical-alignment:center;color:Theme.text-secondary;}
         }
+        BusyBar {active: root.busy-shown;}
         HorizontalBox {
             spacing:0px;vertical-stretch:1;
             Sidebar {

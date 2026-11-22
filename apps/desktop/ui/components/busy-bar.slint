@@ -1,0 +1,28 @@
+import { Theme } from "../theme.slint";
+import { Motion } from "../motion.slint";
+
+// A thin bar under the header for work in progress: a segment keeps running from left to right
+// while `active`. With motion off it is a still, full bar. The segment is created only while
+// the bar is active, so nothing is redrawn for it at other times (`animation-tick()` asks for a
+// new frame whenever it is read).
+export component BusyBar inherits Rectangle {
+    in property <bool> active;
+    min-height: 2px;
+    preferred-height: 2px;
+    max-height: 2px;
+    clip: true;
+    opacity: root.active ? 1.0 : 0.0;
+    animate opacity {
+        duration: Motion.fast;
+    }
+    accessible-role: progress-indicator;
+    accessible-label: root.active ? "処理の進行" : "";
+    if root.active : segment := Rectangle {
+        width: Motion.enabled ? parent.width * 0.3 : parent.width;
+        height: parent.height;
+        x: Motion.enabled
+            ? (Math.mod(animation-tick() / 1ms, 1300) / 1300) * (parent.width * 1.3) - self.width
+            : 0px;
+        background: Theme.accent;
+    }
+}
