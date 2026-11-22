@@ -160,6 +160,23 @@ export component PaperList inherits Rectangle {
                 }
                 return reject;
             }
+            // Behind the cards: a right click on the free space of the list. The cards have menus of
+            // their own and take their clicks first.
+            ContextMenuArea {
+                enabled: root.operable;
+                Menu {
+                    MenuItem {
+                        title: "すべて選択";
+                        enabled: root.papers.length > 0;
+                        activated => { root.select-all(); }
+                    }
+                    MenuItem {
+                        title: "選択を解除";
+                        enabled: root.selected-count > 0;
+                        activated => { root.clear-selection(); }
+                    }
+                }
+            }
         scroll := ScrollView {
             // Continuous scrolling: nearing the end asks for the next batch.
             changed content-y => { root.maybe-load-more(); }
