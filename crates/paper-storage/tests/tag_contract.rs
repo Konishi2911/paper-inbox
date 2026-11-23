@@ -331,4 +331,18 @@ fn renaming_keeps_the_tag_its_papers_and_the_uniqueness_of_names() {
         .collect();
     assert_eq!(renames.len(), 2);
     assert!(renames.iter().all(|t| t.id == ml));
+
+    // History keeps the name each step gave, not the tag's current one.
+    let steps: Vec<_> = store
+        .pending_events(100)
+        .unwrap()
+        .into_iter()
+        .filter_map(|e| match e.operation {
+            SyncOperation::TagCreated(t) | SyncOperation::TagRenamed(t) if t.id == ml => {
+                Some(t.name)
+            }
+            _ => None,
+        })
+        .collect();
+    assert_eq!(steps, ["ml", "Machine Learning", "machine learning"]);
 }
