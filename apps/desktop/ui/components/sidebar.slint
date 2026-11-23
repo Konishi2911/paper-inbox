@@ -132,26 +132,33 @@ export component Sidebar inherits Rectangle {
                     spacing: 4px;
                     for tag in root.tag-rows : VerticalBox {
                         padding: 0px;
-                        if tag.count > 0 || tag.selected : AppButton {
-                            accessible-label: "タグ " + tag.name + (tag.selected ? "の絞り込みを解除" : "で絞り込む");
-                            text: tag.name + " (" + tag.count + ")";
-                            kind: tag.selected ? "tonal" : "ghost";
-                            align-start: true;
-                            enabled: root.operable;
-                            clicked => {
-                                root.tag-toggled(tag.id);
-                            }
-                        }
-                        if tag.count > 0 || tag.selected : ContextMenuArea {
-                            enabled: root.operable;
-                            Menu {
-                                MenuItem {
-                                    title: tag.selected ? "絞り込みを解除" : "このタグで絞り込む";
-                                    activated => { root.tag-toggled(tag.id); }
+                        if tag.count > 0 || tag.selected : Rectangle {
+                            // The menu area must overlay the button, not take a slot of its own in a
+                            // layout, so both live in a plain Rectangle (the layout inside sizes it).
+                            VerticalLayout {
+                                AppButton {
+                                    accessible-label: "タグ " + tag.name + (tag.selected ? "の絞り込みを解除" : "で絞り込む");
+                                    text: tag.name + " (" + tag.count + ")";
+                                    kind: tag.selected ? "tonal" : "ghost";
+                                    align-start: true;
+                                    enabled: root.operable;
+                                    clicked => {
+                                        root.tag-toggled(tag.id);
+                                    }
                                 }
-                                MenuItem {
-                                    title: "名前を変更…";
-                                    activated => { root.tag-rename-requested(tag.id, tag.name); }
+                            }
+                            // In front of the button: a right press reaches it, left clicks fall through.
+                            ContextMenuArea {
+                                enabled: root.operable;
+                                Menu {
+                                    MenuItem {
+                                        title: tag.selected ? "絞り込みを解除" : "このタグで絞り込む";
+                                        activated => { root.tag-toggled(tag.id); }
+                                    }
+                                    MenuItem {
+                                        title: "名前を変更…";
+                                        activated => { root.tag-rename-requested(tag.id, tag.name); }
+                                    }
                                 }
                             }
                         }
