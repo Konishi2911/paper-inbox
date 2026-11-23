@@ -1017,6 +1017,11 @@ impl Worker {
         reply
     }
 }
+/// True while the open paper has input that a reload would lose: the edit form, the metadata
+/// review or the candidate editor. A change from the bar or a card menu reloads the open paper.
+fn has_unsaved_input(ui: &MainWindow) -> bool {
+    ui.get_dirty() || ui.get_review_dirty() || ui.get_candidate_dirty()
+}
 /// Sends one change for the selected papers. The open paper is left alone while it has
 /// unsaved edits, because the change reloads it.
 fn dispatch_bulk(ui: &MainWindow, tx: &Sender<Request>, change: BulkChange) {
@@ -1037,7 +1042,7 @@ fn dispatch_bulk(ui: &MainWindow, tx: &Sender<Request>, change: BulkChange) {
         }
     };
     let editing = ui.get_editing_id();
-    if ui.get_dirty() && ids.iter().any(|id| id.to_string() == editing.as_str()) {
+    if has_unsaved_input(ui) && ids.iter().any(|id| id.to_string() == editing.as_str()) {
         ui.set_status(
             "編集中の文献が含まれています。保存または破棄してから一括操作してください。".into(),
         );
@@ -1076,7 +1081,7 @@ fn dispatch_row_action(ui: &MainWindow, tx: &Sender<Request>, id: &str, action: 
         return;
     };
     let editing = ui.get_editing_id();
-    if ui.get_dirty() && ids.iter().any(|id| id.to_string() == editing.as_str()) {
+    if has_unsaved_input(ui) && ids.iter().any(|id| id.to_string() == editing.as_str()) {
         ui.set_status(
             "編集中の文献が含まれています。保存または破棄してから操作してください。".into(),
         );

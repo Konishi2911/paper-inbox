@@ -166,4 +166,19 @@ fn card_menu_actions_apply_to_the_card_or_the_selection_without_moving_it() {
     wait(&w);
     assert!(fav("Ccc"), "refused while the open paper has unsaved edits");
     w.set_dirty(false);
+
+    // So does an unapplied metadata review or candidate edit: the change reloads the open paper.
+    w.set_review_dirty(true);
+    w.invoke_row_action(id_of("Ccc"), RowAction::FavoriteOff);
+    wait(&w);
+    assert!(fav("Ccc"), "refused while a metadata review is unapplied");
+    w.set_review_dirty(false);
+    w.set_candidate_dirty(true);
+    w.invoke_row_action(id_of("Ccc"), RowAction::FavoriteOff);
+    wait(&w);
+    assert!(fav("Ccc"), "refused while a candidate edit is unsaved");
+    w.set_candidate_dirty(false);
+    w.invoke_row_action(id_of("Ccc"), RowAction::FavoriteOff);
+    wait(&w);
+    assert!(!fav("Ccc"), "allowed once nothing is unsaved");
 }
