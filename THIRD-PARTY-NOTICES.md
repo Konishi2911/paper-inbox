@@ -6448,10 +6448,10 @@ SOFTWARE.
 ## <a id="MIT"></a>MIT License
 
 Used by:
-- [paper-desktop 0.1.0](https://crates.io/crates/paper-desktop)
-- [paper-core 0.1.0](https://crates.io/crates/paper-core)
-- [paper-metadata 0.1.0](https://crates.io/crates/paper-metadata)
-- [paper-storage 0.1.0](https://crates.io/crates/paper-storage)
+- [paper-desktop 0.2.0](https://crates.io/crates/paper-desktop)
+- [paper-core 0.2.0](https://crates.io/crates/paper-core)
+- [paper-metadata 0.2.0](https://crates.io/crates/paper-metadata)
+- [paper-storage 0.2.0](https://crates.io/crates/paper-storage)
 - [accesskit 0.24.1](https://github.com/AccessKit/accesskit)
 - [accesskit_consumer 0.38.0](https://github.com/AccessKit/accesskit)
 - [accesskit_macos 0.26.3](https://github.com/AccessKit/accesskit)
