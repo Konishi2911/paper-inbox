@@ -227,6 +227,31 @@ fn up_and_down_open_neighbors_and_slash_goes_to_search() {
     activate(&w, "編集を続ける");
     assert!(!w.get_confirm_discard());
     assert_eq!(open_title(&w), "Unsaved draft");
+
+    // Discarding the draft to start a multi-selection leaves nothing unsaved behind.
+    w.set_review_dirty(true);
+    w.set_candidate_dirty(true);
+    w.set_lookup_dirty(true);
+    let third = w
+        .get_papers()
+        .iter()
+        .find(|p| p.title == order[3])
+        .unwrap()
+        .id;
+    w.set_pending_ctrl(true);
+    w.set_pending_shift(false);
+    w.invoke_request_navigation(NavigationAction::MultiSelect, third);
+    assert!(w.get_confirm_discard());
+    activate(&w, "破棄して移動");
+    wait(&w);
+    assert_eq!(w.get_selected_count(), 2);
+    assert!(
+        !w.get_dirty()
+            && !w.get_review_dirty()
+            && !w.get_candidate_dirty()
+            && !w.get_lookup_dirty(),
+        "a discarded draft leaves no unsaved flag behind"
+    );
 }
 
 /// Lets the search-as-you-type delay (300ms) run out and its search finish.

@@ -1200,6 +1200,12 @@ fn change_selection(
         _ => {
             ui.set_editing_id("".into());
             ui.set_detail_view(DetailView::Empty);
+            // The open paper was left (a discard was approved if it had unsaved input), so
+            // nothing of it is still unsaved.
+            ui.set_dirty(false);
+            ui.set_review_dirty(false);
+            ui.set_candidate_dirty(false);
+            ui.set_lookup_dirty(false);
             dispatch(ui, tx, Request::Close);
         }
     }
