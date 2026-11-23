@@ -1018,9 +1018,9 @@ impl Worker {
     }
 }
 /// True while the open paper has input that a reload would lose: the edit form, the metadata
-/// review or the candidate editor. A change from the bar or a card menu reloads the open paper.
+/// review, the candidate editor or a fetched result of the lookup screen. A change from the bar or a card menu reloads the open paper.
 fn has_unsaved_input(ui: &MainWindow) -> bool {
-    ui.get_dirty() || ui.get_review_dirty() || ui.get_candidate_dirty()
+    ui.get_dirty() || ui.get_review_dirty() || ui.get_candidate_dirty() || ui.get_lookup_dirty()
 }
 /// Sends one change for the selected papers. The open paper is left alone while it has
 /// unsaved edits, because the change reloads it.
