@@ -80,3 +80,47 @@ fn suggestions_prefer_prefixes_and_skip_tags_the_paper_has() {
     assert!(names("zzz", &[]).is_empty());
     assert_eq!(names("lea", &[all[1].tag.id]), ["deep learning"]);
 }
+
+#[test]
+fn renaming_a_tag_changes_it_for_every_paper_and_refuses_taken_names() {
+    let (app, state) = setup();
+    let ml = app.add_tag_by_name(&state, "ml").unwrap().tag;
+    let graphs = app.add_tag_by_name(&state, "graphs").unwrap().tag;
+
+    let renamed = app.rename_tag(ml.id, "  Machine  Learning ").unwrap();
+    assert_eq!(renamed.id, ml.id);
+    assert_eq!(renamed.name, "Machine Learning");
+    let names: Vec<_> = app
+        .paper_tags(state.paper.id())
+        .unwrap()
+        .into_iter()
+        .map(|t| t.name)
+        .collect();
+    assert!(names.contains(&"Machine Learning".to_string()) && names.len() == 2);
+
+    // Adding by the new name finds the renamed tag, and the old name is free.
+    assert!(matches!(
+        app.add_tag_by_name(&state, "machine learning"),
+        Err(AppError::Input(m)) if m.contains("すでに")
+    ));
+
+    // A name another tag has is refused, naming that tag; so are an unchanged name and a bad one.
+    assert!(matches!(
+        app.rename_tag(ml.id, "ＧＲＡＰＨＳ"),
+        Err(AppError::Input(m)) if m.contains("graphs")
+    ));
+    assert!(matches!(
+        app.rename_tag(ml.id, "Machine Learning"),
+        Err(AppError::Input(m)) if m.contains("変わっていません")
+    ));
+    assert!(matches!(
+        app.rename_tag(ml.id, " "),
+        Err(AppError::Input(_))
+    ));
+    assert!(matches!(
+        app.rename_tag(TagId::new(), "x"),
+        Err(AppError::Input(m)) if m.contains("見つかりません")
+    ));
+    // Only case and spacing of its own name may change.
+    assert_eq!(app.rename_tag(graphs.id, "Graphs").unwrap().name, "Graphs");
+}

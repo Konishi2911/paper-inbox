@@ -135,11 +135,13 @@ fn enum_transitions_restore_nested_drafts_and_do_not_leave_the_source_on_failed_
     wait(&w);
     let id = w.get_editing_id();
     screen(&w, DetailView::PaperDetail);
-    w.invoke_select_paper(id.clone(), true);
+    // A plain click on a paper opens it and selects it, which is what BibTeX output is made from.
+    w.invoke_request_navigation(NavigationAction::OpenPaper, id.clone());
+    wait(&w);
     w.set_export_path(output.to_string_lossy().as_ref().into());
     click(&w, "編集");
     element(&w, "文献タイトル").set_accessible_value("Editor draft");
-    click(&w, "BibTeX 出力");
+    w.invoke_toggle_export();
     screen(&w, DetailView::ExportSettings);
     assert!(w.get_dirty());
     click(&w, "文献を追加");
@@ -178,7 +180,7 @@ fn enum_transitions_restore_nested_drafts_and_do_not_leave_the_source_on_failed_
     let candidate_id = w.get_candidate_id();
     w.set_candidate_title("Candidate draft".into());
     w.set_candidate_dirty(true);
-    click(&w, "BibTeX 出力");
+    w.invoke_toggle_export();
     screen(&w, DetailView::ExportSettings);
     click(&w, "出力内容を確認");
     wait(&w);
@@ -202,7 +204,7 @@ fn enum_transitions_restore_nested_drafts_and_do_not_leave_the_source_on_failed_
     w.invoke_fetch_lookup();
     wait(&w);
     screen(&w, DetailView::Import);
-    click(&w, "BibTeX 出力");
+    w.invoke_toggle_export();
     screen(&w, DetailView::ExportSettings);
     click(&w, "詳細・入力へ戻る");
     screen(&w, DetailView::Import);

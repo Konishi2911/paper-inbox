@@ -24,7 +24,9 @@ CREATE TABLE IF NOT EXISTS paper_tags (
 ) WITHOUT ROWID;
 CREATE INDEX IF NOT EXISTS paper_tags_by_tag ON paper_tags(tag_id, paper_id);",
     )?;
-    super::versions::add_column(db, "events", "tag_id", "TEXT REFERENCES tags(id)")
+    super::versions::add_column(db, "events", "tag_id", "TEXT REFERENCES tags(id)")?;
+    // The name a creation or rename gave, so history shows each step as it was.
+    super::versions::add_column(db, "events", "tag_name", "TEXT")
 }
 
 fn name_error(error: TagNameError) -> StorageError {
@@ -56,6 +58,19 @@ fn tag_event(
     db.execute(
         "UPDATE events SET tag_id=?1 WHERE id=?2",
         params![tag_id.to_string(), event.to_string()],
+    )?;
+    Ok(())
+}
+
+/// Keeps the name that the last event gave the tag; the tag row itself holds only the current one.
+fn record_name(db: &Connection, result: &CommitResult, name: &str) -> Result<()> {
+    let event = *result
+        .created_events
+        .last()
+        .ok_or_else(|| StorageError::Corrupt("Missing tag event".into()))?;
+    db.execute(
+        "UPDATE events SET tag_name=?1 WHERE id=?2",
+        params![name, event.to_string()],
     )?;
     Ok(())
 }
@@ -93,6 +108,49 @@ pub(super) fn create(
     )?;
     let mut result = CommitResult::default();
     tag_event(store, db, "TagCreated", None, tag.id, now, &mut result)?;
+    record_name(db, &result, &name)?;
+    Ok(result)
+}
+
+/// Gives the tag a new name. Another tag with the same folded name refuses it (the caller
+/// decides whether that means merging); changing only case, width or spacing of the tag's own
+/// name is allowed. The id and the assignments stay, and papers' snapshots are not touched.
+pub(super) fn rename(
+    store: &SqliteLibrary,
+    db: &Connection,
+    tag_id: TagId,
+    new_name: String,
+    now: DateTime<Utc>,
+) -> Result<CommitResult> {
+    let mut result = CommitResult::default();
+    known_tag(db, tag_id)?;
+    let (name, key) = normalize_tag_name(&new_name).map_err(name_error)?;
+    let taken: bool = db.query_row(
+        "SELECT EXISTS(SELECT 1 FROM tags WHERE name_key=?1 AND id<>?2)",
+        params![key, tag_id.to_string()],
+        |r| r.get(0),
+    )?;
+    if taken {
+        return Err(StorageError::InvalidOperation(
+            "a tag with this name already exists",
+        ));
+    }
+    let current: String = db.query_row(
+        "SELECT name FROM tags WHERE id=?1",
+        [tag_id.to_string()],
+        |r| r.get(0),
+    )?;
+    if current == name {
+        return Err(StorageError::InvalidOperation(
+            "the tag already has this name",
+        ));
+    }
+    db.execute(
+        "UPDATE tags SET name=?1, name_key=?2 WHERE id=?3",
+        params![name, key, tag_id.to_string()],
+    )?;
+    tag_event(store, db, "TagRenamed", None, tag_id, now, &mut result)?;
+    record_name(db, &result, &name)?;
     Ok(result)
 }
 
@@ -245,22 +303,36 @@ pub(super) fn of_paper(db: &Connection, paper_id: PaperId) -> Result<Vec<Tag>> {
     ids.iter().map(|id| read(db, id)).collect()
 }
 
+/// The tag as the event left it. Events written before names were recorded fall back to the
+/// tag's current name.
+fn named(db: &Connection, id: &str, recorded: Option<String>) -> Result<Tag> {
+    match recorded {
+        Some(name) => Ok(Tag {
+            id: sql::decode(id.to_owned())?,
+            name,
+        }),
+        None => read(db, id),
+    }
+}
+
 pub(super) fn read_event(
     db: &Connection,
     event_id: &str,
     kind: &str,
     paper: Option<PaperId>,
 ) -> Result<SyncOperation> {
-    let tag: Option<String> =
-        db.query_row("SELECT tag_id FROM events WHERE id=?1", [event_id], |r| {
-            r.get(0)
-        })?;
+    let (tag, recorded_name): (Option<String>, Option<String>) = db.query_row(
+        "SELECT tag_id, tag_name FROM events WHERE id=?1",
+        [event_id],
+        |r| Ok((r.get(0)?, r.get(1)?)),
+    )?;
     let tag = tag.ok_or_else(|| StorageError::Corrupt("Missing tag event reference".into()))?;
     let paper_id = || {
         paper.ok_or_else(|| StorageError::Corrupt("Tag assignment event without a paper".into()))
     };
     match kind {
-        "TagCreated" => Ok(SyncOperation::TagCreated(read(db, &tag)?)),
+        "TagCreated" => Ok(SyncOperation::TagCreated(named(db, &tag, recorded_name)?)),
+        "TagRenamed" => Ok(SyncOperation::TagRenamed(named(db, &tag, recorded_name)?)),
         "TagAdded" => Ok(SyncOperation::TagAdded {
             paper_id: paper_id()?,
             tag_id: sql::decode(tag)?,

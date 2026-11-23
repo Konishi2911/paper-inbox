@@ -10,6 +10,19 @@ export enum AuthorAction {
     move-down,
 }
 
+// What the right-click menu of a paper card asks for; the parent applies it to the card or to the selection.
+export enum RowAction {
+    open,
+    favorite-on,
+    favorite-off,
+    status-unread,
+    status-reading,
+    status-read,
+    archive,
+    unarchive,
+    copy-key,
+}
+
 export enum NavigationAction {
     create-paper,
     open-paper,
@@ -18,6 +31,9 @@ export enum NavigationAction {
     metadata-review,
     import-paper,
     attachment-cleanup,
+    // Ctrl/Shift click on a row, and Ctrl+A: change the selection of papers.
+    multi-select,
+    select-all,
 }
 
 export struct AuthorRow { kind:int, given:string, name:string, orcid:string }

@@ -108,5 +108,21 @@ export component AttachmentList inherits VerticalBox {
                 }
             }
         }
+        // A child of the row Rectangle, not of the HorizontalBox, so it overlays the whole row (in a
+        // layout it would be a slot of its own). A right click reaches it; clicks on buttons are not taken.
+        ContextMenuArea {
+            enabled: root.operable;
+            Menu {
+                MenuItem {
+                    title: "開く";
+                    enabled: !row.missing;
+                    activated => { root.open-requested(row.id); }
+                }
+                MenuItem {
+                    title: "除外…";
+                    activated => { root.confirming = row.id; }
+                }
+            }
+        }
     }
 }

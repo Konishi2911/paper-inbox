@@ -5,7 +5,7 @@ Paper Inbox's own code is `MIT OR Apache-2.0`. The Slint crates (`slint`, `i-sli
 
 ## 同梱素材 / Bundled assets
 
-- アプリ内のアイコン（`copy.svg`、`open.svg`）は Google の Material Icons / Material Symbols です。Apache License 2.0 で提供されており、本文は下の「Apache License 2.0」と同じです。 / The in-app icons are Material Icons / Material Symbols by Google, licensed under the Apache License 2.0 (full text below).
+- アプリ内のアイコン（`copy.svg`、`open.svg`、`dock_to_right.svg`、`close.svg`、`add.svg`、`library_books.svg`、`delete.svg`、`cleaning_services.svg`、`info.svg`、`sync.svg`）は Google の Material Icons / Material Symbols です。Apache License 2.0 で提供されており、本文は下の「Apache License 2.0」と同じです。 / The in-app icons are Material Icons / Material Symbols by Google, licensed under the Apache License 2.0 (full text below).
 - アプリのアイコン画像は Paper Inbox の素材で、本プロジェクトの著作物です。 / The application icon is part of Paper Inbox.
 
 ## ライセンス別一覧 / Overview
@@ -6448,10 +6448,10 @@ SOFTWARE.
 ## <a id="MIT"></a>MIT License
 
 Used by:
-- [paper-desktop 0.1.0](https://crates.io/crates/paper-desktop)
-- [paper-core 0.1.0](https://crates.io/crates/paper-core)
-- [paper-metadata 0.1.0](https://crates.io/crates/paper-metadata)
-- [paper-storage 0.1.0](https://crates.io/crates/paper-storage)
+- [paper-desktop 0.2.0](https://crates.io/crates/paper-desktop)
+- [paper-core 0.2.0](https://crates.io/crates/paper-core)
+- [paper-metadata 0.2.0](https://crates.io/crates/paper-metadata)
+- [paper-storage 0.2.0](https://crates.io/crates/paper-storage)
 - [accesskit 0.24.1](https://github.com/AccessKit/accesskit)
 - [accesskit_consumer 0.38.0](https://github.com/AccessKit/accesskit)
 - [accesskit_macos 0.26.3](https://github.com/AccessKit/accesskit)

@@ -13,6 +13,7 @@ import { AttachmentList } from "attachment-list.slint";
 import { DetailActions } from "detail-actions.slint";
 import { TagEditor } from "tag-editor.slint";
 import { AppButton } from "app-button.slint";
+import { Reveal } from "fold.slint";
 
 // Read-only view of the saved paper. Personal values (reading status,
 // favorite, archive, notes) are changed in place; the parent saves them.
@@ -51,6 +52,7 @@ export component PaperDetail inherits Rectangle {
     callback attach-requested();
     callback tag-add-requested(string);
     callback tag-remove-requested(string);
+    callback tag-rename-requested(string, string);
     callback tag-input-changed(string);
     callback attachment-open-requested(string);
     callback attachment-detach-requested(string);
@@ -158,17 +160,21 @@ export component PaperDetail inherits Rectangle {
                 if root.authors != "" : HorizontalBox {
                     padding: 0px;
                     spacing: 8px;
-                    Text {
-                        text: root.authors-expanded ? root.authors : root.authors-short;
+                    // The box moves to the height of the full list, or back, over time.
+                    authors-reveal := Reveal {
                         horizontal-stretch: 1;
-                        font-size: 15px;
-                        color: Theme.text-primary;
-                        wrap: word-wrap;
+                        Text {
+                            text: root.authors-expanded ? root.authors : root.authors-short;
+                            font-size: 15px;
+                            color: Theme.text-primary;
+                            wrap: word-wrap;
+                        }
                     }
                     if root.authors-short != root.authors : AppButton {
                         text: root.authors-expanded ? "折りたたむ" : "全員を表示";
                         kind: "ghost";
                         clicked => {
+                            authors-reveal.begin();
                             root.authors-expanded = !root.authors-expanded;
                         }
                     }
@@ -234,6 +240,10 @@ export component PaperDetail inherits Rectangle {
                     remove-requested(id) => {
                         root.tag-remove-requested(id);
                     }
+                    can-rename: true;
+                    rename-requested(id, name) => {
+                        root.tag-rename-requested(id, name);
+                    }
                     input-changed(text) => {
                         root.tag-input-changed(text);
                     }
@@ -272,22 +282,30 @@ export component PaperDetail inherits Rectangle {
                     font-weight: 600;
                     color: Theme.text-primary;
                 }
-                if root.abstract-text != "" : Text {
-                    text: root.abstract-expanded ? root.abstract-text : root.abstract-preview;
-                    color: Theme.text-primary;
-                    wrap: word-wrap;
-                }
-                if root.abstract-long : HorizontalBox {
+                // The text and its toggle are in one box so that the toggle can start the height change.
+                if root.abstract-text != "" : VerticalBox {
                     padding: 0px;
-                    AppButton {
-                        text: root.abstract-expanded ? "折りたたむ" : "続きを表示";
-                        kind: "ghost";
-                        clicked => {
-                            root.abstract-expanded = !root.abstract-expanded;
+                    spacing: 10px;
+                    abstract-reveal := Reveal {
+                        Text {
+                            text: root.abstract-expanded ? root.abstract-text : root.abstract-preview;
+                            color: Theme.text-primary;
+                            wrap: word-wrap;
                         }
                     }
-                    Rectangle {
-                        horizontal-stretch: 1;
+                    if root.abstract-long : HorizontalBox {
+                        padding: 0px;
+                        AppButton {
+                            text: root.abstract-expanded ? "折りたたむ" : "続きを表示";
+                            kind: "ghost";
+                            clicked => {
+                                abstract-reveal.begin();
+                                root.abstract-expanded = !root.abstract-expanded;
+                            }
+                        }
+                        Rectangle {
+                            horizontal-stretch: 1;
+                        }
                     }
                 }
                 if root.keywords-line != "" : Text {

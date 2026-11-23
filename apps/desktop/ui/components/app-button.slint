@@ -1,4 +1,5 @@
 import { Theme } from "../theme.slint";
+import { Motion } from "../motion.slint";
 
 // The app's own button. The standard widget cannot change its fill, radius or states, so
 // every button in the app is this one and takes its colors from Theme.
@@ -41,6 +42,7 @@ export component AppButton inherits Rectangle {
         : root.look == "danger" ? Theme.danger-fill
         : #00000000;
     opacity: root.enabled ? 1.0 : 0.4;
+    animate opacity { duration: Motion.fast; }
 
     accessible-role: button;
     accessible-label: root.text;
@@ -57,7 +59,7 @@ export component AppButton inherits Rectangle {
         background: root.down ? root.wash.with-alpha(root.look == "primary" ? 0.22 : 0.16)
             : root.hot ? root.wash.with-alpha(root.look == "primary" ? 0.12 : 0.08)
             : #00000000;
-        animate background { duration: 120ms; }
+        animate background { duration: Motion.fast; }
     }
     // The keyboard focus ring, drawn just outside the button.
     Rectangle {
@@ -74,7 +76,8 @@ export component AppButton inherits Rectangle {
         y: (parent.height - self.preferred-height) / 2;
         width: min(self.preferred-width, parent.width - 16px);
         height: self.preferred-height;
-        spacing: 6px;
+        // An icon-only button (empty text) is centered on the icon alone.
+        spacing: root.text == "" ? 0px : 6px;
         if root.icon.width > 0 : Image {
             source: root.icon;
             width: 16px;
@@ -134,7 +137,9 @@ export component Chip inherits Rectangle {
     border-width: root.on ? 0px : 1px;
     border-color: Theme.outline;
     background: root.on ? Theme.chip-on : #00000000;
+    animate background { duration: Motion.fast; }
     opacity: root.enabled ? 1.0 : 0.4;
+    animate opacity { duration: Motion.fast; }
 
     accessible-role: button;
     accessible-label: root.text;
@@ -150,7 +155,7 @@ export component Chip inherits Rectangle {
     Rectangle {
         border-radius: root.border-radius;
         background: root.hot ? Theme.wash.with-alpha(0.08) : #00000000;
-        animate background { duration: 120ms; }
+        animate background { duration: Motion.fast; }
     }
     label := Text {
         accessible-role: none;

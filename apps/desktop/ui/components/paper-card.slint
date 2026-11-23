@@ -1,10 +1,11 @@
 import {
     VerticalBox,
-    HorizontalBox,
-    CheckBox
+    HorizontalBox
 } from "std-widgets.slint";
 
 import { Theme } from "../theme.slint";
+import { Motion } from "../motion.slint";
+import { RowAction } from "../types.slint";
 
 export component PaperCard inherits Rectangle {
     // Input properties
@@ -19,21 +20,37 @@ export component PaperCard inherits Rectangle {
     in property <bool> active: false;
     in property <bool> selected: false;
     in property <bool> operable: true;
-    in property <bool> export-mode: false;
 
     // Callbacks
+    // A plain click: opens the paper, which is also the only paper selected.
     callback opened();
-    callback selection-changed(bool);
+    // A click made with Ctrl (Cmd on macOS) and/or Shift held: it changes the selection.
+    callback modified-click(bool, bool);
+    // A choice in the right-click menu.
+    callback menu-action(RowAction);
+    // How many papers a menu choice applies to: this one, or the whole selection when this card is part of it.
+    in property <int> menu-count: 1;
+    // This card became the open one (y on the window, height): the list scrolls it into view.
+    callback became-active(length, length);
+    changed active => {
+        if (self.active) {
+            root.became-active(self.absolute-position.y, self.height);
+        }
+    }
+
+    // Modifier keys as they were when the button went down; `clicked` does not carry them.
+    private property <bool> ctrl-down: false;
+    private property <bool> shift-down: false;
 
     // Appearance
     border-radius: 4px;
     border-width: 1px;
 
-    border-color: root.active
+    border-color: (root.active || root.selected)
         ? Theme.selection-border
         : Theme.border;
 
-    background: root.active
+    background: (root.active || root.selected)
         ? Theme.selection
         : (root.operable && card-touch.has-hover
             ? Theme.hover
@@ -41,11 +58,11 @@ export component PaperCard inherits Rectangle {
         );
 
     animate background, border-color {
-        duration: 100ms;
+        duration: Motion.fast;
         easing: ease-out;
     }
 
-    preferred-height: root.export-mode ? 126px : 90px;
+    preferred-height: 90px;
 
     // Content
     VerticalBox {
@@ -111,6 +128,14 @@ export component PaperCard inherits Rectangle {
                         font-size: 12px;
                         color: Theme.text-muted;
                     }
+                    // A mark besides the color, so a selection is not told by color alone.
+                    // The mark is for several papers; the one that is open already shows as the active card.
+                    if root.selected && !root.active : Text {
+                        text: "✓ 選択中";
+                        font-size: 12px;
+                        font-weight: 600;
+                        color: Theme.selection-border;
+                    }
                 }
             }
 
@@ -118,28 +143,84 @@ export component PaperCard inherits Rectangle {
                 enabled: root.operable;
                 mouse-cursor: pointer;
 
+                pointer-event(event) => {
+                    if (event.kind == PointerEventKind.down) {
+                        root.ctrl-down = event.modifiers.control || event.modifiers.meta;
+                        root.shift-down = event.modifiers.shift;
+                    }
+                }
+
                 clicked => {
-                    root.opened();
+                    if (root.ctrl-down || root.shift-down) {
+                        root.modified-click(root.ctrl-down, root.shift-down);
+                    } else {
+                        root.opened();
+                    }
                 }
             }
-        }
 
-        if root.export-mode : HorizontalBox {
-            padding-left: 8px;
-            padding-right: 8px;
-            padding-top: 8px;
-            padding-bottom: 4px;
-
-            CheckBox {
+            // After the TouchArea, so it is in front of it: a right click would otherwise be taken
+            // by the TouchArea. Left clicks are ignored here and reach the TouchArea.
+            ContextMenuArea {
                 enabled: root.operable;
-                text: "BibTeX 出力に含める";
-                checked: root.selected;
-
-                toggled => {
-                    root.selection-changed(self.checked);
+                Menu {
+                    if root.menu-count == 1 : MenuItem {
+                        title: "開く";
+                        activated => { root.menu-action(RowAction.open); }
+                    }
+                    if root.menu-count == 1 : MenuSeparator {}
+                    if root.menu-count == 1 && !root.favorite : MenuItem {
+                        title: "お気に入りにする";
+                        activated => { root.menu-action(RowAction.favorite-on); }
+                    }
+                    if root.menu-count == 1 && root.favorite : MenuItem {
+                        title: "お気に入りを外す";
+                        activated => { root.menu-action(RowAction.favorite-off); }
+                    }
+                    if root.menu-count > 1 : MenuItem {
+                        title: root.menu-count + "件をお気に入りにする";
+                        activated => { root.menu-action(RowAction.favorite-on); }
+                    }
+                    if root.menu-count > 1 : MenuItem {
+                        title: root.menu-count + "件のお気に入りを外す";
+                        activated => { root.menu-action(RowAction.favorite-off); }
+                    }
+                    Menu {
+                        title: root.menu-count > 1 ? root.menu-count + "件の読書状態" : "読書状態";
+                        MenuItem {
+                            title: "未読";
+                            enabled: root.menu-count > 1 || root.reading-status != 0;
+                            activated => { root.menu-action(RowAction.status-unread); }
+                        }
+                        MenuItem {
+                            title: "読書中";
+                            enabled: root.menu-count > 1 || root.reading-status != 1;
+                            activated => { root.menu-action(RowAction.status-reading); }
+                        }
+                        MenuItem {
+                            title: "読了";
+                            enabled: root.menu-count > 1 || root.reading-status != 2;
+                            activated => { root.menu-action(RowAction.status-read); }
+                        }
+                    }
+                    MenuItem {
+                        title: root.menu-count > 1 ? root.menu-count + "件をアーカイブ" : "アーカイブ";
+                        activated => { root.menu-action(RowAction.archive); }
+                    }
+                    MenuItem {
+                        title: root.menu-count > 1 ? root.menu-count + "件をアーカイブから戻す" : "アーカイブから戻す";
+                        activated => { root.menu-action(RowAction.unarchive); }
+                    }
+                    if root.menu-count == 1 : MenuSeparator {}
+                    if root.menu-count == 1 : MenuItem {
+                        title: "引用キーをコピー";
+                        enabled: root.citation-key != "";
+                        activated => { root.menu-action(RowAction.copy-key); }
+                    }
                 }
             }
         }
+
     }
 
     // Accessibility

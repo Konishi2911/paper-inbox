@@ -64,7 +64,8 @@ fn real_window_callbacks_cover_registration_validation_edit_restart_and_trash() 
     assert!(!window.get_dirty(), "{}", window.get_status());
     assert_eq!(window.get_doi(), "10.1000/abc");
     assert_eq!(window.get_arxiv_id(), "2401.12345v2");
-    window.invoke_select_paper(id.clone(), true);
+    window.invoke_request_navigation(NavigationAction::OpenPaper, id.clone());
+    wait(&window);
     assert_eq!(window.get_selected_count(), 1);
     let output = path.with_extension("bib");
     window.set_export_path(output.to_string_lossy().as_ref().into());

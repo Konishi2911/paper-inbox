@@ -1,4 +1,5 @@
 import { Theme } from "../theme.slint";
+import { Motion } from "../motion.slint";
 
 export component Splitter inherits Rectangle {
     // Input properties
@@ -37,7 +38,7 @@ export component Splitter inherits Rectangle {
             : Theme.splitter;
 
         animate background {
-            duration: 100ms;
+            duration: Motion.fast;
             easing: ease-out;
         }
     }

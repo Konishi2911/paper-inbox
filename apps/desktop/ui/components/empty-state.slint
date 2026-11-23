@@ -7,6 +7,8 @@ import { AppButton } from "app-button.slint";
 export component EmptyState inherits VerticalBox {
     in property <bool> library-empty;
     in property <bool> operable: true;
+    // Two or more papers selected: the pane says so instead of showing one paper.
+    in property <int> selected-count;
     callback add-requested();
     callback manual-requested();
 
@@ -15,14 +17,18 @@ export component EmptyState inherits VerticalBox {
     alignment: start;
 
     Text {
-        text: root.library-empty ? "最初の文献を追加しましょう" : "文献を選択してください";
+        text: root.selected-count >= 2
+            ? root.selected-count + "件の文献を選択中"
+            : (root.library-empty ? "最初の文献を追加しましょう" : "文献を選択してください");
         font-size: 20px;
         font-weight: 700;
         color: Theme.text-primary;
         wrap: word-wrap;
     }
     Text {
-        text: root.library-empty
+        text: root.selected-count >= 2
+            ? "一覧の上のバーから、選んだ文献をまとめて変更できます。1件だけ開くには、その文献を Ctrl なしでクリックしてください。"
+            : root.library-empty
             ? "DOI・arXiv ID・URL を貼り付けて Enter を押すと、書誌情報を取得して登録できます。PDF をこの画面へドラッグ＆ドロップしても、PDF の中の識別子を探して追加できます。"
             : "中央の一覧から文献を選ぶと、ここに詳細が表示されます。新しい文献は「文献を追加」から登録できます。PDF をドロップしても追加できます。";
         wrap: word-wrap;

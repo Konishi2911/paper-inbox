@@ -210,6 +210,9 @@ impl SqliteLibrary {
                 return attachments::add(self, tx, attachment, now);
             }
             LibraryCommand::CreateTag { tag } => return tags::create(self, tx, tag, now),
+            LibraryCommand::RenameTag { tag_id, name } => {
+                return tags::rename(self, tx, tag_id, name, now);
+            }
             LibraryCommand::AddTag { paper_id, tag_id } => {
                 return tags::add(self, tx, paper_id, tag_id, now);
             }

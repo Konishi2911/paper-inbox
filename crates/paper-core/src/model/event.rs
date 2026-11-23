@@ -77,6 +77,8 @@ pub enum SyncOperation {
 
     TagCreated(Tag),
 
+    TagRenamed(Tag),
+
     TagAdded {
         paper_id: PaperId,
         tag_id: TagId,

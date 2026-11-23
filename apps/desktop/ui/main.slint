@@ -5,18 +5,23 @@ import { ImportView } from "views/import-view.slint";
 import { ExportView } from "views/export-view.slint";
 import { CleanupView } from "views/cleanup-view.slint";
 import { AboutDialog } from "dialogs/about-dialog.slint";
+import { TagRenameDialog } from "dialogs/tag-rename-dialog.slint";
 import { VerticalBox, HorizontalBox } from "std-widgets.slint";
 import { Theme } from "theme.slint";
+import { Motion } from "motion.slint";
+import { FadeIn } from "components/fade-in.slint";
+import { BusyBar } from "components/busy-bar.slint";
 import { PaperList } from "components/paper-list.slint";
 import { Sidebar } from "components/sidebar.slint";
 import { EmptyState } from "components/empty-state.slint";
 import { Splitter } from "components/splitter.slint";
 import { PaperDetail } from "components/paper-detail.slint";
 import { PaperEditor } from "components/paper-editor.slint";
-import { AttachmentRow, DuplicateRow, TagRow, DiffInputField, DiffResolution, DiffFilter, DiffBulkAction, DetailView, AuthorAction, NavigationAction, AuthorRow, PaperRow, LookupField, LinkTarget, CandidateRow, ProposalRow, VersionRow } from "types.slint";
+import { AttachmentRow, DuplicateRow, TagRow, DiffInputField, DiffResolution, DiffFilter, DiffBulkAction, DetailView, AuthorAction, NavigationAction, RowAction, AuthorRow, PaperRow, LookupField, LinkTarget, CandidateRow, ProposalRow, VersionRow } from "types.slint";
 import { AppButton } from "components/app-button.slint";
 
-export { AttachmentRow, DuplicateRow, TagRow, DiffInputField, DiffResolution, DiffFilter, DiffBulkAction, DetailView, AuthorAction, NavigationAction, AuthorRow, PaperRow, LookupField, LinkTarget, CandidateRow, ProposalRow, VersionRow } from "types.slint";
+export { Motion } from "motion.slint";
+export { AttachmentRow, DuplicateRow, TagRow, DiffInputField, DiffResolution, DiffFilter, DiffBulkAction, DetailView, AuthorAction, NavigationAction, RowAction, AuthorRow, PaperRow, LookupField, LinkTarget, CandidateRow, ProposalRow, VersionRow } from "types.slint";
 
 export component MainWindow inherits Window {
     title:"Paper Inbox";
@@ -32,6 +37,13 @@ export component MainWindow inherits Window {
     in-out property <DetailView> export-return-view:DetailView.empty;
     in-out property <DetailView> preview-return-view:DetailView.empty;
     in-out property <bool> about-open:false;
+    // The dialog that renames a tag, and what it shows.
+    in-out property <bool> rename-open: false;
+    in-out property <string> rename-tag-id;
+    in-out property <string> rename-old-name;
+    in-out property <string> rename-text;
+    in-out property <string> rename-error;
+    callback rename-tag(string, string);
     in-out property <bool> sidebar-collapsed:false;
     out property <bool> export-settings-open: root.detail-view==DetailView.export-settings;
     out property <bool> cleanup-open: root.detail-view==DetailView.attachment-cleanup;
@@ -194,10 +206,17 @@ export component MainWindow inherits Window {
     // Pane layout
     in-out property <length> paper-list-width: 380px;
 
+    // The sidebar width follows its state over time. Its labels and the tag list follow the
+    // animated width, not the state: they go away before the bar gets too narrow for them and
+    // come back when it is wide enough, so no label is ever squeezed into an ellipsis.
     property <length> sidebar-width:
         root.sidebar-collapsed ? 64px : 208px;
+    animate sidebar-width {
+        duration: Motion.slow;
+        easing: ease-in-out;
+    }
 
-    property <length> paper-list-min-width: 260px;
+    property <length> paper-list-min-width: 320px;
     property <length> paper-detail-min-width: 360px;
 
     callback begin-candidate();
@@ -212,6 +231,7 @@ export component MainWindow inherits Window {
         && !root.confirm-discard
         && !root.confirm-delete
         && !root.about-open
+        && !root.rename-open
         && !root.export-confirm;
     property <bool> delete-confirm-operable:
         root.ready
@@ -231,6 +251,46 @@ export component MainWindow inherits Window {
 
     // A file is being dragged over the window (set from the OS drag events in Rust).
     in-out property <bool> drop-hover:false;
+    // True for one frame after the detail view changes; the veil over the pane follows it.
+    private property <bool> pane-veil: false;
+    changed detail-view => {
+        if (Motion.enabled) {
+            root.pane-veil = true;
+            veil-timer.running = true;
+        }
+    }
+    veil-timer := Timer {
+        interval: 16ms;
+        running: false;
+        triggered => {
+            self.running = false;
+            root.pane-veil = false;
+        }
+    }
+    // The busy bar appears only for work that lasts longer than 150ms, so short work does not
+    // make it flash.
+    private property <bool> busy-shown: false;
+    changed busy => {
+        if (root.busy) {
+            busy-timer.running = true;
+        } else {
+            busy-timer.running = false;
+            root.busy-shown = false;
+        }
+    }
+    busy-timer := Timer {
+        interval: 150ms;
+        running: false;
+        triggered => {
+            self.running = false;
+            root.busy-shown = root.busy;
+        }
+    }
+    init => {
+        if (root.busy) {
+            busy-timer.running = true;
+        }
+    }
     // A dropped PDF is attached to the paper on screen only when the attach button would work.
     out property <bool> can-drop-attach:
         root.detail-view == DetailView.paper-detail
@@ -259,7 +319,23 @@ export component MainWindow inherits Window {
     in-out property <bool> confirm-delete:false;
     property <NavigationAction> pending-action;
     property <string> pending-id;
-    callback select-paper(string,bool);
+    // Keys held for a selection change that waits for the unsaved-changes question.
+    in-out property <bool> pending-ctrl;
+    in-out property <bool> pending-shift;
+    // Multi-selection of papers in the list. The ids and the anchor row of a Shift range are
+    // kept by Rust; the list only shows them.
+    in-out property <string> selection-anchor;
+    callback clear-selection();
+    // Up/Down in the list: open the previous (-1) or next (+1) paper. Rust finds the neighbor,
+    // since a Slint expression cannot walk the rows.
+    callback step-paper(int);
+    callback bulk-reading-status(int);
+    callback bulk-favorite(bool);
+    callback bulk-archive(bool);
+    callback bulk-tag(string);
+    callback bulk-delete(bool);
+    // A card's right-click menu asked for a change (id of the card, what). Rust finds the papers it applies to.
+    callback row-action(string, RowAction);
     callback prepare-export();
     callback confirm-export();
     callback cancel-export();
@@ -320,15 +396,15 @@ export component MainWindow inherits Window {
             Text {text:"Paper Inbox";font-size:20px;vertical-alignment:center;font-weight:700;color:Theme.text-primary;}
             Text {text:root.busy ? "処理中…" : "";horizontal-alignment:right;vertical-alignment:center;color:Theme.text-secondary;}
         }
+        BusyBar {active: root.busy-shown;}
         HorizontalBox {
             spacing:0px;vertical-stretch:1;
             Sidebar {
                 width: root.sidebar-width;
 
-                collapsed: root.sidebar-collapsed;
+                collapsed: root.sidebar-width < 190px;
                 operable: root.operable;
 
-                selected-count: root.selected-count;
                 database-path: root.database-path;
 
                 can-open-about: !root.about-open
@@ -345,6 +421,7 @@ export component MainWindow inherits Window {
                 add-requested => {root.request-navigation(NavigationAction.import-paper,"");}
 
                 library-requested(deleted) => {
+                    root.clear-selection();
                     root.show-deleted = deleted;
                     root.filter-tag-ids = [];
                     root.search-text = "";
@@ -352,10 +429,16 @@ export component MainWindow inherits Window {
                     root.search();
                 }
 
-                export-requested => { root.toggle-export(); }
                 cleanup-requested => { root.request-navigation(NavigationAction.attachment-cleanup,""); }
                 tag-rows: root.tag-rows;
-                tag-toggled(id) => { root.toggle-tag-filter(id); }
+                tag-toggled(id) => { root.clear-selection(); root.toggle-tag-filter(id); }
+                tag-rename-requested(id, name) => {
+                    root.rename-tag-id = id;
+                    root.rename-old-name = name;
+                    root.rename-text = name;
+                    root.rename-error = "";
+                    root.rename-open = true;
+                }
                 about-requested => { root.about-open = true; }
                 reconnect-requested => { root.request-navigation(NavigationAction.reconnect,""); }
             }
@@ -364,19 +447,44 @@ export component MainWindow inherits Window {
                 min-width: root.paper-list-min-width;
                 horizontal-stretch: 0;
                 editing-id : root.editing-id;
-                export-settings-open : root.export-settings-open || (root.detail-view==DetailView.export-preview && root.preview-return-view==DetailView.export-settings);
                 include-archived <=> root.include-archived;
                 filter-unread <=> root.filter-unread;
                 filter-favorite <=> root.filter-favorite;
                 filter-pdf <=> root.filter-pdf;
                 limit <=> root.limit;
                 load-more()=>{root.limit += 50; root.search();}
+                // A plain click opens the paper and makes it the only selected one (done in Rust when the paper is opened).
                 opened(arg0)=>{root.open-paper(arg0);}
                 operable : root.operable;
                 papers : root.papers;
-                search()=>{root.search();}
+                // Every search the list asks for is a change of what it shows (text, sort or
+                // filter), which drops the selection. Loading the next batch is not one.
+                search()=>{root.clear-selection(); root.search();}
                 search-text <=> root.search-text;
-                select-paper(arg0,arg1)=>{root.select-paper(arg0,arg1);}
+                selected-count : root.selected-count;
+                row-modified-click(id,ctrl,shift)=>{
+                    if (root.operable) {
+                        root.pending-ctrl = ctrl;
+                        root.pending-shift = shift;
+                        root.request-navigation(NavigationAction.multi-select, id);
+                    }
+                }
+                select-all()=>{if (root.operable) { root.request-navigation(NavigationAction.select-all, ""); }}
+                clear-selection()=>{root.clear-selection();}
+                step(delta)=>{if (root.operable) { root.step-paper(delta); }}
+                bulk-reading-status(status)=>{root.bulk-reading-status(status);}
+                bulk-favorite(on)=>{root.bulk-favorite(on);}
+                bulk-archive(on)=>{root.bulk-archive(on);}
+                bulk-tag(name)=>{root.bulk-tag(name);}
+                bulk-delete(on)=>{root.bulk-delete(on);}
+                row-action(id, action)=>{
+                    if (action == RowAction.copy-key) { root.status = "引用キーをコピーしました。"; }
+                    else if (action == RowAction.open) { root.open-paper(id); }
+                    else { root.row-action(id, action); }
+                }
+                bulk-bibtex()=>{
+                    if (root.detail-view != DetailView.export-settings) { root.toggle-export(); }
+                }
                 show-deleted : root.show-deleted;
                 sort-index <=> root.sort-index;
                 total : root.total;
@@ -526,6 +634,7 @@ export component MainWindow inherits Window {
                     }
                     if root.detail-view==DetailView.empty || root.detail-view==DetailView.paper-detail || root.detail-view==DetailView.paper-editor : VerticalBox {
                         if root.detail-view==DetailView.empty : EmptyState {
+                            selected-count: root.selected-count;
                             library-empty: root.total == 0 && root.search-text == "" && !root.show-deleted;
                             operable: root.operable;
                             add-requested => {root.request-navigation(NavigationAction.import-paper,"");}
@@ -584,6 +693,13 @@ export component MainWindow inherits Window {
                             tag-suggestions: root.tag-suggestions;
                             tag-add-requested(name) => { root.add-tag(name); }
                             tag-remove-requested(id) => { root.remove-tag(id); }
+                            tag-rename-requested(id, name) => {
+                                root.rename-tag-id = id;
+                                root.rename-old-name = name;
+                                root.rename-text = name;
+                                root.rename-error = "";
+                                root.rename-open = true;
+                            }
                             tag-input-changed(text) => { root.tag-input-changed(text); }
                             copied(what) => { root.status = what + "をコピーしました。"; }
                             attach-requested => { root.attach-pdf(); }
@@ -645,6 +761,21 @@ export component MainWindow inherits Window {
 
                     }
                 }
+                // A veil of the pane color over the pane. When another screen replaces the one on
+                // screen (the detail view changes) it is made opaque at once and then fades out,
+                // so the new screen fades in. It lies over the content, not in its layout, and
+                // takes no input.
+                veil := Rectangle {
+                    x:0px;y:0px;width:parent.width;height:parent.height;
+                    background:Theme.surface;
+                    states [
+                        covering when root.pane-veil : {opacity:1.0;}
+                        clear when !root.pane-veil : {
+                            opacity:0.0;
+                            in {animate opacity {duration:Motion.base;easing:ease-out;}}
+                        }
+                    ]
+                }
             }
         }
         Rectangle {height:1px;background:Theme.border;}
@@ -654,7 +785,7 @@ export component MainWindow inherits Window {
         }
     }
     // Shown only while a file is dragged over the window. It takes no input of its own.
-    if root.drop-hover : Rectangle {
+    if root.drop-hover : FadeIn {
         x:0px;y:0px;width:parent.width;height:parent.height;
         background:Theme.overlay;
         Rectangle {
@@ -677,7 +808,21 @@ export component MainWindow inherits Window {
             }
         }
     }
-    if root.about-open : Rectangle {
+    if root.rename-open : FadeIn {
+        x:0px;y:0px;width:parent.width;height:parent.height;background:Theme.overlay;
+        TouchArea {}
+        TagRenameDialog {
+            x:(parent.width - self.width) / 2;
+            y:(parent.height - self.height) / 2;
+            text <=> root.rename-text;
+            error: root.rename-error;
+            old-name: root.rename-old-name;
+            submitted(name) => { root.rename-tag(root.rename-tag-id, name); }
+            cancelled => { root.rename-open = false; }
+        }
+    }
+
+    if root.about-open : FadeIn {
         x:0px;y:0px;width:parent.width;height:parent.height;background:Theme.overlay;
         TouchArea {}
         AboutDialog {

@@ -144,6 +144,8 @@ fn detail_quick_actions_copy_notes_and_form_shortcuts_keep_their_contracts() {
         paper_core::model::PaperId::new()
     ));
     let w = MainWindow::new().unwrap();
+    // This test checks the opened state; the folding animation has its own test.
+    w.global::<paper_desktop::Motion>().set_enabled(false);
     w.show().unwrap();
     w.window().set_size(slint::LogicalSize::new(1360., 900.));
     let controller = ui::attach_with_lookup_provider(

@@ -2,6 +2,8 @@ import { VerticalBox, HorizontalBox, LineEdit, TextEdit } from "std-widgets.slin
 import { ProposalRow, DiffResolution, DiffInputField } from "../types.slint";
 import { Theme } from "../theme.slint";
 import { AppButton } from "app-button.slint";
+import { Fold, Reveal } from "fold.slint";
+import { Motion } from "../motion.slint";
 
 // Short status tag shown next to the field name instead of a sentence.
 component Badge inherits Rectangle {
@@ -50,6 +52,11 @@ export component MetadataDiffCard inherits Rectangle {
     private property <bool> details-open:false;
     private property <bool> full-open:false;
     private property <DiffResolution> decision: root.proposal.decision;
+    // Opening progress of the details and of the custom-value input, 0 closed to 1 open.
+    private property <float> details-p: root.details-open ? 1.0 : 0.0;
+    animate details-p { duration: Motion.base; easing: ease-in-out; }
+    private property <float> custom-p: root.decision==DiffResolution.custom ? 1.0 : 0.0;
+    animate custom-p { duration: Motion.base; easing: ease-in-out; }
     background: root.proposal.conflict || root.proposal.stale ? Theme.diff-conflict : Theme.diff-current;
     border-width:1px;border-color:Theme.border;border-radius:6px;
     min-width:0px;
@@ -62,10 +69,12 @@ export component MetadataDiffCard inherits Rectangle {
             VerticalLayout {alignment:center;Badge {text:root.proposal.change-label;}}
             if root.proposal.conflict : VerticalLayout {alignment:center;Badge {text:"要確認";warning:true;}}
             Rectangle {horizontal-stretch:1;}
-            if root.proposal.long-text : AppButton {text:root.full-open ? "長文を折りたたむ" : "全文を表示";clicked=>{root.full-open=!root.full-open;}}
+            if root.proposal.long-text : AppButton {text:root.full-open ? "長文を折りたたむ" : "全文を表示";clicked=>{value-reveal.begin();root.full-open=!root.full-open;}}
         }
         if root.proposal.conflict && !root.proposal.stale : Text {text:root.proposal.reason;wrap:word-wrap;color:Theme.warning;min-width:0px;}
         if root.proposal.stale : Text {text:"作成後に値が変わりました。表示を更新してください。";wrap:word-wrap;color:Theme.warning;min-width:0px;}
+        // The compared values change height when a long text opens or closes.
+        value-reveal := Reveal {
         if root.wide : HorizontalBox {
             padding:0px;spacing:8px;
             ComparedValue {heading:"現在";value:root.full-open ? root.proposal.current : root.proposal.current-preview;source:root.proposal.current-source;horizontal-stretch:1;}
@@ -76,12 +85,16 @@ export component MetadataDiffCard inherits Rectangle {
             ComparedValue {heading:"現在";value:root.full-open ? root.proposal.current : root.proposal.current-preview;source:root.proposal.current-source;}
             ComparedValue {heading:"提案";value:root.full-open ? root.proposal.proposed : root.proposal.proposed-preview;source:root.proposal.source;background:Theme.diff-proposed;}
         }
+        }
         if root.proposal.structured-diff!="" : Text {text:root.proposal.structured-diff;wrap:word-wrap;min-width:0px;color:Theme.text-secondary;}
-        if root.details-open : VerticalBox {
+        if root.details-open || root.details-p > 0 : Fold {
+        progress: root.details-p;
+        VerticalBox {
             padding:0px;spacing:8px;
             if root.proposal.text-diff!="" : Text {text:"単語差分（【＋】追加・【−】削除）\n"+root.proposal.text-diff;wrap:word-wrap;min-width:0px;color:Theme.text-primary;}
             Text {text:"現在値の出典\n"+(root.proposal.current-details=="" ? "出典記録なし" : root.proposal.current-details);wrap:word-wrap;min-width:0px;color:Theme.text-secondary;}
             Text {text:"提案値の出典\n"+root.proposal.proposed-details;wrap:word-wrap;min-width:0px;color:Theme.text-secondary;}
+        }
         }
         // The chosen decision is shown by the highlighted (primary) button.
         HorizontalLayout {
@@ -99,7 +112,9 @@ export component MetadataDiffCard inherits Rectangle {
             if root.decision!=DiffResolution.unresolved : AppButton {kind:"ghost";text:"判断を取り消す";enabled:root.operable;clicked=>{root.choose(root.proposal.id,DiffResolution.unresolved);}}
             Rectangle {horizontal-stretch:1;}
         }
-        if root.decision==DiffResolution.custom : VerticalBox {
+        if root.decision==DiffResolution.custom || root.custom-p > 0 : Fold {
+        progress: root.custom-p;
+        VerticalBox {
             padding:0px;
             Text {text:"空欄のまま適用すると削除になります。";wrap:word-wrap;min-width:0px;color:Theme.text-secondary;}
             if root.proposal.custom-kind==1 : TextEdit {
@@ -111,6 +126,7 @@ export component MetadataDiffCard inherits Rectangle {
                 LineEdit {accessible-label:"カスタムDOI";placeholder-text:"DOI";text:root.proposal.custom-doi;enabled:root.operable;edited=>{root.edit(root.proposal.id,DiffInputField.doi,self.text);}}
                 LineEdit {accessible-label:"カスタムarXiv ID";placeholder-text:"arXiv ID";text:root.proposal.custom-arxiv;enabled:root.operable;edited=>{root.edit(root.proposal.id,DiffInputField.arxiv,self.text);}}
             }
+        }
         }
     }
 }

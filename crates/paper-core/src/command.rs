@@ -79,6 +79,13 @@ pub enum LibraryCommand {
         tag: Tag,
     },
 
+    /// Gives a tag a new name; the tag keeps its id and its papers. The name is cleaned as for
+    /// a new tag, and it must not be the name of another tag.
+    RenameTag {
+        tag_id: TagId,
+        name: String,
+    },
+
     AddTag {
         paper_id: PaperId,
         tag_id: TagId,

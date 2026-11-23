@@ -2,6 +2,8 @@ import { VerticalBox, HorizontalBox, LineEdit, ComboBox, TextEdit } from "std-wi
 import { Theme } from "../theme.slint";
 import { AuthorAction, AuthorRow } from "../types.slint";
 import { AppButton } from "app-button.slint";
+import { Fold } from "fold.slint";
+import { Motion } from "../motion.slint";
 
 // One author per line. Kind and ORCID are rarely changed, so they open on demand.
 component AuthorLine inherits VerticalBox {
@@ -13,6 +15,10 @@ component AuthorLine inherits VerticalBox {
     callback author-kind(int,int);
     callback author-action(AuthorAction,int);
     private property <bool> details-open: false;
+    // The kind and ORCID row is open on demand, and always when an ORCID is set. It opens and
+    // closes by height, with `row-p` going from 0 to 1.
+    private property <float> row-p: (root.details-open || root.author.orcid != "") ? 1.0 : 0.0;
+    animate row-p { duration: Motion.base; easing: ease-in-out; }
     padding: 0px;
     spacing: 4px;
 
@@ -89,7 +95,9 @@ component AuthorLine inherits VerticalBox {
             }
         }
     }
-    if root.details-open || root.author.orcid != "" : HorizontalBox {
+    if root.details-open || root.author.orcid != "" || root.row-p > 0 : Fold {
+    progress: root.row-p;
+    HorizontalBox {
         padding: 0px;
         padding-left: 28px;
         spacing: 4px;
@@ -114,6 +122,7 @@ component AuthorLine inherits VerticalBox {
             }
         }
     }
+    }
 }
 
 export component AuthorEditor inherits VerticalBox {
@@ -125,6 +134,8 @@ export component AuthorEditor inherits VerticalBox {
     // Appends authors parsed by Rust from pasted text.
     callback author-bulk(string);
     private property <bool> bulk-open: false;
+    private property <float> bulk-p: root.bulk-open ? 1.0 : 0.0;
+    animate bulk-p { duration: Motion.base; easing: ease-in-out; }
     private property <string> bulk-text;
     padding: 0px;
     spacing: 6px;
@@ -165,7 +176,9 @@ export component AuthorEditor inherits VerticalBox {
             horizontal-stretch: 1;
         }
     }
-    if root.bulk-open : VerticalBox {
+    if root.bulk-open || root.bulk-p > 0 : Fold {
+    progress: root.bulk-p;
+    VerticalBox {
         padding: 0px;
         spacing: 4px;
         Text {
@@ -195,5 +208,6 @@ export component AuthorEditor inherits VerticalBox {
                 horizontal-stretch: 1;
             }
         }
+    }
     }
 }

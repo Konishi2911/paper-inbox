@@ -14,17 +14,17 @@ export component Sidebar inherits Rectangle {
     in property <bool> can-open-about;
     in property <bool> can-reconnect;
 
-    in property <int> selected-count;
     in property <string> database-path;
     in property <[TagRow]> tag-rows;
     callback tag-toggled(string);
+    // The id and name of a tag whose rename was asked for in its right-click menu.
+    callback tag-rename-requested(string, string);
 
     // Callbacks
     // A single entry point: the add screen offers identifier lookup first
     // and manual entry as a fallback.
     callback add-requested();
     callback library-requested(bool);
-    callback export-requested();
     callback cleanup-requested();
     callback about-requested();
     callback reconnect-requested();
@@ -39,9 +39,8 @@ export component Sidebar inherits Rectangle {
         AppButton {
             accessible-label: "文献を追加";
 
-            text: root.collapsed
-                ? "＋"
-                : "＋ 文献を追加";
+            icon: @image-url("../assets/icon/add.svg");
+            text: root.collapsed ? "" : "文献を追加";
 
             primary: true;
             enabled: root.operable;
@@ -57,10 +56,8 @@ export component Sidebar inherits Rectangle {
         }
 
         // Library section
-        Text {
-            text: root.collapsed
-                ? "本"
-                : "ライブラリ";
+        if !root.collapsed : Text {
+            text: "ライブラリ";
 
             color: Theme.text-muted;
             font-weight: 600;
@@ -71,9 +68,8 @@ export component Sidebar inherits Rectangle {
             kind: "ghost";
             align-start: true;
 
-            text: root.collapsed
-                ? "全"
-                : "すべての文献";
+            icon: @image-url("../assets/icon/library_books.svg");
+            text: root.collapsed ? "" : "すべての文献";
 
             enabled: root.operable;
 
@@ -87,9 +83,8 @@ export component Sidebar inherits Rectangle {
             kind: "ghost";
             align-start: true;
 
-            text: root.collapsed
-                ? "削"
-                : "削除済み";
+            icon: @image-url("../assets/icon/delete.svg");
+            text: root.collapsed ? "" : "削除済み";
 
             enabled: root.operable;
 
@@ -103,34 +98,14 @@ export component Sidebar inherits Rectangle {
             background: Theme.divider;
         }
 
-        // Export section
-        AppButton {
-            accessible-label: "BibTeX 出力";
-            kind: "ghost";
-            align-start: true;
-
-            text: root.collapsed
-                ? "出"
-                : "BibTeX 出力 ("
-                    + root.selected-count
-                    + ")";
-
-            enabled: root.operable;
-
-            clicked => {
-                root.export-requested();
-            }
-        }
-
         // Files no paper uses any more are deleted only from this explicit screen.
         AppButton {
             accessible-label: "未使用PDFの整理";
             kind: "ghost";
             align-start: true;
 
-            text: root.collapsed
-                ? "整"
-                : "未使用PDFの整理";
+            icon: @image-url("../assets/icon/cleaning_services.svg");
+            text: root.collapsed ? "" : "未使用PDFの整理";
 
             enabled: root.operable;
 
@@ -157,14 +132,34 @@ export component Sidebar inherits Rectangle {
                     spacing: 4px;
                     for tag in root.tag-rows : VerticalBox {
                         padding: 0px;
-                        if tag.count > 0 || tag.selected : AppButton {
-                            accessible-label: "タグ " + tag.name + (tag.selected ? "の絞り込みを解除" : "で絞り込む");
-                            text: tag.name + " (" + tag.count + ")";
-                            kind: tag.selected ? "tonal" : "ghost";
-                            align-start: true;
-                            enabled: root.operable;
-                            clicked => {
-                                root.tag-toggled(tag.id);
+                        if tag.count > 0 || tag.selected : Rectangle {
+                            // The menu area must overlay the button, not take a slot of its own in a
+                            // layout, so both live in a plain Rectangle (the layout inside sizes it).
+                            VerticalLayout {
+                                AppButton {
+                                    accessible-label: "タグ " + tag.name + (tag.selected ? "の絞り込みを解除" : "で絞り込む");
+                                    text: tag.name + " (" + tag.count + ")";
+                                    kind: tag.selected ? "tonal" : "ghost";
+                                    align-start: true;
+                                    enabled: root.operable;
+                                    clicked => {
+                                        root.tag-toggled(tag.id);
+                                    }
+                                }
+                            }
+                            // In front of the button: a right press reaches it, left clicks fall through.
+                            ContextMenuArea {
+                                enabled: root.operable;
+                                Menu {
+                                    MenuItem {
+                                        title: tag.selected ? "絞り込みを解除" : "このタグで絞り込む";
+                                        activated => { root.tag-toggled(tag.id); }
+                                    }
+                                    MenuItem {
+                                        title: "名前を変更…";
+                                        activated => { root.tag-rename-requested(tag.id, tag.name); }
+                                    }
+                                }
                             }
                         }
                     }
@@ -186,9 +181,8 @@ export component Sidebar inherits Rectangle {
             kind: "ghost";
             align-start: true;
 
-            text: root.collapsed
-                ? "i"
-                : "このアプリについて";
+            icon: @image-url("../assets/icon/info.svg");
+            text: root.collapsed ? "" : "このアプリについて";
 
             enabled: root.can-open-about;
 
@@ -203,9 +197,8 @@ export component Sidebar inherits Rectangle {
             kind: "ghost";
             align-start: true;
 
-            text: root.collapsed
-                ? "↻"
-                : "保存先に再接続";
+            icon: @image-url("../assets/icon/sync.svg");
+            text: root.collapsed ? "" : "保存先に再接続";
 
             enabled: root.can-reconnect;
 

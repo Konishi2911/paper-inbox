@@ -255,3 +255,94 @@ fn a_failed_assignment_leaves_nothing_behind() {
     assert_eq!(store.pending_events(1000).unwrap().len(), before);
     assert_eq!(store.tags(true).unwrap()[0].paper_count, 0);
 }
+
+fn rename(store: &SqliteLibrary, id: TagId, name: &str) -> Result<(), StorageError> {
+    store
+        .commit_at(
+            LibraryCommand::RenameTag {
+                tag_id: id,
+                name: name.into(),
+            },
+            now(4),
+        )
+        .map(|_| ())
+}
+
+#[test]
+fn renaming_keeps_the_tag_its_papers_and_the_uniqueness_of_names() {
+    let store = SqliteLibrary::in_memory(DeviceId::new()).unwrap();
+    let p = paper("Renamed2026");
+    create(&store, &p);
+    let ml = tag(&store, "ml");
+    let nlp = tag(&store, "NLP");
+    add(&store, &p, ml).unwrap();
+
+    // The same tag (id, papers, count) under a new name, cleaned like a new one.
+    rename(&store, ml, "  Machine   Learning ").unwrap();
+    let all = store.tags(false).unwrap();
+    let renamed = all.iter().find(|c| c.tag.id == ml).unwrap();
+    assert_eq!(renamed.tag.name, "Machine Learning");
+    assert_eq!(renamed.paper_count, 1);
+    assert_eq!(
+        store.paper_tags(p.id()).unwrap()[0].name,
+        "Machine Learning"
+    );
+    assert_eq!(find(&store, vec![ml], TagMatch::All), vec![p.id()]);
+
+    // Only case, width or spacing of its own name may change; another tag's name may not be taken.
+    rename(&store, ml, "machine learning").unwrap();
+    assert!(matches!(
+        rename(&store, ml, "ｎｌｐ"),
+        Err(StorageError::InvalidOperation(_))
+    ));
+    assert!(matches!(
+        rename(&store, ml, "machine learning"),
+        Err(StorageError::InvalidOperation(_))
+    ));
+    assert!(matches!(
+        rename(&store, ml, "  "),
+        Err(StorageError::InvalidOperation(_))
+    ));
+    assert!(matches!(
+        rename(&store, TagId::new(), "unknown"),
+        Err(StorageError::InvalidOperation(_))
+    ));
+    let names: Vec<_> = store
+        .tags(true)
+        .unwrap()
+        .into_iter()
+        .map(|c| c.tag.name)
+        .collect();
+    assert!(names.contains(&"machine learning".to_string()) && names.contains(&"NLP".to_string()));
+    assert_eq!(names.len(), 2);
+
+    // The old name is free again, and each rename is an event.
+    let again = tag(&store, "ml");
+    assert_ne!(again, ml);
+    let _ = nlp;
+    let renames: Vec<_> = store
+        .pending_events(100)
+        .unwrap()
+        .into_iter()
+        .filter_map(|e| match e.operation {
+            SyncOperation::TagRenamed(t) => Some(t),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(renames.len(), 2);
+    assert!(renames.iter().all(|t| t.id == ml));
+
+    // History keeps the name each step gave, not the tag's current one.
+    let steps: Vec<_> = store
+        .pending_events(100)
+        .unwrap()
+        .into_iter()
+        .filter_map(|e| match e.operation {
+            SyncOperation::TagCreated(t) | SyncOperation::TagRenamed(t) if t.id == ml => {
+                Some(t.name)
+            }
+            _ => None,
+        })
+        .collect();
+    assert_eq!(steps, ["ml", "Machine Learning", "machine learning"]);
+}

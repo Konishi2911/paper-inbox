@@ -1,9 +1,10 @@
 use crate::export::{self, PreparedExport};
 use crate::{
     AttachmentRow, AuthorAction, AuthorRow, DetailView, LinkTarget, LookupField, MainWindow,
-    NavigationAction, PaperRow, TagRow,
+    NavigationAction, PaperRow, RowAction, TagRow,
     application::{
-        Application, AuthorInput, PaperForm, QuickChange, tag_name_message, tag_suggestions,
+        Application, AuthorInput, BulkChange, BulkOutcome, PaperForm, QuickChange,
+        tag_name_message, tag_suggestions,
     },
     attachment::AttachmentFiles,
     config::Config,
@@ -20,6 +21,8 @@ use std::{
 };
 
 enum Request {
+    /// Several papers are selected: no single paper stays open.
+    Close,
     BeginLookup(bool),
     FetchLookup(String),
     ConfirmLookup(String, String, LookupUserInput, Option<PathBuf>),
@@ -38,7 +41,11 @@ enum Request {
     Quick(QuickChange),
     AddTag(String),
     RemoveTag(TagId),
+    RenameTag(TagId, String),
     Delete(bool),
+    /// One change to every selected paper, in a single transaction.
+    // The bool says whether the selection stays (a menu change on one card leaves it alone).
+    Bulk(Vec<PaperId>, BulkChange, bool),
     ReviewMetadata(PaperId),
     SubmitCandidate(crate::metadata::CandidateForm),
     AssociateCandidate(CandidateId),
@@ -100,6 +107,10 @@ struct Reply {
     tag_counts: Option<Vec<TagCount>>,
     /// Unused file count and total bytes; opens the cleanup screen.
     cleanup: Option<(usize, u64)>,
+    /// A bulk change was applied, so the selection that chose its papers is over.
+    clear_selection: bool,
+    /// How a tag rename ended: Ok closes the dialog, Err keeps it open and shows the reason.
+    rename: Option<Result<(), String>>,
 }
 struct AttachmentView {
     id: String,
@@ -441,6 +452,11 @@ impl Worker {
                     ..Default::default()
                 },
             },
+            Request::Close => {
+                self.editing = None;
+                self.review = None;
+                Reply::default()
+            }
             Request::New => {
                 self.editing = None;
                 self.review = None;
@@ -569,6 +585,37 @@ impl Worker {
                     },
                 }
             }
+            Request::RenameTag(tag_id, name) => match app.rename_tag(tag_id, &name) {
+                Ok(tag) => {
+                    // The lists and the open paper's tag chips are read again; the open paper itself
+                    // is not reloaded, so an unsaved edit is not lost.
+                    let mut reply = Reply {
+                        message: format!("タグの名前を「{}」に変更しました。", tag.name),
+                        rename: Some(Ok(())),
+                        ..Default::default()
+                    };
+                    match app.list(&self.query) {
+                        Ok(list) => reply.list = Some(list),
+                        Err(e) => reply
+                            .message
+                            .push_str(&format!(" 一覧の更新に失敗しました: {e}")),
+                    }
+                    if let Some(id) = self.editing.as_ref().map(|s| s.paper.id()) {
+                        match app.paper_tags(id) {
+                            Ok(tags) => reply.paper_tags = Some(tags),
+                            Err(e) => reply
+                                .message
+                                .push_str(&format!(" タグを読み込めません: {e}")),
+                        }
+                    }
+                    reply
+                }
+                Err(e) => Reply {
+                    message: e.to_string(),
+                    rename: Some(Err(e.to_string())),
+                    ..Default::default()
+                },
+            },
             Request::Delete(deleted) => {
                 let Some(state) = &self.editing else {
                     return Reply {
@@ -588,6 +635,41 @@ impl Worker {
                     ),
                     Err(e) => Reply {
                         message: e.to_string(),
+                        ..Default::default()
+                    },
+                }
+            }
+            Request::Bulk(ids, change, keep_selection) => {
+                let editing = self.editing.as_ref().map(|s| s.paper.id());
+                let label = bulk_label(&change);
+                match app.bulk_update(&ids, change) {
+                    Ok(outcome) => {
+                        let text = bulk_message(label, outcome);
+                        // The open paper is reloaded when it was part of the change, so the
+                        // detail and the next edit use what is stored now.
+                        let mut reply = match editing.filter(|id| ids.contains(id)) {
+                            Some(id) => self.after_save(id, &text),
+                            None => {
+                                let list = app.list(&self.query);
+                                let mut reply = Reply {
+                                    message: text,
+                                    ..Default::default()
+                                };
+                                match list {
+                                    Ok(list) => reply.list = Some(list),
+                                    Err(e) => reply
+                                        .message
+                                        .push_str(&format!(" 一覧の更新に失敗しました: {e}")),
+                                }
+                                reply
+                            }
+                        };
+                        reply.clear_selection = !keep_selection;
+                        reply
+                    }
+                    // Nothing was changed, and the selection stays so it can be corrected.
+                    Err(e) => Reply {
+                        message: format!("{label}は行われませんでした。{e}"),
                         ..Default::default()
                     },
                 }
@@ -935,6 +1017,236 @@ impl Worker {
         reply
     }
 }
+/// True while the open paper has input that a reload would lose: the edit form, the metadata
+/// review, the candidate editor or a fetched result of the lookup screen. A change from the bar or a card menu reloads the open paper.
+fn has_unsaved_input(ui: &MainWindow) -> bool {
+    ui.get_dirty() || ui.get_review_dirty() || ui.get_candidate_dirty() || ui.get_lookup_dirty()
+}
+/// Sends one change for the selected papers. The open paper is left alone while it has
+/// unsaved edits, because the change reloads it.
+fn dispatch_bulk(ui: &MainWindow, tx: &Sender<Request>, change: BulkChange) {
+    let ids = ui
+        .get_selected_ids()
+        .iter()
+        .map(|s| uuid::Uuid::parse_str(&s).map(PaperId::from_uuid))
+        .collect::<Result<Vec<_>, _>>();
+    let ids = match ids {
+        Ok(ids) if !ids.is_empty() => ids,
+        Ok(_) => {
+            ui.set_status("文献が選ばれていません。".into());
+            return;
+        }
+        Err(_) => {
+            ui.set_status("選択内容を確認してください。".into());
+            return;
+        }
+    };
+    let editing = ui.get_editing_id();
+    if has_unsaved_input(ui) && ids.iter().any(|id| id.to_string() == editing.as_str()) {
+        ui.set_status(
+            "編集中の文献が含まれています。保存または破棄してから一括操作してください。".into(),
+        );
+        return;
+    }
+    dispatch(ui, tx, Request::Bulk(ids, change, false));
+}
+/// A change chosen in a card's right-click menu. It applies to the whole selection when the card is
+/// one of two or more selected papers, and to that card alone otherwise; the selection and the open
+/// paper stay as they are. An unsaved edit of an affected paper stops it, as for a bulk change.
+fn dispatch_row_action(ui: &MainWindow, tx: &Sender<Request>, id: &str, action: RowAction) {
+    let change = match action {
+        RowAction::FavoriteOn => BulkChange::Favorite(true),
+        RowAction::FavoriteOff => BulkChange::Favorite(false),
+        RowAction::StatusUnread => BulkChange::ReadingStatus(ReadingStatus::Unread),
+        RowAction::StatusReading => BulkChange::ReadingStatus(ReadingStatus::Reading),
+        RowAction::StatusRead => BulkChange::ReadingStatus(ReadingStatus::Read),
+        RowAction::Archive => BulkChange::Archived(true),
+        RowAction::Unarchive => BulkChange::Archived(false),
+        // Opening and copying are handled in the window.
+        RowAction::Open | RowAction::CopyKey => return,
+    };
+    let selected: Vec<_> = ui.get_selected_ids().iter().collect();
+    let in_selection = selected.len() >= 2 && selected.iter().any(|s| s.as_str() == id);
+    let targets: Vec<&str> = if in_selection {
+        selected.iter().map(|s| s.as_str()).collect()
+    } else {
+        vec![id]
+    };
+    let ids = targets
+        .iter()
+        .map(|s| uuid::Uuid::parse_str(s).map(PaperId::from_uuid))
+        .collect::<Result<Vec<_>, _>>();
+    let Ok(ids) = ids else {
+        ui.set_status("選択内容を確認してください。".into());
+        return;
+    };
+    let editing = ui.get_editing_id();
+    if has_unsaved_input(ui) && ids.iter().any(|id| id.to_string() == editing.as_str()) {
+        ui.set_status(
+            "編集中の文献が含まれています。保存または破棄してから操作してください。".into(),
+        );
+        return;
+    }
+    dispatch(ui, tx, Request::Bulk(ids, change, !in_selection));
+}
+fn bulk_label(change: &BulkChange) -> &'static str {
+    match change {
+        BulkChange::ReadingStatus(_) => "読書状態の更新",
+        BulkChange::Favorite(true) => "お気に入りへの追加",
+        BulkChange::Favorite(false) => "お気に入りの解除",
+        BulkChange::Archived(true) => "アーカイブ",
+        BulkChange::Archived(false) => "アーカイブの解除",
+        BulkChange::AddTag(_) => "タグの付与",
+        BulkChange::Delete => "削除",
+        BulkChange::Restore => "復元",
+    }
+}
+fn bulk_message(label: &str, outcome: BulkOutcome) -> String {
+    if outcome.unchanged == 0 {
+        format!("{label}: {}件に適用しました。", outcome.changed)
+    } else {
+        format!(
+            "{label}: {}件に適用しました。{}件はすでに同じ状態でした。",
+            outcome.changed, outcome.unchanged
+        )
+    }
+}
+/// The paper Up (-1) or Down (+1) opens: the neighbor of the open paper, without wrapping. With
+/// no paper open, Down gives the first row and Up the last. Nothing while several are selected
+/// (no paper is open then; Esc drops the selection first) or when the list is empty.
+fn stepped_paper(ui: &MainWindow, delta: i32) -> Option<slint::SharedString> {
+    if ui.get_selected_count() >= 2 {
+        return None;
+    }
+    let rows = ui.get_papers();
+    let count = rows.row_count();
+    let open = ui.get_editing_id();
+    let current = (0..count).find(|&i| rows.row_data(i).is_some_and(|row| row.id == open));
+    let target = match current {
+        Some(i) => i.checked_add_signed(delta as isize)?,
+        None if delta > 0 => 0,
+        None => count.checked_sub(1)?,
+    };
+    if target >= count {
+        return None;
+    }
+    rows.row_data(target).map(|row| row.id)
+}
+/// Shows exactly these papers as selected, in the count, the id list and every loaded row.
+fn set_selection(ui: &MainWindow, ids: Vec<slint::SharedString>) {
+    ui.set_selected_count(ids.len() as i32);
+    let model = ui.get_papers();
+    if let Some(rows) = model.as_any().downcast_ref::<VecModel<PaperRow>>() {
+        for i in 0..rows.row_count() {
+            if let Some(mut row) = rows.row_data(i) {
+                let on = ids.contains(&row.id);
+                if row.selected != on {
+                    row.selected = on;
+                    rows.set_row_data(i, row);
+                }
+            }
+        }
+    }
+    ui.set_selected_ids(ModelRc::new(VecModel::from(ids)));
+}
+/// Applies a Ctrl/Shift click on row `id`, or Ctrl+A, after any unsaved edit was settled. With two or
+/// more papers selected no single paper stays open; with one, that paper is opened.
+fn change_selection(
+    ui: &MainWindow,
+    tx: &Sender<Request>,
+    action: NavigationAction,
+    id: &slint::SharedString,
+) {
+    let rows: Vec<_> = ui.get_papers().iter().map(|p| p.id).collect();
+    let mut selected: Vec<_> = ui.get_selected_ids().iter().collect();
+    let mut anchor = ui.get_selection_anchor();
+    let open = ui.get_editing_id();
+    // The open paper counts as selected even after a search emptied the selection.
+    if selected.is_empty() && !open.is_empty() && rows.contains(&open) {
+        selected.push(open.clone());
+        if anchor.is_empty() {
+            anchor = open.clone();
+        }
+    }
+    let next = if action == NavigationAction::SelectAll {
+        rows
+    } else {
+        let (next, anchor_after) = clicked_selection(
+            &rows,
+            &selected,
+            anchor.as_str(),
+            id,
+            ui.get_pending_ctrl(),
+            ui.get_pending_shift(),
+        );
+        anchor = anchor_after;
+        next
+    };
+    ui.set_selection_anchor(anchor);
+    set_selection(ui, next.clone());
+    // Choosing papers for export keeps the export settings on screen.
+    if ui.get_detail_view() == DetailView::ExportSettings {
+        return;
+    }
+    match next.as_slice() {
+        [] => {}
+        [only] => {
+            if *only != open
+                && let Ok(uuid) = uuid::Uuid::parse_str(only)
+            {
+                dispatch(ui, tx, Request::Open(PaperId::from_uuid(uuid)));
+            }
+        }
+        _ => {
+            ui.set_editing_id("".into());
+            ui.set_detail_view(DetailView::Empty);
+            // The open paper was left (a discard was approved if it had unsaved input), so
+            // nothing of it is still unsaved.
+            ui.set_dirty(false);
+            ui.set_review_dirty(false);
+            ui.set_candidate_dirty(false);
+            ui.set_lookup_dirty(false);
+            dispatch(ui, tx, Request::Close);
+        }
+    }
+}
+/// The selection after a click on `id` with the given keys held. Shift selects the rows between
+/// the anchor and `id` (with Ctrl, in addition to what is selected); Ctrl toggles `id`.
+/// `rows` is the order of the loaded rows. The new anchor is returned with the selection.
+fn clicked_selection(
+    rows: &[slint::SharedString],
+    selected: &[slint::SharedString],
+    anchor: &str,
+    id: &slint::SharedString,
+    ctrl: bool,
+    shift: bool,
+) -> (Vec<slint::SharedString>, slint::SharedString) {
+    let position = |target: &str| rows.iter().position(|r| r.as_str() == target);
+    if shift && let (Some(from), Some(to)) = (position(anchor), position(id.as_str())) {
+        let range = rows[from.min(to)..=from.max(to)].to_vec();
+        let mut next = if ctrl { selected.to_vec() } else { vec![] };
+        for row in range {
+            if !next.contains(&row) {
+                next.push(row);
+            }
+        }
+        // The anchor stays, so the range can be extended or shrunk from the same row.
+        return (next, anchor.into());
+    }
+    if shift {
+        // No usable anchor: the clicked row alone becomes the selection and the anchor.
+        return (vec![id.clone()], id.clone());
+    }
+    let mut next = selected.to_vec();
+    match next.iter().position(|s| s == id) {
+        Some(at) if ctrl => {
+            next.remove(at);
+        }
+        Some(_) => {}
+        None => next.push(id.clone()),
+    }
+    (next, id.clone())
+}
 fn view(state: &PaperEditState) -> EditorView {
     EditorView {
         form: PaperForm::from_paper(&state.paper),
@@ -1041,6 +1353,10 @@ pub fn attach_with_providers(
     lookup_provider: LookupProvider,
     file_picker: FilePicker,
 ) -> Controller {
+    // Less motion: set PAPER_INBOX_REDUCE_MOTION=1 and every animation lands at once.
+    if std::env::var("PAPER_INBOX_REDUCE_MOTION").is_ok_and(|v| !v.is_empty() && v != "0") {
+        ui.global::<crate::Motion>().set_enabled(false);
+    }
     ui.set_database_path(config.database.to_string_lossy().as_ref().into());
     let (sender, receiver) = mpsc::channel();
     let weak = ui.as_weak();
@@ -1099,12 +1415,20 @@ pub fn attach_with_providers(
                     ui.set_ready(false);
                     Request::Initialize
                 }
+                NavigationAction::MultiSelect | NavigationAction::SelectAll => {
+                    change_selection(&ui, &tx, action, &id);
+                    return;
+                }
                 NavigationAction::OpenPaper | NavigationAction::MetadataReview => {
                     match uuid::Uuid::parse_str(&id) {
                         Ok(id) => {
                             if action == NavigationAction::MetadataReview {
                                 Request::ReviewMetadata(PaperId::from_uuid(id))
                             } else {
+                                // A plain click: the opened paper is the only one selected, and the anchor of a later Shift range.
+                                let shown: slint::SharedString = id.to_string().into();
+                                ui.set_selection_anchor(shown.clone());
+                                set_selection(&ui, vec![shown]);
                                 Request::Open(PaperId::from_uuid(id))
                             }
                         }
@@ -1307,6 +1631,20 @@ pub fn attach_with_providers(
     });
     let tx = sender.clone();
     let weak = ui.as_weak();
+    ui.on_rename_tag(move |id, name| {
+        if let Some(ui) = weak.upgrade() {
+            match uuid::Uuid::parse_str(&id) {
+                Ok(id) => dispatch(
+                    &ui,
+                    &tx,
+                    Request::RenameTag(TagId::from_uuid(id), name.to_string()),
+                ),
+                Err(_) => ui.set_rename_error("タグを確認できません。".into()),
+            }
+        }
+    });
+    let tx = sender.clone();
+    let weak = ui.as_weak();
     ui.on_remove_tag(move |id| {
         if let Some(ui) = weak.upgrade() {
             match uuid::Uuid::parse_str(&id) {
@@ -1483,29 +1821,70 @@ pub fn attach_with_providers(
         }
     });
     let weak = ui.as_weak();
-    ui.on_select_paper(move |id, selected| {
+    ui.on_clear_selection(move || {
         if let Some(ui) = weak.upgrade() {
-            let mut ids: Vec<_> = ui.get_selected_ids().iter().collect();
-            if selected {
-                if !ids.contains(&id) {
-                    ids.push(id.clone());
-                }
+            ui.set_selection_anchor("".into());
+            set_selection(&ui, vec![]);
+        }
+    });
+    let weak = ui.as_weak();
+    ui.on_step_paper(move |delta| {
+        if let Some(ui) = weak.upgrade()
+            && let Some(id) = stepped_paper(&ui, delta)
+        {
+            ui.invoke_open_paper(id);
+        }
+    });
+    let tx = sender.clone();
+    let weak = ui.as_weak();
+    ui.on_bulk_reading_status(move |status| {
+        if let Some(ui) = weak.upgrade() {
+            let status = match status {
+                0 => ReadingStatus::Unread,
+                1 => ReadingStatus::Reading,
+                _ => ReadingStatus::Read,
+            };
+            dispatch_bulk(&ui, &tx, BulkChange::ReadingStatus(status));
+        }
+    });
+    let tx = sender.clone();
+    let weak = ui.as_weak();
+    ui.on_bulk_favorite(move |on| {
+        if let Some(ui) = weak.upgrade() {
+            dispatch_bulk(&ui, &tx, BulkChange::Favorite(on));
+        }
+    });
+    let tx = sender.clone();
+    let weak = ui.as_weak();
+    ui.on_bulk_archive(move |on| {
+        if let Some(ui) = weak.upgrade() {
+            dispatch_bulk(&ui, &tx, BulkChange::Archived(on));
+        }
+    });
+    let tx = sender.clone();
+    let weak = ui.as_weak();
+    ui.on_bulk_tag(move |name| {
+        if let Some(ui) = weak.upgrade() {
+            dispatch_bulk(&ui, &tx, BulkChange::AddTag(name.into()));
+        }
+    });
+    let tx = sender.clone();
+    let weak = ui.as_weak();
+    ui.on_row_action(move |id, action| {
+        if let Some(ui) = weak.upgrade() {
+            dispatch_row_action(&ui, &tx, id.as_str(), action);
+        }
+    });
+    let tx = sender.clone();
+    let weak = ui.as_weak();
+    ui.on_bulk_delete(move |deleted| {
+        if let Some(ui) = weak.upgrade() {
+            let change = if deleted {
+                BulkChange::Delete
             } else {
-                ids.retain(|v| v != &id);
-            }
-            ui.set_selected_count(ids.len() as i32);
-            ui.set_selected_ids(ModelRc::new(VecModel::from(ids)));
-            let model = ui.get_papers();
-            if let Some(rows) = model.as_any().downcast_ref::<VecModel<PaperRow>>() {
-                for i in 0..rows.row_count() {
-                    if let Some(mut row) = rows.row_data(i)
-                        && row.id == id
-                    {
-                        row.selected = selected;
-                        rows.set_row_data(i, row);
-                    }
-                }
-            }
+                BulkChange::Restore
+            };
+            dispatch_bulk(&ui, &tx, change);
         }
     });
     let tx = sender.clone();
@@ -1812,6 +2191,11 @@ fn query_from_ui(ui: &MainWindow) -> PaperQuery {
 }
 fn apply_reply(ui: &MainWindow, reply: Reply) {
     let mut next_view = None;
+    // Before the list is rebuilt, so its rows are made without the old selection.
+    if reply.clear_selection {
+        ui.set_selection_anchor("".into());
+        set_selection(ui, vec![]);
+    }
     if let Some(new) = reply.lookup_new {
         ui.set_lookup_new(new);
         if new {
@@ -1995,6 +2379,14 @@ fn apply_reply(ui: &MainWindow, reply: Reply) {
                 .unwrap_or_default(),
         );
         ui.set_attachment_rows(ModelRc::new(VecModel::from(rows)));
+    }
+    match reply.rename {
+        Some(Ok(())) => {
+            ui.set_rename_error("".into());
+            ui.set_rename_open(false);
+        }
+        Some(Err(message)) => ui.set_rename_error(message.into()),
+        None => {}
     }
     if let Some(tags) = reply.paper_tags {
         ui.set_paper_tag_rows(ModelRc::new(VecModel::from(

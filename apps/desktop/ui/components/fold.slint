@@ -1,0 +1,63 @@
+import { Motion } from "../motion.slint";
+
+// A block that opens and closes by height. `progress` (0 closed ... 1 open) is driven by the
+// caller, which keeps the content alive while it is above 0:
+//
+//     private property <float> p: root.open ? 1.0 : 0.0;
+//     animate p { duration: Motion.base; easing: ease-in-out; }
+//     if root.open || root.p > 0 : Fold { progress: root.p; ...content... }
+//
+// The height is the content's own height times `progress`, clipped; the content fades with it.
+// `progress` depends only on the state, and the content's height only on the width, so there is
+// no loop between them.
+export component Fold inherits Rectangle {
+    in property <float> progress;
+    clip: true;
+    opacity: root.progress;
+    min-height: inner.preferred-height * root.progress;
+    preferred-height: inner.preferred-height * root.progress;
+    max-height: inner.preferred-height * root.progress;
+    vertical-stretch: 0;
+    inner := VerticalLayout {
+        y: 0px;
+        width: parent.width;
+        height: self.preferred-height;
+        @children
+    }
+}
+
+// A box whose height follows its content and moves there over time, for content that is
+// swapped in place (a short text for the full one). Call `begin()` just before the content is
+// swapped: only a change made right after it is animated. Changes from resizing the window
+// stay immediate, so dragging the splitter is not delayed.
+export component Reveal inherits Rectangle {
+    private property <bool> animating: false;
+    private property <length> shown: inner.preferred-height;
+    animate shown {
+        duration: root.animating ? Motion.base : 0ms;
+        easing: ease-in-out;
+    }
+    clip: true;
+    min-height: root.shown;
+    preferred-height: root.shown;
+    max-height: root.shown;
+    vertical-stretch: 0;
+    public function begin() {
+        root.animating = true;
+        settle.running = true;
+    }
+    settle := Timer {
+        interval: Motion.base + 50ms;
+        running: false;
+        triggered => {
+            self.running = false;
+            root.animating = false;
+        }
+    }
+    inner := VerticalLayout {
+        y: 0px;
+        width: parent.width;
+        height: self.preferred-height;
+        @children
+    }
+}

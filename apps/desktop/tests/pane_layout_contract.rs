@@ -56,7 +56,7 @@ fn splitter_tracks_window_pointer_and_cards_fit_at_narrow_widths() {
         "drag follows pointer without feedback"
     );
     drag(&w, -2000.);
-    assert!((w.get_paper_list_width() - 260.).abs() < 1.);
+    assert!((w.get_paper_list_width() - 320.).abs() < 1.);
     drag(&w, 2000.);
     assert!(splitter(&w).absolute_position().x + 8. <= 1360. - 360.);
     w.window().set_size(slint::LogicalSize::new(1080., 680.));
@@ -64,7 +64,7 @@ fn splitter_tracks_window_pointer_and_cards_fit_at_narrow_widths() {
     w.set_sidebar_collapsed(true);
     assert!(splitter(&w).absolute_position().x + 8. <= 1080. - 360.);
     w.set_sidebar_collapsed(false);
-    w.set_paper_list_width(260.);
+    w.set_paper_list_width(320.);
     let title = "Long title with 日本語 and multiple words ".repeat(3);
     w.set_papers(ModelRc::new(VecModel::from(vec![PaperRow {
         id: "card".into(),
@@ -92,16 +92,6 @@ fn splitter_tracks_window_pointer_and_cards_fit_at_narrow_widths() {
                 text.absolute_position().y + text.size().height
                     <= card.absolute_position().y + card.size().height + 1.,
                 "all card text must fit"
-            );
-        }
-        if export {
-            let check = ElementHandle::find_by_accessible_label(&w, "BibTeX 出力に含める")
-                .next()
-                .unwrap();
-            assert!(
-                check.absolute_position().y + check.size().height
-                    <= card.absolute_position().y + card.size().height + 1.,
-                "export checkbox fits its card"
             );
         }
     }

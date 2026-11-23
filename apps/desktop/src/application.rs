@@ -473,6 +473,148 @@ impl Application {
     }
 }
 
+/// One change applied to every selected paper at once.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum BulkChange {
+    ReadingStatus(ReadingStatus),
+    Favorite(bool),
+    Archived(bool),
+    /// Gives every paper the tag with this name, creating the tag first when it is new.
+    AddTag(String),
+    Delete,
+    Restore,
+}
+
+/// What a bulk change did: papers it changed, and papers that already matched.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct BulkOutcome {
+    pub changed: usize,
+    pub unchanged: usize,
+}
+
+impl Application {
+    /// Applies one change to several papers in a single transaction: either every paper is
+    /// changed or none is. Each paper is checked against the state read here, so a paper edited
+    /// elsewhere in the meantime makes the whole change fail instead of being overwritten.
+    /// A paper that already has the requested value is left alone and counted as unchanged.
+    /// A paper the change cannot apply to (deleted for everything but restore, not deleted for
+    /// restore) rejects the whole change.
+    pub fn bulk_update(
+        &self,
+        ids: &[PaperId],
+        change: BulkChange,
+    ) -> Result<BulkOutcome, AppError> {
+        let mut unique: Vec<PaperId> = Vec::with_capacity(ids.len());
+        for id in ids {
+            if !unique.contains(id) {
+                unique.push(*id);
+            }
+        }
+        if unique.is_empty() {
+            return Err(AppError::Input("文献が選ばれていません。".into()));
+        }
+        let states = unique
+            .iter()
+            .map(|id| self.open(*id))
+            .collect::<Result<Vec<_>, _>>()?;
+        for state in &states {
+            let deleted = state.paper.deleted_at().is_some();
+            if matches!(change, BulkChange::Restore) {
+                if !deleted {
+                    return Err(AppError::Input(
+                        "削除されていない文献が含まれています。".into(),
+                    ));
+                }
+            } else if deleted {
+                return Err(AppError::Input(
+                    "削除済みの文献が含まれています。復元してから操作してください。".into(),
+                ));
+            }
+        }
+        // The tag is resolved once. It is created in the same transaction when it is new.
+        let mut commands = vec![];
+        let tag = match &change {
+            BulkChange::AddTag(name) => {
+                let (display, key) = normalize_tag_name(name)
+                    .map_err(|e| AppError::Input(tag_name_message(e).to_owned()))?;
+                let existing = self
+                    .store
+                    .tags(true)?
+                    .into_iter()
+                    .map(|c| c.tag)
+                    .find(|t| t.key().ok().as_deref() == Some(key.as_str()));
+                Some(match existing {
+                    Some(tag) => tag,
+                    None => {
+                        let tag = Tag {
+                            id: TagId::new(),
+                            name: display,
+                        };
+                        commands.push(LibraryCommand::CreateTag { tag: tag.clone() });
+                        tag
+                    }
+                })
+            }
+            _ => None,
+        };
+        let mut changed = 0;
+        for state in &states {
+            let paper_id = state.paper.id();
+            let metadata = state.paper.metadata();
+            let command = match &change {
+                BulkChange::ReadingStatus(status) if metadata.reading_status != *status => {
+                    Some(LibraryCommand::SetReadingStatus {
+                        paper_id,
+                        status: *status,
+                    })
+                }
+                BulkChange::Favorite(favorite) if metadata.favorite != *favorite => {
+                    Some(LibraryCommand::SetFavorite {
+                        paper_id,
+                        favorite: *favorite,
+                    })
+                }
+                BulkChange::Archived(archived) if metadata.archived != *archived => {
+                    Some(LibraryCommand::SetArchived {
+                        paper_id,
+                        archived: *archived,
+                    })
+                }
+                // `tag` is always set for AddTag; the guard keeps this free of a panic path.
+                BulkChange::AddTag(_) if tag.is_some() => {
+                    let tag_id = tag.as_ref().map(|t| t.id);
+                    match tag_id {
+                        Some(tag_id)
+                            if !self
+                                .store
+                                .paper_tags(paper_id)?
+                                .iter()
+                                .any(|t| t.id == tag_id) =>
+                        {
+                            Some(LibraryCommand::AddTag { paper_id, tag_id })
+                        }
+                        _ => None,
+                    }
+                }
+                BulkChange::Delete => Some(LibraryCommand::DeletePaper { paper_id }),
+                BulkChange::Restore => Some(LibraryCommand::RestorePaper { paper_id }),
+                _ => None,
+            };
+            if let Some(command) = command {
+                commands.push(command);
+                changed += 1;
+            }
+        }
+        if changed > 0 {
+            self.store.commit_batch_at(commands, &states, Utc::now())?;
+        }
+        Ok(BulkOutcome {
+            changed,
+            unchanged: states.len() - changed,
+        })
+    }
+}
+
 /// Splits pasted author text into rows for review in the form.
 ///
 /// Entries are separated by `;` or line breaks. `Family, Given` is a person.
@@ -584,6 +726,42 @@ impl Application {
         });
         self.store.commit_batch_at(commands, &[], Utc::now())?;
         Ok(TagAssignment { tag, created })
+    }
+
+    /// Renames a tag everywhere it is used; its papers keep it. A name that another tag already
+    /// has is refused with that tag's name in the message, since the two would have to be merged.
+    pub fn rename_tag(&self, tag_id: TagId, name: &str) -> Result<Tag, AppError> {
+        let (display, key) = normalize_tag_name(name)
+            .map_err(|e| AppError::Input(tag_name_message(e).to_owned()))?;
+        let tags: Vec<Tag> = self.store.tags(true)?.into_iter().map(|c| c.tag).collect();
+        let current = tags
+            .iter()
+            .find(|t| t.id == tag_id)
+            .ok_or_else(|| AppError::Input("このタグは見つかりません。".into()))?;
+        if let Some(other) = tags
+            .iter()
+            .find(|t| t.id != tag_id && t.key().ok().as_deref() == Some(key.as_str()))
+        {
+            return Err(AppError::Input(format!(
+                "タグ「{}」はすでにあります。別の名前にしてください。",
+                other.name
+            )));
+        }
+        if current.name == display {
+            return Err(AppError::Input("名前が変わっていません。".into()));
+        }
+        self.store.commit_batch_at(
+            vec![LibraryCommand::RenameTag {
+                tag_id,
+                name: display.clone(),
+            }],
+            &[],
+            Utc::now(),
+        )?;
+        Ok(Tag {
+            id: tag_id,
+            name: display,
+        })
     }
 
     pub fn remove_tag(&self, state: &PaperEditState, tag_id: TagId) -> Result<(), AppError> {

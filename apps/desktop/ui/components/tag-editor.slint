@@ -13,6 +13,10 @@ export component TagEditor inherits VerticalBox {
     callback add-requested(string);
     callback remove-requested(string);
     callback input-changed(string);
+    // The id and name of a tag whose rename was asked for in its right-click menu.
+    callback rename-requested(string, string);
+    // Saved tags can be renamed; the tags of the add screen are only names so far.
+    in property <bool> can-rename: false;
 
     private property <string> draft;
 
@@ -72,6 +76,20 @@ export component TagEditor inherits VerticalBox {
                         enabled: root.operable;
                         clicked => {
                             root.remove-requested(tag.id);
+                        }
+                    }
+                }
+                // In front of the chip, so the right click reaches it; left clicks fall through.
+                ContextMenuArea {
+                    enabled: root.operable;
+                    Menu {
+                        MenuItem {
+                            title: tag.name + "を外す";
+                            activated => { root.remove-requested(tag.id); }
+                        }
+                        if root.can-rename : MenuItem {
+                            title: "名前を変更…";
+                            activated => { root.rename-requested(tag.id, tag.name); }
                         }
                     }
                 }

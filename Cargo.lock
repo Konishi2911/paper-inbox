@@ -3640,7 +3640,7 @@ dependencies = [
 
 [[package]]
 name = "paper-core"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "chrono",
  "percent-encoding",
@@ -3652,7 +3652,7 @@ dependencies = [
 
 [[package]]
 name = "paper-desktop"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "chrono",
  "i-slint-backend-testing",
@@ -3672,7 +3672,7 @@ dependencies = [
 
 [[package]]
 name = "paper-metadata"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "chrono",
  "futures-channel",
@@ -3685,7 +3685,7 @@ dependencies = [
 
 [[package]]
 name = "paper-storage"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "chrono",
  "paper-core",

@@ -68,6 +68,8 @@ fn three_panes_support_direct_clicks_collapsing_export_and_protected_navigation(
         paper_core::model::PaperId::new()
     ));
     let window = MainWindow::new().unwrap();
+    // This test checks where things end up; the sidebar animation has its own test.
+    window.global::<paper_desktop::Motion>().set_enabled(false);
     window.show().unwrap();
     window
         .window()
@@ -126,8 +128,8 @@ fn three_panes_support_direct_clicks_collapsing_export_and_protected_navigation(
     assert_ne!(first_id, second_id);
     assert_eq!(
         window.get_selected_count(),
-        0,
-        "opening is independent of export selection"
+        1,
+        "a plain click opens the paper and selects only it"
     );
 
     click(&window, "メニューを折りたたむ");
@@ -179,7 +181,7 @@ fn three_panes_support_direct_clicks_collapsing_export_and_protected_navigation(
     window
         .window()
         .set_size(slint::LogicalSize::new(1360., 900.));
-    click(&window, "BibTeX 出力");
+    window.invoke_toggle_export();
     assert!(window.get_export_settings_open());
     assert!(
         element(&window, "出力内容を確認").absolute_position().x
@@ -188,27 +190,13 @@ fn three_panes_support_direct_clicks_collapsing_export_and_protected_navigation(
                 .x
     );
     assert_eq!(window.get_editing_id(), second_id);
-    let checks: Vec<_> =
-        ElementHandle::find_by_accessible_label(&window, "BibTeX 出力に含める").collect();
-    assert_eq!(checks.len(), 2);
-    for (index, checkbox) in checks.iter().enumerate() {
-        let title = window.get_papers().row_data(index).unwrap().title;
-        let card = element(&window, &format!("文献を開く: {title}"));
-        assert!(checkbox.absolute_position().y >= card.absolute_position().y);
-        assert!(
-            checkbox.absolute_position().y + checkbox.size().height
-                <= card.absolute_position().y + card.size().height,
-            "export checkbox must fit inside its card"
-        );
-    }
-
-    click_element(&window, &checks[0]);
-    assert_eq!(window.get_selected_count(), 1);
-    assert_eq!(
-        window.get_editing_id(),
-        second_id,
-        "export checkbox does not open a paper"
+    // The cards carry no export checkbox: the selection is what is exported.
+    assert!(
+        ElementHandle::find_by_accessible_label(&window, "BibTeX 出力に含める")
+            .next()
+            .is_none()
     );
+    assert_eq!(window.get_selected_count(), 1);
 
     window.invoke_request_navigation(NavigationAction::MetadataReview, first_id.clone());
     wait(&window);
